@@ -5,6 +5,7 @@ import os
 import json
 import re
 import shutil
+import sqlite3
 import subprocess
 import threading
 from typing import Optional
@@ -35,6 +36,22 @@ app = typer.Typer(
     help="KIN — Personal Agent Network",
     no_args_is_help=True,
 )
+
+
+def open_profile_db(db_path: Path | str) -> sqlite3.Connection:
+    """Open profile database connection and ensure schema is current.
+
+    Catches LegacyProfileMigrationRequired cleanly and exits without a traceback.
+    """
+    from kin.storage.migrations import LegacyProfileMigrationRequired
+    conn = get_connection(db_path)
+    try:
+        create_schema(conn)
+        return conn
+    except LegacyProfileMigrationRequired as exc:
+        conn.close()
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(1)
 
 
 def get_profile_dir(profile_name: str) -> Path:
@@ -113,6 +130,16 @@ def main(
     ),
 ) -> None:
     """KIN CLI entry point with profile isolation."""
+    if os.environ.get("KIN_UNSAFE_TEST_KEYRING") == "1":
+        import sys
+        import keyring
+        from kin.testing.insecure_memory_keyring import InMemoryTestKeyring
+
+        keyring.set_keyring(InMemoryTestKeyring())
+        sys.stderr.write(
+            "WARNING: KIN_UNSAFE_TEST_KEYRING=1 — using an insecure in-memory keyring. Test use only.\n"
+        )
+
     if not re.fullmatch(r"[A-Za-z0-9_-]+", profile):
         raise typer.BadParameter("Profile names may contain only letters, numbers, hyphens, and underscores.")
     profile_dir = get_profile_dir(profile)
@@ -153,8 +180,7 @@ def pair(
         contact_username = code
 
         # Check database first to see if contact is already verified
-        conn = get_connection(db_path)
-        create_schema(conn)
+        conn = open_profile_db(db_path)
         try:
             cursor = conn.cursor()
             cursor.execute(
@@ -184,8 +210,7 @@ def pair(
             raise typer.Exit(code=1)
 
         # Connect to DB to load local identity
-        conn = get_connection(db_path)
-        create_schema(conn)
+        conn = open_profile_db(db_path)
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT username, public_key FROM identity")
@@ -238,8 +263,7 @@ def pair(
     # ----------------------------------------------------
     # 'kin pair' (no-args) flow: first-time setup
     # ----------------------------------------------------
-    conn = get_connection(db_path)
-    create_schema(conn)
+    conn = open_profile_db(db_path)
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT username FROM identity")
@@ -403,8 +427,7 @@ def ask(
         typer.echo("Error: Local database not found. Please run 'kin pair' first.", err=True)
         raise typer.Exit(code=1)
 
-    conn = get_connection(db_path)
-    create_schema(conn)
+    conn = open_profile_db(db_path)
     try:
         # 1. Check our own identity
         cursor = conn.cursor()
@@ -593,8 +616,7 @@ def respond(
     profile_dir.mkdir(parents=True, exist_ok=True)
     db_path = profile_dir / "kin.db"
 
-    conn = get_connection(db_path)
-    create_schema(conn)
+    conn = open_profile_db(db_path)
     try:
         cursor = conn.cursor()
         cursor.execute(
@@ -865,8 +887,7 @@ def fetch(ctx: typer.Context) -> None:
     profile_dir.mkdir(parents=True, exist_ok=True)
     db_path = profile_dir / "kin.db"
 
-    conn = get_connection(db_path)
-    create_schema(conn)
+    conn = open_profile_db(db_path)
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT username, public_key FROM identity")
@@ -1070,8 +1091,7 @@ def serve(
 
     # Ensure the profile directory exists and schema is initialized
     profile_dir.mkdir(parents=True, exist_ok=True)
-    conn = get_connection(db_path)
-    create_schema(conn)
+    conn = open_profile_db(db_path)
     tunnel_process = None
     try:
         if tunnel and public_endpoint:
@@ -1142,8 +1162,7 @@ def contacts(ctx: typer.Context) -> None:
     if not db_path.exists():
         typer.echo("No identity or contacts yet. Run 'kin pair' first.")
         return
-    conn = get_connection(db_path)
-    create_schema(conn)
+    conn = open_profile_db(db_path)
     try:
         rows = conn.execute(
             "SELECT username, display_name, endpoint, autonomy_level, fingerprint_verified_at FROM contacts ORDER BY username"
@@ -1169,8 +1188,7 @@ def contact_policy(
     if policy not in {"always_ask", "auto_relay_info"}:
         raise typer.BadParameter("Policy must be 'always_ask' or 'auto_relay_info'.")
     db_path = ctx.obj["profile_dir"] / "kin.db"
-    conn = get_connection(db_path)
-    create_schema(conn)
+    conn = open_profile_db(db_path)
     try:
         cursor = conn.execute("UPDATE contacts SET autonomy_level = ? WHERE username = ?", (policy, username))
         if cursor.rowcount == 0:
@@ -1194,8 +1212,7 @@ def configure(
     save_llm_api_key(ctx.obj["profile_name"], provider, api_key.strip())
     db_path = ctx.obj["profile_dir"] / "kin.db"
     ctx.obj["profile_dir"].mkdir(parents=True, exist_ok=True)
-    conn = get_connection(db_path)
-    create_schema(conn)
+    conn = open_profile_db(db_path)
     try:
         set_setting(conn, "llm_provider", provider)
         set_setting(conn, "llm_model", model)
@@ -1214,8 +1231,7 @@ def tasks(
     if not db_path.exists():
         typer.echo("No tasks yet.")
         return
-    conn = get_connection(db_path)
-    create_schema(conn)
+    conn = open_profile_db(db_path)
     try:
         query = "SELECT task_id, contact_username, status, goal, updated_at FROM tasks"
         params: tuple = ()
@@ -1238,8 +1254,7 @@ def tasks(
 def status(ctx: typer.Context, task_id: str = typer.Argument(help="Task ID to inspect")) -> None:
     """Show a task's audit history, current state, and any draft awaiting approval."""
     db_path = ctx.obj["profile_dir"] / "kin.db"
-    conn = get_connection(db_path)
-    create_schema(conn)
+    conn = open_profile_db(db_path)
     try:
         task = conn.execute(
             "SELECT task_id, contact_username, goal, status, result_json, draft_content, draft_message_type "
@@ -1290,8 +1305,7 @@ def restore(
         raise typer.BadParameter("The recovery phrase does not match that username's registered identity.")
 
     profile_dir.mkdir(parents=True, exist_ok=True)
-    conn = get_connection(profile_dir / "kin.db")
-    create_schema(conn)
+    conn = open_profile_db(profile_dir / "kin.db")
     try:
         if conn.execute("SELECT 1 FROM identity LIMIT 1").fetchone() is not None:
             raise typer.BadParameter("This profile already has an identity; choose a new --profile to restore safely.")
@@ -1306,3 +1320,130 @@ def restore(
     finally:
         conn.close()
     typer.echo(f"Identity '{username}' restored. Pair contacts again on this device before sending messages.")
+
+
+
+@app.command("migrate")
+def migrate(ctx: typer.Context) -> None:
+    """Migrate local profile storage schema using staging validation and atomic commit."""
+    from kin.identity.resolver import ProfileContextResolver
+    from kin.storage.migrations import run_migrations, ALL_MIGRATIONS
+    from kin.identity.storage import get_or_create_vault_key
+
+    profile_name = ctx.obj["profile_name"]
+    root_dir = Path.home() / ".kin"
+    resolver = ProfileContextResolver(profile_name, root_dir)
+    profile_dir = resolver.profile_dir
+    db_path = resolver.resolve_profile_path(profile_name, "kin.db")
+
+    if not db_path.exists():
+        typer.echo(f"No database found for profile '{profile_name}' at {db_path}. Nothing to migrate.")
+        return
+
+    timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    staging_dir = profile_dir.parent / f"{profile_name}_staging_{timestamp_str}"
+
+    conn = None
+    staged_conn = None
+    try:
+        # Preflight: read original integrity facts
+        conn = get_connection(db_path)
+        
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='contacts'")
+        has_contacts = cur.fetchone() is not None
+        orig_contacts_count = conn.execute("SELECT COUNT(*) FROM contacts").fetchone()[0] if has_contacts else 0
+
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'")
+        has_tasks = cur.fetchone() is not None
+        orig_tasks_count = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] if has_tasks else 0
+
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='identity'")
+        has_identity = cur.fetchone() is not None
+        orig_identity = conn.execute("SELECT username, public_key FROM identity LIMIT 1").fetchone() if has_identity else None
+
+        conn.close()
+        conn = None
+
+        # Copy to staging directory
+        shutil.copytree(profile_dir, staging_dir)
+
+        # Validate on staging copy
+        staged_db_path = staging_dir / "kin.db"
+        staged_conn = get_connection(staged_db_path)
+        report = run_migrations(staged_conn)
+
+        if report.errors:
+            raise RuntimeError(f"Migration failed during validation: {'; '.join(report.errors)}")
+
+        # Validate post-migration integrity
+        if has_identity:
+            staged_identity = staged_conn.execute("SELECT username, public_key FROM identity LIMIT 1").fetchone()
+            if staged_identity != orig_identity:
+                raise RuntimeError("Integrity check failed: identity record changed after migration")
+
+        if has_contacts:
+            staged_contacts = staged_conn.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
+            if staged_contacts != orig_contacts_count:
+                raise RuntimeError(f"Integrity check failed: contacts count changed ({orig_contacts_count} -> {staged_contacts})")
+
+        if has_tasks:
+            staged_tasks = staged_conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            if staged_tasks != orig_tasks_count:
+                raise RuntimeError(f"Integrity check failed: tasks count changed ({orig_tasks_count} -> {staged_tasks})")
+
+        max_ver = staged_conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+        expected_max = max(m.version for m in ALL_MIGRATIONS)
+        if max_ver != expected_max:
+            raise RuntimeError(f"Integrity check failed: expected latest version {expected_max}, got {max_ver}")
+
+        # Validate vault key readiness (keyring / keychain check)
+        get_or_create_vault_key(profile_name)
+
+        staged_conn.close()
+        staged_conn = None
+
+        # Atomic commit: swap staged kin.db file with original db_path
+        os.replace(staged_db_path, db_path)
+
+        typer.echo(
+            f"Migration report for profile '{profile_name}': "
+            f"applied={report.applied}, skipped={report.skipped}, "
+            f"version={report.starting_version}->{report.ending_version}"
+        )
+
+    except Exception as err:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        if staged_conn is not None:
+            try:
+                staged_conn.close()
+            except Exception:
+                pass
+
+        # Write failure report outside authoritative profile directory
+        report_dir = Path.home() / ".kin" / "migration-reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        failure_report_path = report_dir / f"{profile_name}-{timestamp_str}.json"
+        failure_data = {
+            "profile": profile_name,
+            "timestamp": timestamp_str,
+            "status": "failed",
+            "error": str(err),
+            "recoverable": True,
+        }
+        failure_report_path.write_text(json.dumps(failure_data, indent=2))
+
+        typer.echo(f"ERROR: Migration failed for profile '{profile_name}': {err}", err=True)
+        typer.echo(f"Original profile database left untouched. Failure report written to: {failure_report_path}", err=True)
+        raise typer.Exit(1)
+    finally:
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    app()

@@ -57,6 +57,30 @@ def get_x25519_private_key_service(profile: str) -> str:
     return f"kin-{profile}-x25519-private-key"
 
 
+def get_vault_key_service(profile: str) -> str:
+    """Return the service name for storing the vault key of a profile."""
+    return f"kin-{profile}-vault-key"
+
+
+def get_or_create_vault_key(profile: str) -> bytes:
+    """Load or generate the 32-byte vault key from the keychain for the given profile.
+
+    Asserts that the active backend is secure.
+    """
+    import os
+    _assert_secure_backend()
+    service = get_vault_key_service(profile)
+    hex_key = keyring.get_password(service, "vault_key")
+    if hex_key is None:
+        key_bytes = os.urandom(32)
+        keyring.set_password(service, "vault_key", key_bytes.hex())
+        return key_bytes
+    try:
+        return bytes.fromhex(hex_key)
+    except ValueError as e:
+        raise SecretNotFoundError(f"Stored vault key is invalid/malformed: {e}")
+
+
 def get_llm_api_key_service(profile: str, provider: str) -> str:
     """Return the service name for storing the LLM API key of a profile and provider."""
     # Ensure provider is lowercase for consistency

@@ -1,0 +1,24 @@
+{
+  "description": "KIN V1.1 Versioned Canonical Envelope Test Corpus",
+  "public_key_hex": "83f54db7132b1641bb6ed09a862d8bc5c742d30b082e130ad208e11c6c7672aa",
+  "public_key_b64url": "g_VNtxMrFkG7btCahi2LxcdC0wsILhMK0gjhHGx2cqo",
+  "canonical_jcs_unsigned_str": "{\"actor_agent_id\":\"code-scout\",\"actor_username\":\"alice\",\"content_hash\":\"GAaPZonhugqbksiBER6fUh-BO14JN_qQatR-2s9kXP0\",\"kind\":\"task_request\",\"payload\":{\"format\":\"csv\",\"goal\":\"Analyze dataset\"},\"protocol_version\":\"1.1\",\"schema_version\":\"1.1\",\"sequence\":1,\"session_id\":\"sess-test-12345\",\"timestamp\":\"2026-07-22T12:00:00.000Z\"}",
+  "content_hash": "GAaPZonhugqbksiBER6fUh-BO14JN_qQatR-2s9kXP0",
+  "signature": "ok_7cs09grAe91EjmKJMDHZMW72waNJjWrXUXThalir4gMaXCZT2PXZ4cSTI5Ze2S_05mBTM5Kh-wN8hZCe0BA",
+  "envelope": {
+    "schema_version": "1.1",
+    "protocol_version": "1.1",
+    "session_id": "sess-test-12345",
+    "sequence": 1,
+    "actor_username": "alice",
+    "actor_agent_id": "code-scout",
+    "timestamp": "2026-07-22T12:00:00.000Z",
+    "kind": "task_request",
+    "content_hash": "GAaPZonhugqbksiBER6fUh-BO14JN_qQatR-2s9kXP0",
+    "payload": {
+      "goal": "Analyze dataset",
+      "format": "csv"
+    },
+    "signature": "ok_7cs09grAe91EjmKJMDHZMW72waNJjWrXUXThalir4gMaXCZT2PXZ4cSTI5Ze2S_05mBTM5Kh-wN8hZCe0BA"
+  }
+}

@@ -8,18 +8,20 @@ version = "0.1.0"
 description = "KIN — Personal Agent Network"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi",
-    "uvicorn",
-    "httpx",
-    "cryptography",
-    "mnemonic",
-    "keyring",
-    "typer",
-    "rich",
-    "prompt_toolkit",
-    "litellm",
-    "openai",
-    "PyYAML",
+    "fastapi>=0.110.0,<1.0.0",
+    "uvicorn>=0.28.0,<1.0.0",
+    "httpx>=0.27.0,<1.0.0",
+    "cryptography>=42.0.0,<43.0.0",
+    "mnemonic>=0.20,<1.0",
+    "keyring>=24.3.0,<25.0.0",
+    "typer>=0.9.0,<1.0.0",
+    "rich>=13.7.0,<14.0.0",
+    "prompt_toolkit>=3.0.0,<4.0.0",
+    "litellm>=1.30.0,<2.0.0",
+    "openai>=1.14.0,<2.0.0",
+    "pydantic>=2.7.0,<3.0.0",
+    "rfc8785>=0.1.4,<1.0.0",
+    "PyYAML>=6.0.1,<7.0.0",
 ]
 
 [project.optional-dependencies]
@@ -32,3 +34,10 @@ kin = "kin.cli:app"
 
 [tool.setuptools.packages.find]
 include = ["kin*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "smoke: Two-process local socket smoke test",
+]
+addopts = "-m 'not smoke'"

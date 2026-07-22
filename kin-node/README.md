@@ -75,3 +75,13 @@ cd ..\kin-relay; pytest -q
 ```
 
 The protocol contract and product limits are documented in [`../system-design-v1.1.md`](../system-design-v1.1.md).
+
+## Local two-process smoke test (not yet a real network boundary)
+
+The two-process local smoke test suite (`python -m pytest -q -m smoke -v` or `python scripts/smoke_two_node.py`) proves:
+- Real separate OS processes running simultaneously on local TCP sockets.
+- Full end-to-end identity initialization, pairing, fingerprint verification, signed request delivery, task drafting, human response, and status completion over real sockets.
+
+What it does **NOT** yet prove:
+- A real internet boundary or Cloudflare tunnel across physical machines (this requires manual two-laptop testing).
+

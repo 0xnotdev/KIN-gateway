@@ -13,7 +13,7 @@ import httpx
 from typer.testing import CliRunner
 
 from kin.cli import app
-from kin.storage.db import get_connection
+from kin.storage.db import get_connection, create_schema
 from kin.identity.keys import generate_recovery_phrase
 from kin.identity.fingerprint import compute_fingerprint
 
@@ -70,12 +70,7 @@ def test_pair_lookup_success(runner, temp_profile_dir) -> None:
     temp_profile_dir.mkdir(parents=True, exist_ok=True)
     conn = get_connection(db_path)
     # Ensure tables are created
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS identity (username TEXT, public_key TEXT, keychain_ref TEXT, protocol_version TEXT)"
-    )
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS contacts (username TEXT PRIMARY KEY, display_name TEXT, public_key TEXT, x25519_public_key TEXT, endpoint TEXT, autonomy_level TEXT, fingerprint_verified_at TEXT)"
-    )
+    create_schema(conn)
     our_pubkey = b"\x01" * 32
     conn.execute(
         "INSERT INTO identity VALUES (?, ?, ?, ?)",
@@ -137,12 +132,7 @@ def test_pair_lookup_aborted(runner, temp_profile_dir) -> None:
     db_path = temp_profile_dir / "kin.db"
     temp_profile_dir.mkdir(parents=True, exist_ok=True)
     conn = get_connection(db_path)
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS identity (username TEXT, public_key TEXT, keychain_ref TEXT, protocol_version TEXT)"
-    )
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS contacts (username TEXT PRIMARY KEY, display_name TEXT, public_key TEXT, x25519_public_key TEXT, endpoint TEXT, autonomy_level TEXT, fingerprint_verified_at TEXT)"
-    )
+    create_schema(conn)
     our_pubkey = b"\x01" * 32
     conn.execute(
         "INSERT INTO identity VALUES (?, ?, ?, ?)",
@@ -277,12 +267,7 @@ def test_pair_lookup_already_verified(runner, temp_profile_dir) -> None:
     db_path = temp_profile_dir / "kin.db"
     temp_profile_dir.mkdir(parents=True, exist_ok=True)
     conn = get_connection(db_path)
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS identity (username TEXT, public_key TEXT, keychain_ref TEXT, protocol_version TEXT)"
-    )
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS contacts (username TEXT PRIMARY KEY, display_name TEXT, public_key TEXT, x25519_public_key TEXT, endpoint TEXT, autonomy_level TEXT, fingerprint_verified_at TEXT)"
-    )
+    create_schema(conn)
     conn.execute(
         "INSERT INTO identity VALUES (?, ?, ?, ?)",
         ("alice", "pubkey-alice", "keychain-ref", "0.1.0"),
@@ -409,9 +394,7 @@ def test_pair_setup_already_initialized(runner, temp_profile_dir) -> None:
     db_path = temp_profile_dir / "kin.db"
     temp_profile_dir.mkdir(parents=True, exist_ok=True)
     conn = get_connection(db_path)
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS identity (username TEXT, public_key TEXT, keychain_ref TEXT, protocol_version TEXT)"
-    )
+    create_schema(conn)
     conn.execute(
         "INSERT INTO identity VALUES (?, ?, ?, ?)",
         ("existing-user", "pubkey-123", "keychain-ref", "0.1.0"),

@@ -51,6 +51,13 @@ EXPECTED_SCHEMA: dict[str, set[str]] = {
     },
     "settings": {"key", "value"},
     "processed_relay_messages": {"message_id", "processed_at"},
+    "schema_migrations": {"version", "name", "applied_at", "checksum"},
+    "agents": {"agent_id", "name", "adapter_type", "local_card_json", "published_card_json", "enabled", "availability", "created_at", "updated_at"},
+    "sessions": {"session_id", "type", "owner_username", "peer_username", "status", "objective", "sender_agent_id", "receiver_agent_id", "participant_snapshot_json", "turn_limit", "created_at", "updated_at", "terminal_result_json"},
+    "session_events": {"event_id", "session_id", "event_order", "sequence", "actor_username", "actor_agent_id", "kind", "visibility", "payload_json", "signature", "created_at"},
+    "artifacts": {"artifact_id", "session_id", "sha256", "mime_type", "bytes_encrypted", "metadata_json", "offered_by", "created_at"},
+    "approvals": {"approval_id", "session_id", "agent_id", "action_class", "request_json", "decision", "decided_at", "expires_at"},
+    "audit_events": {"audit_id", "correlation_id", "session_id", "category", "actor_username", "summary", "payload_json", "created_at"},
 }
 
 

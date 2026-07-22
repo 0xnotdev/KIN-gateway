@@ -798,3 +798,257 @@ Release requires zero known critical security defects, no unhandled terminal tra
 KIN V1.1 is complete only when this sentence is true:
 
 > Two people who use different agents on different laptops can install KIN in one command, pair securely, select their specialist agents, run a bounded collaboration in a beautiful terminal workspace, watch it from a neutral third-person view, approve any consequential local work, receive reviewed artifacts/results, and understand exactly what happened without trusting KIN or a peer with control of their private machine.
+
+---
+
+## 15. Detailed V1.1 build execution plan
+
+This is the delivery plan for the product contract above. It supplements the five outcome milestones in section 11; it does not weaken any security, compatibility, or interface requirement in this specification or in `KIN-V1.1-TUI-SYSTEM.md`.
+
+### 15.1 Delivery rules and checkpoint standard
+
+- **Implementation boundary:** extend the existing Python `kin-node` and `kin-relay` packages. Keep the relay blind to plaintext session content and artifacts. The node remains the only process that may decrypt, evaluate policy, invoke an adapter, or write the local vault.
+- **Contract-first rule:** define typed Python models and serialized JSON examples before adding a route, database migration, adapter, or TUI screen that consumes them. Use `schema_version: "1.1"` and a `protocol_version: "1.1"` field on every new persisted or wire object.
+- **No security placeholders:** an unimplemented signature check, encryption-at-rest path, approval gate, or compatibility path is a blocking defect, not a TODO that may cross a checkpoint.
+- **No UI-only business logic:** the TUI consumes typed local node events and calls explicit node commands. It cannot decide authorization, mutate state optimistically without a node response, or bypass audit creation.
+- **Test environments:** maintain (1) deterministic in-process node/relay fixtures, (2) two isolated local profiles with separate keys and vaults, (3) a relay-backed offline fixture, and (4) a manual two-laptop Windows acceptance environment. Tests must never use a real user profile, keychain entry, relay account, workspace, or provider credential.
+- **Checkpoint evidence:** a checkpoint is passable only with: merged schema/API notes; green required automated tests; a short reproducible smoke command or script; migration/rollback result where storage changed; and an updated known-limitations list. “Screen renders” or “happy path works manually” is insufficient.
+- **Stop rule:** after every milestone, the team may stop without leaving un-migrated data, unaudited authority, a broken V1 command, or a half-enabled feature flag. New migrations are forward-only and must be safe to run more than once.
+
+### 15.2 Shared implementation inventory
+
+Create the following implementation seams before feature work. Names may vary only if the same ownership boundaries remain explicit.
+
+| Seam | Required responsibility | Verification owner |
+|---|---|---|
+| `kin.node.schemas` | Pydantic/dataclass models, validators, canonical serialization, feature negotiation | contract tests |
+| `kin.storage.migrations` | ordered, idempotent schema migrations and migration report | storage tests |
+| `kin.audit` | append-only, queryable signed event record and deterministic export | audit tests |
+| `kin.session` | lifecycle reducer, participant snapshots, turn/budget enforcement, recovery | state-machine tests |
+| `kin.policy` | local-only policy evaluation and expiring approval decisions | security tests |
+| `kin.artifacts` | encrypted vault, hash verification, metadata, preview/import gates | artifact tests |
+| `kin.transport.v11` | direct-first delivery, relay fallback, acknowledgement, deduplication | protocol/relay tests |
+| `kin.adapters` | narrow invocation contract and normalized adapter events | adapter contract tests |
+| `kin.events` | typed local event stream and durable replay cursor | node/TUI integration tests |
+| `kin.tui` | Textual workspace consuming node state/events only | TUI plan section 14 |
+
+Each domain object must have: an immutable ID; UTC RFC 3339 timestamp; actor person and, when relevant, agent ID; schema/protocol version; validation result; and an audit event that can be inspected by session ID. Content hashes use SHA-256 over a defined canonical byte representation. Signatures must cover the versioned envelope fields and content hash, not an arbitrary display string.
+
+### 15.3 Milestone M0 — Baseline, contracts, and safe development harness
+
+**Goal:** make V1.1 work testable without destabilizing V1.
+
+**Build steps**
+
+1. Record the supported Python, Windows, PowerShell, Textual, Rich, cryptography, database, and keychain versions in the package metadata and contributor instructions. Pin direct runtime dependencies and add a reproducible test environment.
+2. Run and preserve the existing node and relay test suites as the V1 compatibility baseline. Add a single command that runs formatting/linting, unit tests, node/relay integration tests, and TUI snapshots when present.
+3. Add fixture factories for identities `alice` and `bob`, two independent profile roots, a controlled clock, deterministic relay state, and synthetic agent cards. Fixture private keys are test-only and cannot be loaded from normal profile paths.
+4. Publish canonical JSON examples and validators for `AgentCard`, `PublishedAgentCard`, `SessionEnvelope`, `SessionEvent`, `ArtifactOffer`, `ApprovalRequest`, `ApprovalDecision`, `TransportAcknowledgement`, and `CapabilityAdvertisement`.
+5. Define the exact V1.1 session state reducer: only the transitions in section 7.2 are legal; terminal states are immutable; `awaiting_owner_approval`, `awaiting_peer`, and `paused` retain the last resumable checkpoint; no event may increase the original turn limit.
+6. Define compatibility negotiation: both peers must advertise 1.1 plus required feature flags before a V1.1 session is created; otherwise return a structured incompatibility result and offer only the V1-compatible Ask path.
+
+**Required tests**
+
+- Schema round-trip and rejection tests for missing version, unknown required field, invalid enum, oversized field, malformed timestamp, and non-canonical hash/signature input.
+- Reducer table tests covering every permitted transition and every forbidden transition, including duplicate, late, and terminal-state events.
+- Existing V1 identity, pairing, task/ask, relay fallback, storage, and roster tests remain green unchanged.
+- Fixture isolation test proving Alice cannot open Bob’s database, keychain namespace, artifact vault, or workspace fixture.
+
+**Checkpoint M0 — stop/handoff:** commit the contract examples, transition table, test harness, and baseline test report. No live protocol, profile migration, or TUI behavior changes are enabled yet.
+
+### 15.4 Milestone M1 — Persistent V1.1 records, audit trail, and migration
+
+**Goal:** add durable V1.1 state without invalidating any V1 profile, contact, task, or queued relay item.
+
+**Build steps**
+
+1. Add forward-only migrations for `agents`, `sessions`, `session_events`, `artifacts`, and `approvals` as specified in section 9.4. Add indexes for `session_id + sequence`, session status/update time, approval expiry, artifact SHA-256, and outbound delivery state.
+2. Encrypt session content, artifact bytes, stored adapter inputs, and credential references at rest using a per-profile vault key held only in the OS keychain. Store plaintext-free routing/index metadata only where the query needs it.
+3. Implement an append-only audit writer. Every state transition, received/sent envelope, approval request/decision/expiry, artifact offer/accept/import, migration result, and security rejection writes exactly one durable event with correlation ID.
+4. Implement deterministic session export: Markdown and JSON are ordered by persisted event sequence, identify redacted fields, include hashes/provenance, and exclude private notes by default. LLM summaries are explicitly optional and never replace the deterministic recap.
+5. Implement `kin migrate` (or the migration step of `kin init`) as a preflight, copy/validate, atomic commit, and report flow. On failure, preserve the old profile byte-for-byte and write a recoverable report outside the old profile’s authoritative data.
+6. Make V1 task transcripts readable as legacy timeline events; retain original identifiers and do not retroactively manufacture V1.1 signatures or agent selections.
+
+**Required tests**
+
+- New-profile migration and V1-profile migration fixtures, including rerun/idempotency, interrupted migration, unsupported prior schema, corrupt old card, missing keychain, and disk-write failure.
+- At-rest inspection test: database and vault files must not contain known session plaintext, artifact bytes, or test secret values.
+- Audit immutability tests: an attempt to update/delete an event fails; duplicate delivery produces a recorded deduplication result rather than a second semantic event.
+- Export golden tests for event ordering, legacy events, redaction, Markdown/JSON parity, and deterministic recap under a fixed clock.
+- Restore/restart test: a pending approval, queued envelope, and active session recover to the exact persisted state.
+
+**Checkpoint M1 — stop/handoff:** a migrated V1 profile opens and V1 commands still work; a new V1.1 session record can be created, recovered, exported, and audited locally, but it is not yet sent to a peer.
+
+### 15.5 Milestone M2 — Agent registry, card safety, and local policy primitives
+
+**Goal:** make local agents selectable and peer-visible without publishing local authority or secrets.
+
+**Build steps**
+
+1. Implement YAML card loading from `~/.kin/profiles/<profile>/agents/<agent-id>.yaml` with a strict schema, path normalization, maximum field lengths, MIME/capability validation, and keychain-reference-only credentials.
+2. Create a separate `PublishedAgentCard` projection. Its allowlist is exactly the safe fields in section 6.4; reject or strip paths, prompts, memory references, command arguments, credentials, local quality data, and policy internals.
+3. Store versioned local cards and immutable session-time card snapshots. A later local edit changes future dispatch eligibility only; it never alters an existing session record.
+4. Implement local availability states: `Ready`, `Busy`, `Reserved`, `Needs key`, `Needs workspace`, `Waiting for approval`, `Offline`, and `Policy blocks this task`. Each state has a machine code and the human explanation required by the TUI.
+5. Implement a pure policy evaluator that consumes local card boundaries, session context, requested action class, and prior bounded approval. It returns `allow`, `deny`, or a fully specified approval request; it has no peer-supplied “tool name” execution interface.
+6. Expose scriptable commands/API methods to validate, list, inspect, enable/disable, import, and publish cards. Keep V1 roster behavior as a compatibility alias.
+
+**Required tests**
+
+- Valid local-command, embedded, and webhook cards; invalid YAML; duplicate ID; unsafe path; unknown adapter; secret in YAML; bad timeout/size; bad MIME; and overlong capability tests.
+- Projection property tests proving no prohibited local-card field can appear in the serialized published card, logs, node event stream, or `--json` output.
+- Card-change test: a peer card change marks the cached card stale and prevents targeted dispatch until owner review; an existing session retains its original snapshot.
+- Policy matrix tests for every approval class in section 8.3, expiry, constraint editing, “always allow bounded action,” denied action, and peer attempts to name a local tool.
+- CLI JSON schema and human-output smoke tests for card list/inspect/validate and unavailable-agent reasons.
+
+**Checkpoint M2 — stop/handoff:** two local profiles can independently register and inspect cards; Bob receives only Alice’s safe projection; no session invokes an adapter or performs a local action.
+
+### 15.6 Milestone M3 — Signed V1.1 transport and peer dispatch lifecycle
+
+**Goal:** deliver a bounded, agent-selected request through direct transport or the encrypted relay, with correct provenance and no duplicate semantic processing.
+
+**Build steps**
+
+1. Implement version/feature advertisement, peer-card synchronization, card freshness timestamps, and explicit stale-card review. Preserve V1 contacts and out-of-band fingerprint verification; do not require re-pairing for an upgrade.
+2. Implement canonical V1.1 envelope signing and verification. Validate pairing, signature, session membership, sender sequence monotonicity, content hash, protocol version, feature flags, payload size, and expiry before decrypting content for the adapter pipeline.
+3. Implement `/v1.1/sessions` typed delivery using direct HTTPS first and the existing encrypted relay fallback second. The relay receives opaque encrypted envelopes and routing metadata only.
+4. Implement sender lifecycle events: `draft`, `sent`, `delivered` or `queued`, then peer review. “Delivered” means a valid processing acknowledgement, never merely relay upload.
+5. Implement receiver review, explicit receiver-agent confirmation/selection, accept, decline, and needs-clarification. Snapshot both participant cards at acceptance and make each lifecycle action signed and auditable.
+6. Add bounded pause, resume, cancel, expiration, and 12-turn default enforcement. A pause/resume/cancel is visible to the peer, but each owner may stop only their own participation.
+
+**Required tests**
+
+- Two-profile direct happy paths for Ask, Research, Debate, and Review through sent → delivered → peer_review → accepted → active.
+- Relay-offline queue, receiver-offline queue, restart before acknowledgement, acknowledgement after retry, expiry, and exponential backoff tests with a controlled clock.
+- Duplicate envelope, out-of-order sequence, replayed acknowledgement, modified hash, invalid signature, unpaired sender, stale card, unsupported protocol, and feature mismatch rejection tests. Assert the adapter is never called in every rejected case.
+- Session state/property tests for concurrent sessions, participant cancellation, receiver substitution, turn-limit exhaustion, and terminal-state immutability.
+- Relay inspection test proving neither plaintext objective/message nor artifact bytes are persisted by the relay.
+
+**Checkpoint M3 — stop/handoff:** Alice can choose her agent and request Bob’s published agent; Bob must explicitly select/confirm before an accepted session becomes active. The interaction works direct and through a restart-safe relay queue, using fixture adapters only.
+
+### 15.7 Milestone M4 — Adapter runtime and bounded collaboration orchestration
+
+**Goal:** turn accepted session state into controlled local agent work and verified, observable outputs.
+
+**Build steps**
+
+1. Freeze the adapter input/output contract from section 9.3 and add a versioned adapter capability declaration. Pass only the current session’s approved inputs, allowed history, participant snapshots, objective, and local policy summary.
+2. Implement the reference embedded LLM and existing webhook adapter behind the same normalized interface. Normalize outbound activity, message, artifact, terminal, error, and approval-request events.
+3. Implement the supervised local-command bridge: explicit executable allowlist/command, explicit normalized working directory inside the local policy boundary, sanitized environment, bounded stdin/stdout/stderr capture, runtime limit, process-tree termination, and no shell-string interpolation. It must remain disabled unless configured by the owner.
+4. Make the session orchestrator the only component allowed to request adapter work and select relayable output. It validates adapter output, applies policy, hashes/stores artifacts, increments turns, writes audit events, and signs any peer-visible message.
+5. Permit structured observable activity and one-line agent rationale only. Reject raw chain-of-thought fields, hidden prompts, secret values, or unapproved file content from display, storage, and transport paths.
+6. Implement checkpoint proposal, clarification, nudge rate limit, tag-in handoff package, and bounded retry-from-reviewed-checkpoint. A tag-in emits `participant_changed`, snapshots the replacement card, and never transfers private agent memory.
+
+**Required tests**
+
+- Adapter contract fixtures for embedded, webhook, and a fake local command: exact input minimization, normalized events, timeout, crash, malformed output, oversized output, cancellation, and retry behavior.
+- Local-command security tests for prohibited workspace escape, shell metacharacters, inherited secret environment variables, network-disabled policy, timeout/process-tree cleanup, and unsafe executable configuration.
+- End-to-end two-profile fixture tests for all four P0 session types, 12-turn cap, clarification, pause/resume, cancel, adapter failure, tag-in, and restart recovery.
+- Negative content tests seed prompts, fake chain-of-thought, API-key-shaped strings, and unapproved file text; assert they are redacted/rejected before audit/TUI/transport and that the security/recoverable event is visible.
+- Event ordering test: every peer-visible message has a prior validated local event and matching signature/provenance.
+
+**Checkpoint M4 — stop/handoff:** two fixture agents complete a bounded collaboration with auditable messages and activity; no adapter has a network transport handle or direct peer/tool authority.
+
+### 15.8 Milestone M5 — Artifacts, approvals, and the owner-local safety boundary
+
+**Goal:** safely exchange useful outputs without writing into a peer’s workspace or silently granting consequential authority.
+
+**Build steps**
+
+1. Implement encrypted artifact-vault storage keyed by session and SHA-256. Enforce card/session artifact-size limits before storage, transfer, and preview; persist MIME type, size, source, hash, and preview policy.
+2. Implement `artifact_offer` and `artifact_accept` envelopes. Transfer bytes end-to-end encrypted over direct/relay transport; verify hash and size before the artifact is marked available.
+3. Implement safe previews: text/Markdown/JSON/CSV bounded previews, syntax-aware unified diff where applicable, and metadata-only fallback for unknown/binary types. Never execute, auto-open, auto-import, or auto-apply an artifact.
+4. Implement approval objects with immutable requested scope, reason, risk label, optional artifact/diff reference, constraints, owner identity, expiry, and decision. Only the relevant local owner may approve once, deny, edit constraints, or create a narrowly bounded reusable rule.
+5. Split artifact receipt from external import and split patch preview from workspace apply. The latter operations require local policy evaluation and explicit owner approval; record both the original artifact hash and resulting local path/revision reference in local-only audit metadata.
+6. Implement Build pipeline and Delegate subtask envelopes only after these gates exist. Both must respect aggregate turn, duration, artifact, and model-cost budgets; exhaustion pauses or asks for finalization rather than expanding automatically.
+
+**Required tests**
+
+- Artifact cryptographic/hash/MIME/size tests, corrupt bytes, duplicate offer, unsupported preview, path traversal filename, archive-bomb policy, and interrupted relay transfer recovery.
+- Explicit-import tests prove that receipt creates only vault state; no workspace file changes occur until the separate reviewed action is approved.
+- Approval authorization tests prove Alice cannot approve Bob’s action, expired/replayed/edited approvals cannot be reused outside their exact bounded scope, and denial prevents adapter continuation.
+- Diff preview golden tests; apply tests use a disposable workspace and verify exact approved patch, conflict behavior, audit record, and no peer-initiated write.
+- Budget tests for turn, runtime, artifact bytes, and model estimate: cap reached produces a signed pause/finalization state and never runs another action.
+- Two-profile finance-pipeline smoke: CSV offered, inspected, accepted, transformed by Bob’s local agent, offered back, reviewed, and optionally imported by Alice with each local decision independently recorded.
+
+**Checkpoint M5 — stop/handoff:** the complete finance-pipeline demonstration works through direct and relay transport. A hostile peer can request a patch or shell action but cannot cause it without the target owner’s current, scoped approval.
+
+### 15.9 Milestone M6 — P0 product surfaces and scriptable parity
+
+**Goal:** expose the now-safe workflow through a complete terminal product and noninteractive alternatives.
+
+**Build steps**
+
+1. Implement the TUI foundation and all P0 surfaces according to the detailed UI plan appended to `KIN-V1.1-TUI-SYSTEM.md`: First Flight, Home, Agents, Network, Dispatch/agent picker, Inbox/Needs you, Approval review, Session Arena, and guide.
+2. Bind every stateful UI action to a node command with a matching scriptable command/JSON result where it is meaningful: session list/open/export, cards, inbox, approvals, dispatch, doctor, init/restore, and serve.
+3. Implement `kin doctor` with actionable status for version/profile, keychain, identity, relay/directory, node/tunnel, card validation, provider credentials without values, inbox, and recovery. Expected operational failures must yield structured results rather than tracebacks.
+4. Implement a resumable First Flight with identity, agent, node/relay, pairing, optional two-profile demo, and optional first dispatch. It must preserve progress and never require manual database/payload edits.
+5. Exercise the same event stream in TUI and non-TTY/plain fallback so that there is no TUI-only safety-critical operation.
+
+**Required tests**
+
+- The full automated UI/keyboard/snapshot/accessibility suite in the TUI plan, wired to real node fixtures rather than mocked widget-only state.
+- CLI contract and JSON tests for every listed command; non-TTY and `--plain` tests prove primary dispatch, review, approval, export, and recovery remain possible.
+- `kin doctor` fault-injection tests for each dependency and redaction tests for credentials/keys.
+- First Flight end-to-end test from empty profile to fixture peer dispatch; close/reopen/resume at each step.
+- Performance test: dashboard accepts input in under two seconds with 100 sessions and 20 agents; event burst does not change focused input/selection or create duplicate visible events.
+
+**Checkpoint M6 — stop/handoff:** a new local user can use documented commands or keyboard-only TUI controls to reach an accepted fixture session, see safe live evidence, make an approval decision, and export the result.
+
+### 15.10 Milestone M7 — P1 collaboration depth
+
+**Goal:** add reuse and operational depth only after P0 is demonstrably polished.
+
+**Build steps**
+
+1. Add Cockpit/Focus preference, private local-only notes with explicit signed promotion, checkpoints/decisions, deterministic replay, outcome cards, and fresh-authority reruns.
+2. Add Context Pantry classifications, expiry, local references, and explicit context packs. Resolve a local reference under local policy and send only the reviewed output; never expose a browsable path to the peer.
+3. Add readiness recommendations with a one-sentence explanation, reservations, local quality signals, playbooks, cost/time gauges, advanced redaction/export templates, and safe tag-in UX only as each underlying data/policy primitive is complete.
+4. Maintain a P2 feature register. Do not begin public discovery, reputation, payments, multi-owner teams, direct peer tool control, or a graphical client under the V1.1 release branch.
+
+**Required tests**
+
+- Replay/recap determinism, private-note exclusion, deliberate note promotion signature, decision/checkpoint ordering, and rerun creates a fresh draft with no carried approval.
+- Context Pantry classification/expiry/redaction tests, including local path non-disclosure and artifact-size constraints.
+- Playbook compatibility and stale-policy/card refusal tests; reservation and readiness state tests.
+- Cost/time/budget presentation tests where adapters do and do not report estimates; private peer cost is absent unless explicitly supplied.
+
+**Checkpoint M7 — stop/handoff:** an owner can return to a completed session after a day, understand it from deterministic evidence, create a safe fresh rerun or playbook draft, and know exactly which inputs would leave the machine.
+
+### 15.11 Milestone M8 — Installation, release hardening, and acceptance
+
+**Goal:** make V1.1 safely installable and credible for non-developers on two Windows laptops.
+
+**Build steps**
+
+1. Package a pinned, signed `kin-cli` release; publish the short, readable, checksum-verifiable PowerShell installer plus inspectable `pipx` and downloaded-installer alternatives. Do not silently install/change unrelated tools.
+2. Make the installer detect prerequisites, explain optional `cloudflared`, run `kin doctor`, and enter First Flight. Supply uninstall and upgrade behavior that preserves profiles and queued relay data.
+3. Establish CI matrices for Windows launch target and supported development platforms; run unit, contract, storage, relay, integration, TUI snapshot, accessibility, security, and packaging tests from a clean checkout.
+4. Produce a release candidate with versioned protocol/features, migration notes, changelog, privacy model, small guide, troubleshooting, relay operator guide, backup/recovery guide, and incident/security reporting path.
+5. Execute the manual acceptance script below on two independent laptops/accounts and capture only redacted evidence.
+
+**Required release tests**
+
+| Scenario | Required pass condition |
+|---|---|
+| Clean install | A new Windows user runs the documented command and reaches `kin`/First Flight in under five minutes excluding provider setup. |
+| Upgrade/migration | Existing V1 identity, contacts, tasks, and queued envelopes survive; a failed migration leaves the old profile usable. |
+| Pair and cards | Fingerprints are verified out of band; safe cards synchronize; changed cards require review. |
+| Direct session | Alice and Bob select agents, accept, exchange visible events/results, and start within five seconds on a normal connection. |
+| Offline relay | Sender sees queued state; receiver restart/fetch resumes delivery; no duplicate result is produced. |
+| Consequential action | Only the local owner sees and can approve/deny a bounded action; rejected peer request cannot access command/file/secret. |
+| Artifact and export | Hash/provenance/diff review work; import/apply is explicit; transcript export is deterministic and redacts by policy. |
+| Terminal resilience | 80×24, 16-color, high-contrast, plain/non-TTY, disconnect, and recoverable errors remain usable with no traceback. |
+
+**Checkpoint M8 — release/no-release decision:** release only when all required automated suites are green, no critical or high unmitigated security defect exists, the two-laptop script passes, P0 acceptance is reproducible from documentation alone, and product/security owners sign the release checklist. Otherwise ship no V1.1 release; triage the failed gate to a named corrective milestone.
+
+### 15.12 Traceability and final acceptance ledger
+
+Maintain a release ledger mapping every requirement in sections 3.2, 6–10, and the TUI quality gates to: implementation seam; automated test ID; manual acceptance step if needed; owner; result; and evidence link. The following assertions are release blockers and must appear as explicit ledger rows:
+
+1. V1 identities, contacts, V1 commands, and queued relay messages survive migration.
+2. Every peer-visible message, session transition, approval, and artifact has timestamp, actor, provenance/signature state, and inspectable session history.
+3. A peer cannot execute a local command, access a local secret, browse a local filesystem, or bypass an owner-local approval by crafted content, card metadata, relay replay, or adapter output.
+4. No raw chain-of-thought, hidden prompt, credential, or unapproved local file content is requested, stored, relayed, exported, or rendered.
+5. All primary flows work from keyboard and have a coherent non-TTY/plain alternative.
+6. The dashboard is interactive in under two seconds at the stated 100-session/20-agent load; a normal direct session starts within five seconds; offline state is honest and resumes safely.
+7. The two-person core journey in section 3.1 completes from documented install through deterministic export without hand-editing a database or raw protocol payload.

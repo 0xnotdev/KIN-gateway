@@ -118,8 +118,26 @@ class LLMAgentBackend(BaseAgentBackend):
             message_type=data["message_type"]
         )
 
+    def _check_fake_llm_response(self) -> AgentBackendResponse | None:
+        fake_env = os.environ.get("KIN_FAKE_LLM_RESPONSE")
+        if fake_env:
+            import sys
+            sys.stderr.write(
+                "WARNING: KIN_FAKE_LLM_RESPONSE set — using fake LLM response. Test use only.\n"
+            )
+            data = json.loads(fake_env)
+            return AgentBackendResponse(
+                reply=data["reply"],
+                message_type=data["message_type"],
+            )
+        return None
+
     def generate_response(self, request: AgentBackendRequest) -> AgentBackendResponse:
         """Synchronously generate a response using litellm.completion."""
+        fake = self._check_fake_llm_response()
+        if fake is not None:
+            return fake
+
         model, messages, api_key = self._prepare_call(request)
 
         response = litellm.completion(
@@ -132,6 +150,10 @@ class LLMAgentBackend(BaseAgentBackend):
 
     async def generate_response_async(self, request: AgentBackendRequest) -> AgentBackendResponse:
         """Asynchronously generate a response using litellm.acompletion to avoid event loop block."""
+        fake = self._check_fake_llm_response()
+        if fake is not None:
+            return fake
+
         model, messages, api_key = self._prepare_call(request)
 
         response = await litellm.acompletion(

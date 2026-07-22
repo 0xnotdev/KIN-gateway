@@ -498,3 +498,221 @@ V1.1 UI is not done when screens merely render. It is done when the following ev
 
 The KIN terminal UI system is complete when every V1.1 feature feels like it belongs to one deliberate workspace: panes are stable and persist, tabs carry context, keyboard actions follow one grammar, widgets have complete empty/loading/error/accessibility states, streaming work feels natural without leaking reasoning, and the user always knows what is happening and what — if anything — needs them.
 
+---
+
+## 14. Detailed terminal UI build execution plan
+
+This section is the executable implementation and verification plan for the terminal contract. It is built against typed node-event fixtures first, then against the real node boundary.
+
+### 14.1 Delivery rules and test harness
+
+- **Ownership boundary:** the TUI renders immutable view models and dispatches explicit node commands. It cannot decrypt transport, select an agent automatically, evaluate policy, make an approval decision, or write a workspace directly.
+- **State boundary:** define typed UiState with profile health, workspaces, navigation selection, node snapshots, overlays, toasts, and per-workspace focus/scroll state. Reducers accept only typed local events and command outcomes. Rendering code does not mutate domain state.
+- **Command boundary:** every consequential operation opens a review surface, then calls one named node command after explicit confirmation. The command result and audit/event ID are authoritative. Disable confirmation while it is in flight; retries are idempotent.
+- **Fixture boundary:** provide a demo/test node client emitting the same snapshots, results, errors, and event bursts as the real node. Fixtures include empty data, Alice/Bob sessions, stale card, queued relay, invalid signature, active approval, artifact preview, long labels, and a 10,000-event history.
+- **Snapshot matrix:** each production screen has deterministic Textual snapshots at 160x44, 120x36, 90x28, and 80x24, in kin-graphite, high-contrast, and 16-color/ASCII modes. Freeze clock, animation state, IDs, and ordering.
+- **Interaction matrix:** use Textual pilot tests for focus, bindings, confirmation, resize, tabs, drawers, modals, search, scrolling, and event arrival while an input is focused. Every widget is tested in all seven lifecycle states in section 6.4.
+- **Checkpoint evidence:** each checkpoint requires green focused and regression suites, reviewed snapshots, keyboard-only smoke steps, and an explicit deferred-surface list. A wide-screen happy-path render is not sufficient.
+
+### 14.2 Milestone T0 - Skeleton, tokens, and deterministic test infrastructure
+
+**Goal:** establish a reliable application foundation before product screens are added.
+
+**Build steps**
+
+1. Add the Textual application entry point for interactive kin; retain Rich/plain output for non-TTY, --plain, and unsupported terminals. Use alternate screen only interactively and restore the original terminal on normal exit, exception, and interrupt.
+2. Create the shared token package: section 8.1 semantic roles, typography helpers, border variants, glyph registry, ASCII fallbacks, and theme validation. Widgets use token names, never literal colors.
+3. Define typed UI view models for health, tabs, sidebar items, session summaries, events, artifacts, approvals, agent cards, command results, and recoverable errors. Add fixture factories for every state.
+4. Add deterministic snapshot, keyboard-pilot, and frame-timing helpers. Tests wait for an explicit settled state rather than arbitrary sleep; failures capture screen, focused widget, overlay state, and event log.
+5. Add a global error boundary that converts expected node/UI failure into a recoverable card and writes technical details to diagnostics. A raw traceback may never occupy the normal TUI.
+
+**Required tests**
+
+- TTY detection and alternate-screen restoration on quit, exception, and Ctrl+C.
+- Token validation rejects missing roles and arbitrary widget colors; all required roles resolve under default, high-contrast, and 16-color fixtures.
+- Snapshot harness is deterministic across two runs; fixture serialization round-trips; error-boundary snapshot is readable.
+- Plain-output smoke proves help, navigation, and doctor results are usable without box drawing or Unicode.
+
+**Checkpoint T0 - stop/handoff:** kin launches a blank styled shell and exits cleanly; it can be snapshotted at every required size. No workflow is exposed yet.
+
+### 14.3 Milestone T1 - Stable shell, responsive geometry, and preference persistence
+
+**Goal:** make terminal geometry a supported input and preserve the five stable regions.
+
+**Build steps**
+
+1. Implement stable-ID WorkspaceTabBar, Sidebar, MainCanvas, optional Inspector, and one-row StatusBar. They remain in place while workspace content changes.
+2. Implement exact breakpoints: wide at >=160x44; standard at 120-159x36; compact at 90-119x28; minimal below 90 columns or 28 rows. At compact the sidebar becomes an icon rail and the inspector becomes a drawer. At minimal render a single-pane stack with visible breadcrumb/back action. Completion is required at 80x24.
+3. Implement sidebar default/minimum/maximum widths of 32/24/42 and inspector widths of 38/30/52. Bind Alt+[ / Alt+] and Alt+{ / Alt+} in two-column increments; bind [ / ] to collapse/toggle. A dock may not cover input, an active approval, or the status row.
+4. Implement atomic, validated ui-state.json read/write for section 3.4 fields plus sidebar-section collapse state. A malformed or unsupported preference file resets only UI preferences and emits one quiet status message.
+5. Implement status health slots and one contextual hint. Health updates change in place and never scroll, steal focus, move the cursor, or reflow unrelated content.
+
+**Required tests**
+
+- Golden snapshots at all four breakpoints for normal/collapsed sidebar, visible/hidden inspector, long profile name, and degraded relay/keychain health.
+- Keyboard/mouse-capable resize tests at every min/max boundary, during terminal shrink, and while an approval or input is active.
+- Persistence tests for valid state, malformed JSON, unknown schema, missing file, out-of-range values, and a compatible upgrade.
+- Inject 100 health updates and assert unchanged focus, cursor, scroll position, and selected row.
+
+**Checkpoint T1 - stop/handoff:** shell geography is stable from 80x24 through wide screens, preferences persist safely, and asynchronous health cannot disrupt a user.
+
+### 14.4 Milestone T2 - Workspaces, keyboard grammar, and command surfaces
+
+**Goal:** make all navigation predictable before building detailed content.
+
+**Build steps**
+
+1. Implement section 4.1 workspace rules: non-closeable Home; singleton Agents, Network, and Inbox; one reusable Dispatch draft with discard warning; closeable Session/Search tabs; stable ordering; reopen last closed non-sensitive tab; and + workspace launcher.
+2. Implement the sidebar tree with independent preview selection, stable row identity, collapse persistence, slash filter, j/k, arrows, h/l, Enter, and Space. A disappearing selection moves to its nearest sibling with a one-line status message.
+3. Register and centrally validate every binding in sections 5.1-5.3. Bindings are inactive while a text field owns the key where specified. Duplicate/conflicting global binding is a startup and test failure.
+4. Implement Esc priority exactly: clear search, close drawer/modal, then return focus to main. All cancel/archive/state/approval/import/write actions open review and explicit confirmation.
+5. Implement distinct Ctrl+K Command Palette and Ctrl+P Quick Switcher. Palette ranking is exact command, recent action, contextual relevance, then fuzzy match; support reviewed arguments and colon commands but never arbitrary shell execution.
+6. Generate contextual help from the binding registry so help cannot list a missing or conflicting action.
+
+**Required tests**
+
+- Keyboard flows for tab cycling/jumping/closing/reopening, singleton rules, dirty Dispatch warning, tree filtering/preview/open, and disappearing row selection.
+- One test for each global/Arena binding, including text-input focus and each Esc stage.
+- Palette/switcher ranking golden tests, no-result state, keyboard-only selection, open/theme argument parsing, and rejection/absence of shell-like arbitrary execution.
+- Tests proving no single key executes approval, artifact import, workspace write, cancellation, or destructive action.
+
+**Checkpoint T2 - stop/handoff:** a keyboard-only user can open, switch, preview, search, close, and recover workspace contexts without raw IDs or focus theft.
+
+### 14.5 Milestone T3 - Reusable widgets and complete lifecycle states
+
+**Goal:** ensure every screen is composed from consistent, testable components.
+
+**Build steps**
+
+1. Implement foundation widgets: Panel, Badge, StatusLine, Spinner, ProgressBar, Toast, Modal, and EmptyState. They receive semantic inputs and emit actions; they do not own business state.
+2. Implement WorkspaceTabBar, SidebarTree, CommandPalette, DataTable, Timeline, Inspector, and SearchField, including debounced search, match count, accessible labels, narrow table columns, virtualized/paged collections, and scroll lock.
+3. Implement domain widgets: AgentCard, AgentPicker, DispatchWizard, SessionMap, ExchangeTimeline, ActivityFeed, ArtifactList, ApprovalCard, OutcomeCard, and TrustStrip.
+4. Give every widget explicit loading/elapsed label, empty next action, normal, focused, disabled-with-reason, recoverable error/retry, and narrow presentation. A spinner has a safe cancel/back path where cancellation is possible.
+5. Add one presentation-safety layer: redact prohibited values; label agent rationale; distinguish message/activity/transition/approval/artifact/security; never render raw prompts, chain-of-thought, secrets, or unapproved file content.
+
+**Required tests**
+
+- Parameterized tests for all seven lifecycle states at all breakpoints and required themes.
+- Widget event/focus/disabled/retry/cancel/filter/pagination/overflow tests; every truncated essential label has a full-detail path.
+- Semantic-label snapshots for status/approval/security glyphs in default, high-contrast, monochrome, and ASCII.
+- Seed fake keys, hidden prompts, reasoning, and local paths; assert none is displayed in widgets, inspector, toast, action labels, or diagnostics summary.
+
+**Checkpoint T3 - stop/handoff:** screens can be assembled entirely from reusable widgets; no blank panel, raw exception, unlabelled status, or hard-coded color remains.
+
+### 14.6 Milestone T4 - First Flight, Home, Agents, Network, and Needs You
+
+**Goal:** give a new owner a clear next action and safe operational overview.
+
+**Build steps**
+
+1. Build resumable First Flight: create/restore identity, connect agent, start/check node/relay, and pair trusted person. Include optional two-profile demo and guided dispatch. Persist progress only; do not persist secrets or session content in UI state.
+2. Build Home with agent roster, live/recent sessions, network summary, Needs You queue, and status line. Counters update in place; an event never prints over input or opens a workspace.
+3. Build Agents: create/import/inspect/enable/disable/configure local cards, readiness explanation, boundary summary, capability chips, and safe peer-card preview. Do not render secrets, raw adapter configuration, or private paths in peer contexts.
+4. Build Network: contacts, pairing/fingerprint/trust, reachability, peer-card freshness, change-review trigger, and no public-discovery affordance.
+5. Build Inbox/Needs You and Approval queue. Group by session/urgency; only acceptance, agent selection, clarification, approval, and outcome review are persistent attention. Quiet informational state becomes toast/status.
+6. Build searchable kin guide short paths with one relevant next key/command per page for both TUI and plain output.
+
+**Required tests**
+
+- First Flight from empty profile, every resume point, failed keychain/relay/agent step, demo, skip, and return behavior.
+- Home snapshots for empty/healthy/live/queued/approval/security, 100 sessions/20 agents, long labels, and all sizes.
+- Agent/Network separation tests for safe local versus peer cards, readiness reason, stale-card review, unpaired state, and keyboard entry from Home.
+- Needs You quiet-hour/snooze/grouping tests; security/expiring approval cannot vanish; incoming events do not interrupt focused draft input.
+- Manual five-second discovery smoke: a new user can identify the next action from Home without a tutorial.
+
+**Checkpoint T4 - stop/handoff:** a user can create/restore, connect an agent, assess health/attention, inspect safe peer capabilities, and enter Dispatch using only keyboard controls.
+
+### 14.7 Milestone T5 - Dispatch, agent picker, Context Pantry, and review-before-send
+
+**Goal:** make the collaboration contract legible before data leaves the machine.
+
+**Build steps**
+
+1. Implement the exact seven-step wizard: peer, owner agent, peer agent, collaboration type, goal, inputs, review. Saving a draft creates no send effect.
+2. Implement AgentPicker as a modal overlay with arrows/j/k, fuzzy search, details drawer, select/back, availability, requirements, capabilities, boundaries, MIME types, and one-sentence Suggested-not-automatic rationale.
+3. Validate non-empty outcome goal, selected agents, compatible types, explicit budget/turn limits, and fresh peer card before send. Use master session-type choices only.
+4. Render Context Pantry as typed inventory: message, pasted text, approved artifact, local reference. Show size, classification, expiry, peer-sharing disposition, and reviewed local-reference output; never promise peer path browsing.
+5. Make final review the outgoing manifest: selected local agent, peer, requested peer agent, goal, mode, budgets/constraints, all inputs/attachments, and exact state Packaging -> Signing -> Encrypting -> Delivered or Queued safely at relay.
+6. A failed command retains the complete draft, says what was preserved, and offers retry/back/edit. Never show delivered before valid node acknowledgement.
+
+**Required tests**
+
+- Keyboard happy path at all sizes; fuzzy picker, no eligible agent, busy/reserved/blocked agent, stale card, unsupported peer/version, and each validation failure.
+- Draft save/reopen/discard; no send command before final confirmation; double-confirm/retry creates one idempotent request.
+- Final-review snapshots show every outbound item, classification, size/expiry/budget, and no secret/raw local path.
+- Real-node fixture tests for direct delivered, queued relay, peer decline, clarification, and receiver confirmation with correct focus retention.
+
+**Checkpoint T5 - stop/handoff:** an owner can select both agents, inspect exactly what leaves their machine, send once, and see truthful direct/queued/review state without typing an opaque ID.
+
+### 14.8 Milestone T6 - Session Arena, live streams, artifacts, and approvals
+
+**Goal:** deliver the calm third-person Arena and controlled local action surfaces.
+
+**Build steps**
+
+1. Implement Arena header/trust strip, session map, authoritative exchange timeline, activity/output inspector, and all lane bindings. Use three-lane Cockpit wide, docked/on-demand inspector standard, and complete stacked lanes compact/minimal.
+2. Render section 7.2 event classes exactly: provenance-rich message; concise coalesced activity; bordered checkpoint; artifact metadata/preview; amber approval; clear state divider; persistent red security card.
+3. Follow tail only when already at tail. Otherwise retain reader position and show fixed down-N-new-events control. Tail pulse lasts 120 ms and is absent in reduced motion. A completed stream has stable event ID/duration.
+4. Batch visual commits at no more than 30 FPS, degrading to 10 FPS under pressure, while retaining every structured event. Coalesce repeated activity only; never coalesce approval/security/state. Reconnect adds one transition and deduplicates replay.
+5. Implement z, t/e/o/c/u/m/s/r/i behavior, Focus/Cockpit preference, replay, clarification, state menu, inspector, decisions/checkpoints, and output lane.
+6. Implement node-authoritative approval/artifact review: local owner, scope, reason, risk, constraints, expiry, and consequences. Approve once, deny, edit, bounded always-allow, import, and patch apply all require confirmation and command-result feedback.
+
+**Required tests**
+
+- Arena snapshots for each lifecycle/event class, empty/failed/recovering, long content, missing peer, stale card, direct/relay, and all sizes.
+- Keyboard flows for every Arena binding, Focus/Cockpit parity, lane navigation, replay, off-tail behavior, state menu, deny, and cancel/confirm.
+- Inject 31 or more updates per second and 10,000 events; assert no more than 30 commits per second normally, preserved count/order, no duplicates, no scroll reset, and unchanged focused input/selection.
+- Signature-failure tests prove persistent labelled red state and no unsafe action view. Prohibited reasoning/content never renders.
+- Artifact/approval integration tests prove inspect does not import/apply/approve, and rejected/expired node decision becomes accurate recoverable UI state.
+
+**Checkpoint T6 - stop/handoff:** within 15 seconds a spectator can identify participants, current work, decisions, action-required state, and output provenance. Live traffic cannot disrupt typing or hide approval/security events.
+
+### 14.9 Milestone T7 - Theme, motion, accessibility, and terminal resilience
+
+**Goal:** keep the product complete in constrained and accessible terminals.
+
+**Build steps**
+
+1. Implement six built-in themes and validated token-only YAML override. Expose Settings, palette, and theme command; invalid overrides retain last valid theme and show recoverable error.
+2. Implement semantic glyph/text/border fallback so live/waiting/approval/error/muted/security are distinguishable without color or Unicode.
+3. Implement motion limits: focus 80-120 ms; event pulse 120 ms; expand 120-180 ms; modal no more than 120 ms; spinner 8-12 FPS plus elapsed label; toast 3-6 seconds; maximum two amber pulses. Keystrokes always win and ordinary updates never reflow the whole application.
+4. Implement automatic/manual reduced motion and pause animation under CPU pressure/unfocused terminal. Reduced motion changes instantly but retains labels.
+5. Complete 80x24 and plain mode: breadcrumb/back, draft preservation, ordered semantic output, full review/approval/export access, long-label details, no hover-only content, no unsupported-mouse error.
+
+**Required tests**
+
+- Snapshot every primary screen in all built-in themes smoke, default/high contrast, 16-color, monochrome, and ASCII; assert semantic token resolution/contrast rules.
+- Keyboard-only journey from First Flight through approval/export; plain-output ordering golden tests; every visual state has text equivalent.
+- Reduced-motion test proves no pulse/interpolation is scheduled; normal-motion test enforces duration/rate limits and keypress priority.
+- 80x24 suite for Home, Dispatch, picker, inbox, approval, Arena, replay, and recovery; terminal resize preserves draft/focus.
+
+**Checkpoint T7 - stop/handoff:** no required task depends on width, true color, Unicode, mouse, or motion. The interface remains recognizably KIN and safe at every supported terminal capability.
+
+### 14.10 Milestone T8 - Real-node integration, performance, and release gate
+
+**Goal:** prove the full UI with real persistent node behavior and two-person acceptance.
+
+**Build steps**
+
+1. Replace fixture-only wiring with typed real node client while retaining fixtures for deterministic tests. Malformed/unavailable node events become recoverable cards and diagnostics, never renderer crashes.
+2. Run two isolated profiles with relay fallback, persistent replay, card state, approval expiry, artifact metadata, restart/reconnect, and all P0 UI actions.
+3. Profile startup, dashboard input latency, event batching, memory retention, and resize. Retain at least 10,000 structured events per open workspace; page older events without losing order/provenance.
+4. Execute manual two-laptop UI acceptance: install, First Flight, pair, card review, Dispatch, peer acceptance, live Arena, local approval, artifact review, outcome/replay/export, interruption/restart, and terminal fallback.
+5. Maintain a release ledger mapping every UI requirement to snapshots, interaction tests, node integration, and manual evidence. Focus theft, expected-failure traceback, reasoning exposure, unconfirmable consequential action, or missing primary-flow breakpoint blocks release.
+
+**Required release evidence**
+
+| Area | Required pass condition |
+|---|---|
+| Startup/performance | Dashboard interactive in under two seconds with 100 sessions and 20 agents; typing remains responsive during bursts. |
+| Event correctness | 10,000 events, reconnect, duplicate delivery, off-tail scroll, pagination, and stable focus/selection pass. |
+| Full journey | Keyboard-only Alice/Bob dispatch, acceptance, live session, approval, artifact review, outcome/replay/export pass against real node fixtures. |
+| Failure recovery | Relay/node/keychain/adapter faults yield clear recoverable cards and plain output, never tracebacks. |
+| Accessibility | High contrast, reduced motion, 16-color, ASCII, 80x24, and plain modes pass the primary journey. |
+| Human acceptance | Users discover next action, select both agents without IDs, assess live session in 15 seconds, deny safely, and understand a day-old outcome. |
+
+**Checkpoint T8 - release/no-release:** release only when every snapshot, component/keyboard test, real-node integration test, performance check, accessibility check, and two-laptop acceptance step is green. Visual quality never waives interaction, security, or resilience failures.
+
+### 14.11 UI completion ledger
+
+Maintain one completion record per screen/widget with: owning module; input view model; emitted commands/events; seven lifecycle test IDs; four breakpoint snapshots; default/high-contrast/ASCII snapshots; keyboard-flow IDs; accessibility assertion; real-node integration test; and manual observation when needed. This ledger, not a subjective visual review, determines whether the terminal workspace meets its definition of done.
