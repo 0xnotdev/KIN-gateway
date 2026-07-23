@@ -260,6 +260,26 @@ def test_session_event_missing_required_field():
         SessionEvent.model_validate(raw)
 
 
+def test_working_directory_validation_strictness():
+    """Assert LocalCommandAdapterConfig rejects relative working directories and .. traversal segments."""
+    from kin.schemas import LocalCommandAdapterConfig
+
+    # Valid absolute paths
+    c_abs1 = LocalCommandAdapterConfig(type="local_command", command="python test.py", working_directory="/tmp/work")
+    assert c_abs1.working_directory == "/tmp/work"
+
+    c_abs2 = LocalCommandAdapterConfig(type="local_command", command="python test.py", working_directory="C:\\Users\\dev")
+    assert "C:" in c_abs2.working_directory
+
+    # Invalid relative path
+    with pytest.raises(ValidationError, match="must be an absolute path"):
+        LocalCommandAdapterConfig(type="local_command", command="python test.py", working_directory="relative/path")
+
+    # Invalid traversal segment
+    with pytest.raises(ValidationError, match="relative traversal segments"):
+        LocalCommandAdapterConfig(type="local_command", command="python test.py", working_directory="/tmp/../etc")
+
+
 def test_session_event_invalid_kind():
     """Verify rejection of SessionEvent when kind is an unrecognized string or non-string type."""
     # 1. Unrecognized arbitrary string kind -> REJECTED

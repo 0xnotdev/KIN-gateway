@@ -1445,5 +1445,316 @@ def migrate(ctx: typer.Context) -> None:
             shutil.rmtree(staging_dir, ignore_errors=True)
 
 
+# ------------------------------------------------------------------------------
+# kin agent subcommand group (Milestone M2)
+# ------------------------------------------------------------------------------
+agent_app = typer.Typer(name="agent", help="Manage local agent cards.")
+app.add_typer(agent_app)
+
+
+@agent_app.command("list")
+def agent_list(
+    ctx: typer.Context,
+    json_output: bool = typer.Option(False, "--json", help="Emit stable JSON list format."),
+) -> None:
+    """Scan agents_dir, register/refresh valid cards, list them with availability."""
+    from kin.identity.resolver import ProfileContextResolver
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.schemas import AgentAvailability
+    from kin.agent_registry.availability import AVAILABILITY_EXPLANATIONS
+    from kin.agent_registry.registry import (
+        get_agents_dir,
+        list_cards,
+        register_card,
+        scan_local_cards,
+    )
+
+    profile_name = ctx.obj["profile_name"]
+    root_dir = Path.home() / ".kin"
+    resolver = ProfileContextResolver(profile_name, root_dir)
+    profile_dir = resolver.profile_dir
+    db_path = resolver.resolve_profile_path(profile_name, "kin.db")
+
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    conn = open_profile_db(db_path)
+    vault_key = get_or_create_vault_key(profile_name)
+
+    try:
+        agents_dir = get_agents_dir(resolver)
+        valid_cards, per_file_errors, legacy_v1_files_skipped = scan_local_cards(agents_dir, profile_name=profile_name)
+
+        for card in valid_cards:
+            register_card(conn, vault_key, card, profile_name=profile_name)
+
+        cards = list_cards(conn)
+        for c in cards:
+            avail_enum = AgentAvailability(c["availability"])
+            c["availability_reason"] = AVAILABILITY_EXPLANATIONS.get(avail_enum, "")
+
+        if json_output:
+            typer.echo(json.dumps(cards, indent=2))
+        else:
+            if not cards:
+                typer.echo("No local agent cards registered.")
+            else:
+                typer.echo("REGISTERED AGENT CARDS:")
+                for c in cards:
+                    typer.echo(
+                        f"  - {c['agent_id']} ({c['name']}) [adapter: {c['adapter_type']}, enabled: {c['enabled']}, status: {c['availability']}, version: v{c['card_version']}]\n"
+                        f"    Explanation: {c['availability_reason']}"
+                    )
+
+            if per_file_errors:
+                typer.echo("\nPER-FILE LOAD ERRORS:", err=True)
+                for err in per_file_errors:
+                    typer.echo(f"  - {err}", err=True)
+
+            if legacy_v1_files_skipped:
+                typer.echo("\nSKIPPED LEGACY V1 FILES:")
+                for path in legacy_v1_files_skipped:
+                    typer.echo(f"  - {path.name}")
+    finally:
+        conn.close()
+
+
+@agent_app.command("inspect")
+def agent_inspect(
+    ctx: typer.Context,
+    agent_id: str = typer.Argument(..., help="Agent ID to inspect."),
+    json_output: bool = typer.Option(False, "--json", help="Emit PublishedAgentCard projection JSON ONLY."),
+) -> None:
+    """Inspect a local agent card."""
+    from kin.identity.resolver import ProfileContextResolver
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.schemas import AgentCard
+    from kin.storage.vault import decrypt_field
+    from kin.agent_registry.availability import AVAILABILITY_EXPLANATIONS, compute_availability
+    from kin.agent_registry.registry import get_card, publish_card
+
+    profile_name = ctx.obj["profile_name"]
+    root_dir = Path.home() / ".kin"
+    resolver = ProfileContextResolver(profile_name, root_dir)
+    db_path = resolver.resolve_profile_path(profile_name, "kin.db")
+
+    if not db_path.exists():
+        typer.echo(f"ERROR: Agent '{agent_id}' not found.", err=True)
+        raise typer.Exit(1)
+
+    conn = open_profile_db(db_path)
+    vault_key = get_or_create_vault_key(profile_name)
+
+    try:
+        record = get_card(conn, agent_id)
+        if record is None:
+            typer.echo(f"ERROR: Agent '{agent_id}' not found.", err=True)
+            raise typer.Exit(1)
+
+        decrypted_json = decrypt_field(vault_key, record["local_card_json"])
+        if decrypted_json is None:
+            typer.echo(f"ERROR: Failed to decrypt agent card '{agent_id}'.", err=True)
+            raise typer.Exit(1)
+
+        card = AgentCard.model_validate_json(decrypted_json)
+        avail = compute_availability(card, profile_name, enabled=record["enabled"])
+        avail_reason = AVAILABILITY_EXPLANATIONS.get(avail, "")
+
+        if json_output:
+            pub_card = publish_card(card)
+            pub_card.availability = avail
+            out_dict = pub_card.model_dump()
+            out_dict["availability_reason"] = avail_reason
+            typer.echo(json.dumps(out_dict, indent=2))
+        else:
+            typer.echo(f"Agent ID: {card.id}")
+            typer.echo(f"Name: {card.name}")
+            typer.echo(f"Description: {card.description}")
+            typer.echo(f"Adapter Type: {card.adapter.type}")
+            typer.echo(f"Enabled: {record['enabled']}")
+            typer.echo(f"Availability: {avail.value} ({avail_reason})")
+            typer.echo(f"Card Version: {record['card_version']}")
+            typer.echo(f"Capabilities Tags: {card.capabilities.tags}")
+            typer.echo(f"Capabilities Accepts: {card.capabilities.accepts}")
+            typer.echo(f"Boundaries Network: {card.boundaries.network_access}, Filesystem: {card.boundaries.filesystem}, Shell: {card.boundaries.shell}")
+            typer.echo(f"Autonomy Relay: {card.autonomy.relay_information.value}, Propose: {card.autonomy.propose_actions.value}, Execute: {card.autonomy.execute_local_actions.value}")
+    finally:
+        conn.close()
+
+
+@agent_app.command("validate")
+def agent_validate(
+    ctx: typer.Context,
+    path: Path = typer.Argument(..., help="Path to agent YAML file to validate."),
+) -> None:
+    """Validate an agent card YAML file without importing it."""
+    from kin.agent_registry.loader import CardLoadError, load_card_file
+
+    profile_name = ctx.obj["profile_name"]
+    try:
+        card = load_card_file(path, profile_name=profile_name)
+        typer.echo(f"Card '{path}' is valid (Agent ID: '{card.id}').")
+    except CardLoadError as err:
+        typer.echo(f"ERROR: Card validation failed for '{path}': {err}", err=True)
+        raise typer.Exit(1)
+    except Exception as err:
+        typer.echo(f"ERROR: Card validation failed for '{path}': {err}", err=True)
+        raise typer.Exit(1)
+
+
+@agent_app.command("enable")
+def agent_enable(
+    ctx: typer.Context,
+    agent_id: str = typer.Argument(..., help="Agent ID to enable."),
+) -> None:
+    """Enable a local agent card."""
+    from kin.identity.resolver import ProfileContextResolver
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.agent_registry.registry import set_enabled
+
+    profile_name = ctx.obj["profile_name"]
+    root_dir = Path.home() / ".kin"
+    resolver = ProfileContextResolver(profile_name, root_dir)
+    db_path = resolver.resolve_profile_path(profile_name, "kin.db")
+
+    if not db_path.exists():
+        typer.echo(f"ERROR: Agent '{agent_id}' not found.", err=True)
+        raise typer.Exit(1)
+
+    conn = open_profile_db(db_path)
+    vault_key = get_or_create_vault_key(profile_name)
+    try:
+        set_enabled(conn, agent_id, True, profile_name=profile_name, vault_key=vault_key)
+        typer.echo(f"Agent '{agent_id}' enabled.")
+    except Exception as err:
+        typer.echo(f"ERROR: Failed to enable agent '{agent_id}': {err}", err=True)
+        raise typer.Exit(1)
+    finally:
+        conn.close()
+
+
+@agent_app.command("disable")
+def agent_disable(
+    ctx: typer.Context,
+    agent_id: str = typer.Argument(..., help="Agent ID to disable."),
+) -> None:
+    """Disable a local agent card."""
+    from kin.identity.resolver import ProfileContextResolver
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.agent_registry.registry import set_enabled
+
+    profile_name = ctx.obj["profile_name"]
+    root_dir = Path.home() / ".kin"
+    resolver = ProfileContextResolver(profile_name, root_dir)
+    db_path = resolver.resolve_profile_path(profile_name, "kin.db")
+
+    if not db_path.exists():
+        typer.echo(f"ERROR: Agent '{agent_id}' not found.", err=True)
+        raise typer.Exit(1)
+
+    conn = open_profile_db(db_path)
+    vault_key = get_or_create_vault_key(profile_name)
+    try:
+        set_enabled(conn, agent_id, False, profile_name=profile_name, vault_key=vault_key)
+        typer.echo(f"Agent '{agent_id}' disabled.")
+    except Exception as err:
+        typer.echo(f"ERROR: Failed to disable agent '{agent_id}': {err}", err=True)
+        raise typer.Exit(1)
+    finally:
+        conn.close()
+
+
+@agent_app.command("import")
+def agent_import(
+    ctx: typer.Context,
+    path: Path = typer.Argument(..., help="Path to agent YAML file to import."),
+) -> None:
+    """Validate, copy, and register an agent card into profile agents directory."""
+    from kin.identity.resolver import ProfileContextResolver
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.agent_registry.loader import CardLoadError
+    from kin.agent_registry.registry import import_card
+
+    profile_name = ctx.obj["profile_name"]
+    root_dir = Path.home() / ".kin"
+    resolver = ProfileContextResolver(profile_name, root_dir)
+    profile_dir = resolver.profile_dir
+    db_path = resolver.resolve_profile_path(profile_name, "kin.db")
+
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    conn = open_profile_db(db_path)
+    vault_key = get_or_create_vault_key(profile_name)
+
+    try:
+        card = import_card(conn, vault_key, resolver, path)
+        typer.echo(f"Agent '{card.id}' imported and registered successfully.")
+    except CardLoadError as err:
+        typer.echo(f"ERROR: Import failed: {err}", err=True)
+        raise typer.Exit(1)
+    except Exception as err:
+        typer.echo(f"ERROR: Import failed: {err}", err=True)
+        raise typer.Exit(1)
+    finally:
+        conn.close()
+
+
+@agent_app.command("publish")
+def agent_publish(
+    ctx: typer.Context,
+    agent_id: str = typer.Argument(..., help="Agent ID to publish/project."),
+    json_output: bool = typer.Option(False, "--json", help="Emit PublishedAgentCard JSON format."),
+) -> None:
+    """Compute and display the PublishedAgentCard projection (local display only, no network transport)."""
+    from kin.identity.resolver import ProfileContextResolver
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.schemas import AgentCard
+    from kin.storage.vault import decrypt_field
+    from kin.agent_registry.availability import compute_availability
+    from kin.agent_registry.registry import get_card, publish_card
+
+    profile_name = ctx.obj["profile_name"]
+    root_dir = Path.home() / ".kin"
+    resolver = ProfileContextResolver(profile_name, root_dir)
+    db_path = resolver.resolve_profile_path(profile_name, "kin.db")
+
+    if not db_path.exists():
+        typer.echo(f"ERROR: Agent '{agent_id}' not found.", err=True)
+        raise typer.Exit(1)
+
+    conn = open_profile_db(db_path)
+    vault_key = get_or_create_vault_key(profile_name)
+
+    try:
+        record = get_card(conn, agent_id)
+        if record is None:
+            typer.echo(f"ERROR: Agent '{agent_id}' not found.", err=True)
+            raise typer.Exit(1)
+
+        if not record["enabled"]:
+            typer.echo(f"ERROR: Agent '{agent_id}' is disabled. Enable it before publishing.", err=True)
+            raise typer.Exit(1)
+
+        decrypted_json = decrypt_field(vault_key, record["local_card_json"])
+        if decrypted_json is None:
+            typer.echo(f"ERROR: Failed to decrypt agent card '{agent_id}'.", err=True)
+            raise typer.Exit(1)
+
+        card = AgentCard.model_validate_json(decrypted_json)
+        pub_card = publish_card(card)
+        pub_card.availability = compute_availability(card, profile_name, enabled=record["enabled"])
+
+        if json_output:
+            typer.echo(pub_card.model_dump_json(indent=2))
+        else:
+            typer.echo("PUBLISHED AGENT CARD PROJECTION:")
+            typer.echo(f"  Agent ID: {pub_card.agent_id}")
+            typer.echo(f"  Name: {pub_card.name}")
+            typer.echo(f"  Description: {pub_card.description}")
+            typer.echo(f"  Capabilities: {pub_card.capabilities.tags}")
+            typer.echo(f"  Availability: {pub_card.availability.value}")
+            typer.echo(f"  Requires Owner Acceptance: {pub_card.requires_owner_acceptance}")
+            typer.echo("\nNote: This PublishedAgentCard projection is ready for peer discovery. No transport transmission was performed.")
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     app()

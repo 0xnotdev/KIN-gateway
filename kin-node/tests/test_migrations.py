@@ -25,18 +25,19 @@ def test_fresh_profile(tmp_path: Path) -> None:
     report = run_migrations(conn)
 
     assert not report.errors
-    assert report.applied == [1, 2]
+    assert report.applied == [1, 2, 3]
     assert report.starting_version == 0
-    assert report.ending_version == 2
+    assert report.ending_version == 3
     assert set(report.applied).isdisjoint(set(report.skipped))
 
     # Check schema_migrations table
     cur = conn.cursor()
     cur.execute("SELECT version, name FROM schema_migrations ORDER BY version ASC")
     rows = cur.fetchall()
-    assert len(rows) == 2
+    assert len(rows) == 3
     assert rows[0] == (1, "v1_baseline")
     assert rows[1] == (2, "v11_session_records")
+    assert rows[2] == (3, "v11_agent_registry_extensions")
     conn.close()
 
 
@@ -71,6 +72,8 @@ def test_legacy_v1_profile(tmp_path: Path) -> None:
     assert not report.errors
     assert 1 in report.applied
     assert 2 in report.applied
+    assert 3 in report.applied
+    assert report.ending_version == 3
     assert set(report.applied).isdisjoint(set(report.skipped))
 
     # Assert legacy data remains byte-for-byte unchanged in content
@@ -93,16 +96,16 @@ def test_idempotency(tmp_path: Path) -> None:
     conn = get_connection(db_path)
 
     report1 = run_migrations(conn)
-    assert report1.applied == [1, 2]
+    assert report1.applied == [1, 2, 3]
     assert report1.skipped == []
     assert set(report1.applied).isdisjoint(set(report1.skipped))
 
     report2 = run_migrations(conn)
     assert not report2.errors
     assert report2.applied == []
-    assert report2.skipped == [1, 2]
-    assert report2.starting_version == 2
-    assert report2.ending_version == 2
+    assert report2.skipped == [1, 2, 3]
+    assert report2.starting_version == 3
+    assert report2.ending_version == 3
     assert set(report2.applied).isdisjoint(set(report2.skipped))
 
     conn.close()

@@ -192,6 +192,22 @@ BEFORE DELETE ON audit_events
 BEGIN SELECT RAISE(ABORT, 'audit_events is append-only: DELETE is forbidden'); END;
 """
 
+MIGRATION_0003_SQL = """\
+ALTER TABLE agents ADD COLUMN card_version INTEGER NOT NULL DEFAULT 1;
+
+CREATE TABLE IF NOT EXISTS peer_agent_cards (
+    peer_username   TEXT NOT NULL,
+    agent_id        TEXT NOT NULL,
+    card_json       TEXT NOT NULL,
+    content_hash    TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'fresh',
+    first_seen_at   TEXT NOT NULL,
+    last_seen_at    TEXT NOT NULL,
+    PRIMARY KEY (peer_username, agent_id)
+);
+CREATE INDEX IF NOT EXISTS idx_peer_agent_cards_status ON peer_agent_cards(status);
+"""
+
 
 def _up_0001(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_0001_SQL)
@@ -201,10 +217,16 @@ def _up_0002(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_0002_SQL)
 
 
+def _up_0003(conn: sqlite3.Connection) -> None:
+    conn.executescript(MIGRATION_0003_SQL)
+
+
 ALL_MIGRATIONS: list[Migration] = [
     Migration(version=1, name="v1_baseline", up_sql=MIGRATION_0001_SQL, up_fn=_up_0001),
     Migration(version=2, name="v11_session_records", up_sql=MIGRATION_0002_SQL, up_fn=_up_0002),
+    Migration(version=3, name="v11_agent_registry_extensions", up_sql=MIGRATION_0003_SQL, up_fn=_up_0003),
 ]
+
 
 
 def is_legacy_unmigrated_profile(conn: sqlite3.Connection) -> bool:

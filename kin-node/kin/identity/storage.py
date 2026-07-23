@@ -161,3 +161,9 @@ def load_llm_api_key(profile: str, provider: str) -> str:
             f"LLM API key not found for profile: {profile}, provider: {provider}"
         )
     return api_key
+
+
+def get_agent_credential_service(profile: str, agent_id: str, purpose: str) -> str:
+    """Return the service name for storing an agent credential for a given profile, agent_id, and purpose."""
+    return f"kin-{profile}-agent-{agent_id}-{purpose}"
+

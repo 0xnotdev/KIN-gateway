@@ -8,7 +8,8 @@ import math
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Literal
+from pathlib import Path
+from typing import Annotated, Any, Callable, Literal, Union
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -123,9 +124,158 @@ class AgentAvailability(str, Enum):
     POLICY_BLOCKED = "policy_blocked"
 
 
+class AutonomyLevel(str, Enum):
+    NEVER = "never"
+    ALWAYS_ASK = "always_ask"
+    ALWAYS_ALLOW = "always_allow"
+
+
+class AdapterType(str, Enum):
+    EMBEDDED = "embedded"
+    WEBHOOK = "webhook"
+    LOCAL_COMMAND = "local_command"
+    SDK = "sdk"
+
+
 # Validation Regexes
 TIMESTAMP_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
 CONTENT_HASH_REGEX = re.compile(r"^[a-zA-Z0-9_-]{43}$")
+URL_HTTP_HTTPS_REGEX = re.compile(r"^https?://[^\s/$.?#].[^\s]*$", re.IGNORECASE)
+SDK_ENTRY_POINT_REGEX = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*:[a-zA-Z_][a-zA-Z0-9_]*$")
+MIME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9!#$&\-\^_.+]*/[a-zA-Z0-9][a-zA-Z0-9!#$&\-\^_.+]*$")
+TAG_PATTERN = re.compile(r"^[a-z0-9-]+$")
+SAFE_ID_REGEX = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
+
+# Adapter Configurations
+class EmbeddedAdapterConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["embedded"]
+    provider: str
+    model: str
+
+
+class WebhookAdapterConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["webhook"]
+    webhook_url: str
+    credential_ref: str
+
+    @field_validator("webhook_url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        if not v or len(v) > 2048:
+            raise ValueError("webhook_url length must be between 1 and 2048 characters")
+        if not URL_HTTP_HTTPS_REGEX.match(v):
+            raise ValueError("webhook_url must be a well-formed http(s) URL")
+        return v
+
+
+class LocalCommandAdapterConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["local_command"]
+    command: str
+    working_directory: str
+
+    @field_validator("command")
+    @classmethod
+    def validate_command(cls, v: str) -> str:
+        if not v or len(v) > 4096:
+            raise ValueError("command must be between 1 and 4096 characters")
+        if "\x00" in v:
+            raise ValueError("command cannot contain null bytes")
+        return v
+
+    @field_validator("working_directory")
+    @classmethod
+    def validate_working_directory(cls, v: str) -> str:
+        if not v or len(v) > 4096:
+            raise ValueError("working_directory must be between 1 and 4096 characters")
+        if "\x00" in v:
+            raise ValueError("working_directory cannot contain null bytes")
+
+        is_abs = v.startswith("/") or v.startswith("\\") or bool(re.match(r"^[A-Za-z]:[/\\]", v))
+        if not is_abs:
+            raise ValueError("working_directory must be an absolute path")
+
+        parts = Path(v).parts
+        if ".." in parts or ".." in v.replace("\\", "/").split("/"):
+            raise ValueError("working_directory cannot contain '..' relative traversal segments")
+
+        # Normalize path representation (resolve forward slashes and redundant dot segments)
+        return Path(v).as_posix()
+
+
+class SdkAdapterConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["sdk"]
+    entry_point: str
+
+    @field_validator("entry_point")
+    @classmethod
+    def validate_entry_point(cls, v: str) -> str:
+        if not SDK_ENTRY_POINT_REGEX.match(v):
+            raise ValueError("entry_point must be in 'module.path:callable_name' format")
+        return v
+
+
+AdapterConfig = Annotated[
+    Union[EmbeddedAdapterConfig, WebhookAdapterConfig, LocalCommandAdapterConfig, SdkAdapterConfig],
+    Field(discriminator="type"),
+]
+
+
+class AgentCapabilities(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tags: list[str] = Field(default_factory=list, max_length=32)
+    accepts: list[str] = Field(default_factory=list, max_length=32)
+    produces: list[str] = Field(default_factory=list, max_length=32)
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v: list[str]) -> list[str]:
+        for item in v:
+            if len(item) > 64:
+                raise ValueError("tag item max 64 characters")
+            if not TAG_PATTERN.match(item):
+                raise ValueError(f"tag item '{item}' must match pattern [a-z0-9-]")
+        return v
+
+    @field_validator("accepts")
+    @classmethod
+    def validate_accepts(cls, v: list[str]) -> list[str]:
+        for item in v:
+            if len(item) > 64:
+                raise ValueError("accepts item max 64 characters")
+            if not MIME_PATTERN.match(item):
+                raise ValueError(f"accepts item '{item}' must match MIME_PATTERN")
+        return v
+
+    @field_validator("produces")
+    @classmethod
+    def validate_produces(cls, v: list[str]) -> list[str]:
+        for item in v:
+            if len(item) > 64:
+                raise ValueError("produces item max 64 characters")
+            if not MIME_PATTERN.match(item):
+                raise ValueError(f"produces item '{item}' must match MIME_PATTERN")
+        return v
+
+
+class AgentBoundaries(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    network_access: Literal["deny", "allow"] = "deny"
+    filesystem: Literal["none", "workspace_read", "workspace_read_write_with_approval"] = "none"
+    shell: Literal["deny", "approval_required"] = "deny"
+    max_runtime_seconds: int = Field(..., gt=0, le=3600)
+    max_artifact_bytes: int = Field(..., gt=0, le=52_428_800)
+
+
+class AgentAutonomy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    relay_information: AutonomyLevel = AutonomyLevel.ALWAYS_ASK
+    propose_actions: AutonomyLevel = AutonomyLevel.ALWAYS_ASK
+    execute_local_actions: AutonomyLevel = AutonomyLevel.ALWAYS_ASK
 
 
 # Agent Cards
@@ -136,11 +286,32 @@ class AgentCard(BaseModel):
     id: str
     name: str
     description: str
-    adapter: dict[str, Any]
-    capabilities: dict[str, Any]
-    boundaries: dict[str, Any]
-    autonomy: dict[str, Any]
+    adapter: AdapterConfig
+    capabilities: AgentCapabilities
+    boundaries: AgentBoundaries
+    autonomy: AgentAutonomy
     presentation: dict[str, Any] | None = None
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, v: str) -> str:
+        if not SAFE_ID_REGEX.match(v):
+            raise ValueError("id must match ^[a-zA-Z0-9_-]{1,64}$")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if not v or len(v) > 128:
+            raise ValueError("name length must be between 1 and 128 characters")
+        return v
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v: str) -> str:
+        if not v or len(v) > 1024:
+            raise ValueError("description length must be between 1 and 1024 characters")
+        return v
 
 
 class PublishedAgentCard(BaseModel):
@@ -150,7 +321,7 @@ class PublishedAgentCard(BaseModel):
     agent_id: str
     name: str
     description: str
-    capabilities: dict[str, Any]
+    capabilities: AgentCapabilities
     availability: AgentAvailability
     requires_owner_acceptance: bool
     protocol_version: Literal["1.1"]

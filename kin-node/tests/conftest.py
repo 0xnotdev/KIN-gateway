@@ -4,7 +4,16 @@ from pathlib import Path
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
-from kin.schemas import AgentAvailability, AgentCard, PublishedAgentCard
+from kin.schemas import (
+    AgentAutonomy,
+    AgentAvailability,
+    AgentBoundaries,
+    AgentCapabilities,
+    AgentCard,
+    AutonomyLevel,
+    LocalCommandAdapterConfig,
+    PublishedAgentCard,
+)
 
 
 @pytest.fixture
@@ -47,10 +56,10 @@ def sample_agent_card():
         id="code-scout",
         name="Code Scout",
         description="Reviews repository diffs and proposes patch fixes.",
-        adapter={"type": "local_command", "command": "codex"},
-        capabilities={"tags": ["code-review", "patch-proposal"], "accepts": ["text/x-diff"]},
-        boundaries={"network_access": "deny", "max_runtime_seconds": 900},
-        autonomy={"propose_actions": "always_ask"},
+        adapter=LocalCommandAdapterConfig(type="local_command", command="codex", working_directory="/work/code"),
+        capabilities=AgentCapabilities(tags=["code-review", "patch-proposal"], accepts=["text/x-diff"]),
+        boundaries=AgentBoundaries(network_access="deny", filesystem="none", shell="deny", max_runtime_seconds=900, max_artifact_bytes=10_000_000),
+        autonomy=AgentAutonomy(relay_information=AutonomyLevel.ALWAYS_ASK, propose_actions=AutonomyLevel.ALWAYS_ASK, execute_local_actions=AutonomyLevel.ALWAYS_ASK),
     )
 
 
@@ -62,7 +71,7 @@ def sample_published_card():
         agent_id="data-cleaner",
         name="Data Cleaner",
         description="Converts raw tabular data into validated CSV artifacts.",
-        capabilities={"tags": ["data-cleaning", "csv"], "accepts": ["text/csv"]},
+        capabilities=AgentCapabilities(tags=["data-cleaning", "csv"], accepts=["text/csv"]),
         availability=AgentAvailability.READY,
         requires_owner_acceptance=True,
     )
