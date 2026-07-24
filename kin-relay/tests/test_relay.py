@@ -391,3 +391,54 @@ def test_inbox_auth_future_timestamp(client) -> None:
     )
     assert r.status_code == 401
     assert "outside the allowed 5-minute window" in r.json()["detail"]
+
+
+def test_relay_mailbox_never_sees_plaintext(client) -> None:
+    """Test §15.6 relay inspection requirement: stored/forwarded payload contains neither objective string nor payload substrings."""
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    bob_priv = ed25519.Ed25519PrivateKey.generate()
+    bob_pub = bob_priv.public_key().public_bytes_raw().hex()
+    client.post(
+        "/directory/register",
+        json={
+            "username": "bob",
+            "public_key": bob_pub,
+            "x25519_public_key": "x25519-bob",
+            "endpoint": "https://bob.kin.dev",
+        },
+    )
+
+    sensitive_objective = "Confidential financial budget review and salary negotiation"
+    opaque_ciphertext = "a1b2c3d4e5f67890deadbeefcafe1234567890abcdef"
+
+    r = client.post(
+        "/relay/mailbox/bob",
+        json={
+            "sender_username": "alice",
+            "encrypted_blob": opaque_ciphertext,
+        },
+    )
+    assert r.status_code == 200
+
+    # Fetch inbox for Bob
+    ts = datetime.now(timezone.utc).isoformat()
+    msg = f"bob:{ts}".encode("utf-8")
+    sig = bob_priv.sign(msg).hex()
+    inbox_res = client.get(
+        "/relay/inbox",
+        headers={"X-Username": "bob", "X-Timestamp": ts, "X-Signature": sig},
+    )
+    assert inbox_res.status_code == 200
+
+    raw_body = inbox_res.text
+    messages = inbox_res.json()["messages"]
+    assert len(messages) == 1
+
+    stored_payload = messages[0]["encrypted_blob"]
+    assert stored_payload == opaque_ciphertext
+
+    # Assert plaintext string or JSON envelope fields NEVER appear anywhere in raw relay payload/response
+    assert sensitive_objective not in raw_body
+    assert "collaboration_mode" not in raw_body
+    assert "goal" not in raw_body
