@@ -129,7 +129,7 @@ def process_peer_envelope(
             )
 
         participant_info = state.participants[envelope.actor_username]
-        if envelope.actor_agent_id != participant_info.agent_id:
+        if envelope.actor_agent_id != participant_info.agent_id and (envelope.kind != MessageKind.ACCEPTANCE or envelope.actor_username == state.initiator_username):
             return ReducerResult(
                 success=False,
                 new_state=state,
@@ -202,6 +202,12 @@ def process_peer_envelope(
     new_events = list(state.events)
     new_events.append(envelope.model_dump(mode="json"))
 
+    new_participants = dict(state.participants)
+    if envelope.kind == MessageKind.ACCEPTANCE:
+        acc_ag_id = envelope.payload.get("accepting_agent_id") or envelope.payload.get("receiver_agent_id") or envelope.actor_agent_id
+        role = "receiver" if envelope.actor_username == state.receiver_username else "owner"
+        new_participants[envelope.actor_username] = ParticipantInfo(agent_id=acc_ag_id, role=role)
+
     updated_state = SessionState(
         session_id=state.session_id,
         initiator_username=state.initiator_username,
@@ -210,7 +216,7 @@ def process_peer_envelope(
         current_turn=new_turn,
         max_turns=state.max_turns,
         actor_sequences=new_sequences,
-        participants=state.participants,
+        participants=new_participants,
         last_resumable_status=new_last_resumable,
         events=new_events,
     )

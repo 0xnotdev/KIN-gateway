@@ -74,6 +74,8 @@ cd kin-node; pytest -q
 cd ..\kin-relay; pytest -q
 ```
 
+Any HTTP route added under kin/node/routes.py must have at least one test that exercises it through a real fastapi.testclient.TestClient call — not only through a mock that calls the underlying function directly. A mocked httpx.Client used to simulate a peer's node is fine; the local route handler itself must be hit for real at least once per route.
+
 The protocol contract and product limits are documented in [`../system-design-v1.1.md`](../system-design-v1.1.md).
 
 ## Local two-process smoke test (not yet a real network boundary)

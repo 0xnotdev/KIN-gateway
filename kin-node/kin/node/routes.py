@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Header, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-import litellm
+from cryptography.hazmat.primitives.asymmetric import ed25519
 import openai
 import httpx
 
@@ -20,7 +20,6 @@ from kin.storage.db import get_connection, get_setting
 from kin.identity.keys import encrypt_for_recipient, sign_message, verify_signature
 from kin.identity.storage import SecretNotFoundError, load_private_key, load_x25519_private_key
 from kin.agent_backend.base import AgentBackendRequest
-from kin.agent_backend.llm_backend import LLMAgentBackend
 
 router = APIRouter()
 
@@ -665,7 +664,7 @@ async def process_v11_session_envelope(
     conn: sqlite3.Connection = Depends(get_db),
 ) -> JSONResponse:
     from kin.transport.v11 import ingest_envelope
-    from kin.storage.vault import get_or_create_vault_key
+    from kin.identity.storage import get_or_create_vault_key
 
     raw_body = await request.json()
     profile_name = getattr(request.app.state, "profile_name", "default")

@@ -7,7 +7,6 @@ import re
 import shutil
 import sqlite3
 import subprocess
-import threading
 from typing import Optional
 from pathlib import Path
 from datetime import datetime, timezone
@@ -1486,7 +1485,7 @@ def agent_list(
         for card in valid_cards:
             register_card(conn, vault_key, card, profile_name=profile_name)
 
-        cards = list_cards(conn)
+        cards = list_cards(conn, include_disabled=True)
         for c in cards:
             avail_enum = AgentAvailability(c["availability"])
             c["availability_reason"] = AVAILABILITY_EXPLANATIONS.get(avail_enum, "")

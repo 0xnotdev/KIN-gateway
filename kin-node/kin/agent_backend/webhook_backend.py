@@ -6,7 +6,6 @@ import asyncio
 import time
 from typing import Any
 import httpx
-from pydantic import ValidationError
 
 from kin.agent_backend.base import BaseAgentBackend, AgentBackendRequest, AgentBackendResponse
 

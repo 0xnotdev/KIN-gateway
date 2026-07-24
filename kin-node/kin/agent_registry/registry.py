@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import sqlite3
 from datetime import datetime, timezone
@@ -156,28 +157,48 @@ def register_card(
     conn.commit()
 
 
-def list_cards(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    """List registered local agents with metadata."""
+def list_cards(conn: sqlite3.Connection, include_disabled: bool = False) -> list[dict[str, Any]]:
+    """List registered local agents with metadata and published card projection."""
     cur = conn.cursor()
-    cur.execute(
-        """\
-        SELECT agent_id, name, adapter_type, enabled, availability, card_version, updated_at
-        FROM agents ORDER BY agent_id ASC
-        """
-    )
+    if include_disabled:
+        cur.execute(
+            """\
+            SELECT agent_id, name, adapter_type, enabled, availability, card_version, updated_at, published_card_json
+            FROM agents ORDER BY agent_id ASC
+            """
+        )
+    else:
+        cur.execute(
+            """\
+            SELECT agent_id, name, adapter_type, enabled, availability, card_version, updated_at, published_card_json
+            FROM agents WHERE enabled = 1 ORDER BY agent_id ASC
+            """
+        )
     rows = cur.fetchall()
-    return [
-        {
-            "agent_id": row[0],
-            "name": row[1],
-            "adapter_type": row[2],
-            "enabled": bool(row[3]),
-            "availability": row[4],
-            "card_version": row[5],
-            "updated_at": row[6],
-        }
-        for row in rows
-    ]
+    result = []
+    for row in rows:
+        published_json = row[7]
+        parsed_published = None
+        if published_json:
+            try:
+                parsed_published = json.loads(published_json)
+            except Exception:
+                parsed_published = published_json
+
+        result.append(
+            {
+                "agent_id": row[0],
+                "name": row[1],
+                "adapter_type": row[2],
+                "enabled": bool(row[3]),
+                "availability": row[4],
+                "card_version": row[5],
+                "updated_at": row[6],
+                "published_card": parsed_published,
+                "published_card_json": published_json,
+            }
+        )
+    return result
 
 
 def get_card(conn: sqlite3.Connection, agent_id: str) -> dict[str, Any] | None:

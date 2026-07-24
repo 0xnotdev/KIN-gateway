@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
-from typing import Literal
+from typing import Any, Literal
 
 from kin.storage.vault import decrypt_field
 

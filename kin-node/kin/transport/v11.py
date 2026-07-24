@@ -22,7 +22,6 @@ from kin.schemas import (
     CapabilityAdvertisement,
     MessageKind,
     PublishedAgentCard,
-    SessionEnvelope,
     TransportAcknowledgement,
     compute_content_hash,
     sign_envelope,
@@ -264,10 +263,11 @@ def ingest_envelope(
                 if exp_state:
                     sess_status = exp_state.status
 
+        kind_str = raw_body.get("kind", "")
         participant_map = {}
         if sender_ag_id:
             participant_map[init_un] = sender_ag_id
-        if receiver_ag_id:
+        if receiver_ag_id and (kind_str != MessageKind.ACCEPTANCE.value or actor_username == init_un):
             participant_map[rec_un] = receiver_ag_id
         if actor_username not in participant_map:
             participant_map[actor_username] = actor_agent_id
@@ -411,12 +411,13 @@ def ingest_envelope(
 
     # Special handling for ACCEPTANCE envelope
     if env.kind == MessageKind.ACCEPTANCE:
-        accepting_agent_id = env.payload.get("accepting_agent_id") or env.payload.get("receiver_agent_id")
+        accepting_agent_id = env.payload.get("accepting_agent_id") or env.payload.get("receiver_agent_id") or env.actor_agent_id
         if accepting_agent_id:
             conn.execute(
                 "UPDATE sessions SET receiver_agent_id = ? WHERE session_id = ?",
                 (accepting_agent_id, session_id),
             )
+            conn.commit()
 
     # 5. Append event to database
     app_res = append_session_event(
@@ -958,7 +959,7 @@ def retry_outbound_queue(
                     failed_count += 1
                     continue
             except httpx.RequestError as e:
-                last_err = str(e)
+                conn.execute("UPDATE outbound_envelope_queue SET last_error = ?, updated_at = ? WHERE queue_id = ?", (str(e), now_str, queue_id))
 
         if not delivered:
             new_attempts = attempts + 1

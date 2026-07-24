@@ -6,7 +6,6 @@ import os
 import json
 from pathlib import Path
 import litellm
-from pydantic import ValidationError
 
 from kin.agent_backend.base import BaseAgentBackend, AgentBackendRequest, AgentBackendResponse
 from kin.identity.storage import load_llm_api_key

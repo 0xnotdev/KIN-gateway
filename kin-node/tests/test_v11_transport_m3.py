@@ -46,7 +46,7 @@ from kin.transport.v11 import (
 
 
 def _setup_node_db(username: str, pubkey_hex: str, x25519_pub_hex: str) -> tuple[sqlite3.Connection, bytes]:
-    conn = sqlite3.connect(":memory:")
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
     run_migrations(conn)
     vault_key = b"test-vault-key-32bytes-long!!!!!"
     conn.execute("INSERT INTO identity VALUES (?, ?, ?, ?)", (username, pubkey_hex, "ref", "1.1"))
@@ -114,8 +114,9 @@ def _make_agent_card(agent_id: str, name: str) -> AgentCard:
     )
 
 
-def test_two_profile_direct_session_lifecycle(alice_node, bob_node):
-    """Test full direct session lifecycle: dispatch -> ingest -> respond accept -> active."""
+@pytest.mark.parametrize("collaboration_mode", ["ask", "research", "debate", "review"])
+def test_two_profile_direct_session_lifecycle(alice_node, bob_node, collaboration_mode):
+    """Test full direct session lifecycle across all P0 session types: dispatch -> ingest -> respond accept -> active."""
     # Wire contacts
     _add_verified_contact(alice_node["conn"], "bob", bob_node["ed_pub"].public_bytes_raw().hex(), bob_node["x255_pub"].hex(), "http://bob-node")
     _add_verified_contact(bob_node["conn"], "alice", alice_node["ed_pub"].public_bytes_raw().hex(), alice_node["x255_pub"].hex(), "http://alice-node")
@@ -906,6 +907,327 @@ def test_dispatch_session_via_relay_with_expired_cached_capabilities(alice_node,
         )
 
     assert "no fresh cached capabilities exist" in str(exc_info.value)
+
+
+def test_post_v11_sessions_route_via_testclient(alice_node, bob_node):
+    """Test 1.2: POST /v1.1/sessions route handler exercised via real fastapi.testclient.TestClient."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from kin.node.routes import router, get_db
+
+    app = FastAPI()
+    app.include_router(router)
+
+    def override_get_db():
+        yield bob_node["conn"]
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.state.profile_name = "default"
+
+    _add_verified_contact(bob_node["conn"], "alice", alice_node["ed_pub"].public_bytes_raw().hex(), alice_node["x255_pub"].hex(), "http://alice-node")
+
+    payload = {"collaboration_mode": "ask", "goal": "Test Client Route Test", "requested_agent_id": "bob_agent", "peer_username": "bob"}
+    content_hash = compute_content_hash(payload)
+
+    env_dict = {
+        "schema_version": "1.1",
+        "protocol_version": "1.1",
+        "session_id": "sess_route_test_1",
+        "sequence": 1,
+        "actor_username": "alice",
+        "actor_agent_id": "alice_agent",
+        "timestamp": "2026-07-22T12:00:00Z",
+        "kind": MessageKind.TASK_REQUEST.value,
+        "content_hash": content_hash,
+        "payload": payload,
+    }
+    env_dict["signature"] = sign_envelope(env_dict, alice_node["ed_priv"])
+
+    client = TestClient(app)
+    resp = client.post("/v1.1/sessions", json=env_dict)
+    assert resp.status_code == 200
+
+    data = resp.json()
+    assert data["schema_version"] == "1.1"
+    assert data["envelope_session_id"] == "sess_route_test_1"
+    assert data["envelope_sequence"] == 1
+    assert data["status"] == "delivered"
+    assert data["verified_hash"] == content_hash
+
+
+def test_get_v11_agents_cards_route_via_testclient(alice_node, bob_node):
+    """Test 1.2: GET /v1.1/agents/cards route handler exercised via real fastapi.testclient.TestClient."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from kin.node.routes import router, get_db
+    from kin.identity.auth import create_signed_auth_headers
+
+    app = FastAPI()
+    app.include_router(router)
+
+    def override_get_db():
+        yield alice_node["conn"]
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.state.profile_name = "default"
+
+    # Register local card on Alice's node and enable it
+    register_card(alice_node["conn"], alice_node["vault_key"], _make_agent_card("alice_route_agent", "Alice Route Agent"))
+    alice_node["conn"].execute("UPDATE agents SET enabled = 1 WHERE agent_id = 'alice_route_agent'")
+    alice_node["conn"].commit()
+
+    # Add Bob as a verified contact on Alice's node
+    _add_verified_contact(alice_node["conn"], "bob", bob_node["ed_pub"].public_bytes_raw().hex(), bob_node["x255_pub"].hex(), "http://bob-node")
+
+    # Generate valid signed auth headers for Bob requesting Alice's cards
+    auth_headers = create_signed_auth_headers("bob", bob_node["ed_priv"])
+
+    client = TestClient(app)
+    resp = client.get("/v1.1/agents/cards", headers=auth_headers)
+    assert resp.status_code == 200
+
+    data = resp.json()
+    assert data["schema_version"] == "1.1"
+    assert data["owner_username"] == "alice"
+    cards = data["cards"]
+    assert len(cards) >= 1
+    agent_ids = [c["id"] if isinstance(c, dict) and "id" in c else c.get("agent_id") for c in cards]
+    assert "alice_route_agent" in agent_ids
+
+
+def test_transport_turn_limit_exhaustion(alice_node, bob_node):
+    """Test 1.3: 12 turn-consuming envelopes succeed and the 13th envelope is rejected with TURN_LIMIT_EXCEEDED."""
+    _add_verified_contact(alice_node["conn"], "bob", bob_node["ed_pub"].public_bytes_raw().hex(), bob_node["x255_pub"].hex(), "http://bob-node")
+    _add_verified_contact(bob_node["conn"], "alice", alice_node["ed_pub"].public_bytes_raw().hex(), alice_node["x255_pub"].hex(), "http://alice-node")
+
+    sess_id = "sess_turn_exhaustion"
+    now_str = "2026-07-22T12:00:00Z"
+    alice_node["conn"].execute(
+        """\
+        INSERT INTO sessions (
+            session_id, type, initiator_username, receiver_username, status,
+            sender_agent_id, receiver_agent_id, turn_limit, created_at, updated_at
+        ) VALUES (?, 'ask', 'alice', 'bob', 'active', 'alice_agent', 'bob_agent', 12, ?, ?)
+        """,
+        (sess_id, now_str, now_str),
+    )
+    alice_node["conn"].commit()
+
+    def get_pubkey(un):
+        return alice_node["ed_pub"] if un == "alice" else bob_node["ed_pub"]
+
+    # Ingest 12 turn-consuming envelopes (sequences 1 to 12 per actor)
+    alice_seq = 1
+    bob_seq = 1
+    for turn in range(1, 13):
+        if turn % 2 == 1:
+            actor = "alice"
+            actor_priv = alice_node["ed_priv"]
+            actor_agent = "alice_agent"
+            seq = alice_seq
+            alice_seq += 1
+        else:
+            actor = "bob"
+            actor_priv = bob_node["ed_priv"]
+            actor_agent = "bob_agent"
+            seq = bob_seq
+            bob_seq += 1
+
+        payload = {"proposal_text": f"Turn {turn}"}
+        env = {
+            "schema_version": "1.1",
+            "protocol_version": "1.1",
+            "session_id": sess_id,
+            "sequence": seq,
+            "actor_username": actor,
+            "actor_agent_id": actor_agent,
+            "timestamp": now_str,
+            "kind": MessageKind.PROPOSAL.value,
+            "content_hash": compute_content_hash(payload),
+            "payload": payload,
+        }
+        env["signature"] = sign_envelope(env, actor_priv)
+        ack = ingest_envelope(alice_node["conn"], alice_node["vault_key"], env, get_public_key_fn=get_pubkey)
+        assert ack.status == "delivered", f"Ack rejected: {ack.error_code} - {ack.error_message}"
+
+    # Attempt 13th turn-consuming envelope -> must be rejected with TURN_LIMIT_EXCEEDED
+    payload13 = {"proposal_text": "Turn 13 excessive"}
+    env13 = {
+        "schema_version": "1.1",
+        "protocol_version": "1.1",
+        "session_id": sess_id,
+        "sequence": alice_seq,
+        "actor_username": "alice",
+        "actor_agent_id": "alice_agent",
+        "timestamp": now_str,
+        "kind": MessageKind.PROPOSAL.value,
+        "content_hash": compute_content_hash(payload13),
+        "payload": payload13,
+    }
+    env13["signature"] = sign_envelope(env13, alice_node["ed_priv"])
+    ack13 = ingest_envelope(alice_node["conn"], alice_node["vault_key"], env13, get_public_key_fn=get_pubkey)
+
+    assert ack13.status == "rejected"
+    assert ack13.error_code == "TURN_LIMIT_EXCEEDED"
+
+
+def test_retry_queue_exponential_backoff_numeric_sequence(alice_node):
+    """Test 1.3: retry_outbound_queue backoff sequence asserts exact numbers: 10s, 20s, 40s, 80s... capped at 3600s."""
+    from kin.transport.v11 import _iso_now
+
+    conn = alice_node["conn"]
+    vault_key = alice_node["vault_key"]
+
+    t0 = datetime.datetime(2026, 7, 22, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    now_str = _iso_now(t0)
+
+    conn.execute(
+        """\
+        INSERT INTO sessions (
+            session_id, type, initiator_username, receiver_username, status, turn_limit, created_at, updated_at
+        ) VALUES ('sess_backoff', 'ask', 'alice', 'bob', 'sent', 12, ?, ?)
+        """,
+        (now_str, now_str),
+    )
+
+    from kin.storage.vault import encrypt_field
+    env_enc = encrypt_field(vault_key, json.dumps({"session_id": "sess_backoff", "sequence": 1}))
+    conn.execute(
+        """\
+        INSERT INTO outbound_envelope_queue (
+            queue_id, session_id, sequence, recipient_username, envelope_kind,
+            envelope_json_enc, delivery_state, attempt_count, next_retry_at, created_at, updated_at
+        ) VALUES ('q_backoff', 'sess_backoff', 1, 'bob', 'task_request', ?, 'pending', 0, ?, ?, ?)
+        """,
+        (env_enc, now_str, now_str, now_str),
+    )
+    conn.commit()
+
+    _add_verified_contact(conn, "bob", "00" * 32, "00" * 32, "http://unreachable-peer")
+
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.side_effect = httpx.RequestError("Connection refused")
+
+    # Sequence of expected backoff delays (in seconds) for attempts 1..4
+    # Formula: min(3600, 10 * 2^(attempts-1))
+    expected_delays = [10, 20, 40, 80]
+    current_time = t0
+
+    for idx, expected_delay in enumerate(expected_delays, start=1):
+        retry_outbound_queue(conn, vault_key, now=current_time, http_client=mock_client)
+        cur = conn.cursor()
+        cur.execute("SELECT attempt_count, next_retry_at FROM outbound_envelope_queue WHERE queue_id = 'q_backoff'")
+        att_cnt, next_retry_str = cur.fetchone()
+        assert att_cnt == idx
+        expected_next = current_time + datetime.timedelta(seconds=expected_delay)
+        expected_next_str = _iso_now(expected_next)
+        assert next_retry_str == expected_next_str
+        current_time = expected_next
+
+    # Fast-forward to attempt 10 (should be capped at 3600s)
+    conn.execute("UPDATE outbound_envelope_queue SET attempt_count = 9, next_retry_at = ? WHERE queue_id = 'q_backoff'", (_iso_now(current_time),))
+    conn.commit()
+
+    retry_outbound_queue(conn, vault_key, now=current_time, http_client=mock_client)
+    cur = conn.cursor()
+    cur.execute("SELECT attempt_count, next_retry_at FROM outbound_envelope_queue WHERE queue_id = 'q_backoff'")
+    att_cnt, next_retry_str = cur.fetchone()
+    assert att_cnt == 10
+    expected_next = current_time + datetime.timedelta(seconds=3600)
+    assert next_retry_str == _iso_now(expected_next)
+
+
+def test_receiver_agent_substitution_on_accept(alice_node, bob_node):
+    """Test 1.3: When Bob accepts with a different agent_id than requested, sessions.receiver_agent_id updates and is snapshotted."""
+    _add_verified_contact(alice_node["conn"], "bob", bob_node["ed_pub"].public_bytes_raw().hex(), bob_node["x255_pub"].hex(), "http://bob-node")
+    _add_verified_contact(bob_node["conn"], "alice", alice_node["ed_pub"].public_bytes_raw().hex(), alice_node["x255_pub"].hex(), "http://alice-node")
+
+    # Register bob_specialized_scout on Bob's node DB so it's valid and enabled
+    register_card(bob_node["conn"], bob_node["vault_key"], _make_agent_card("bob_specialized_scout", "Bob Specialized Scout"))
+    bob_node["conn"].execute("UPDATE agents SET enabled = 1 WHERE agent_id = 'bob_specialized_scout'")
+    bob_node["conn"].commit()
+
+    # Initial dispatch from Alice requesting receiver_agent_id = "bob_default_agent"
+    sess_id = "sess_subst_1"
+    now_str = "2026-07-22T12:00:00Z"
+    alice_node["conn"].execute(
+        """\
+        INSERT INTO sessions (
+            session_id, type, initiator_username, receiver_username, status,
+            sender_agent_id, receiver_agent_id, turn_limit, created_at, updated_at
+        ) VALUES (?, 'ask', 'alice', 'bob', 'delivered', 'alice_agent', 'bob_default_agent', 12, ?, ?)
+        """,
+        (sess_id, now_str, now_str),
+    )
+    bob_node["conn"].execute(
+        """\
+        INSERT INTO sessions (
+            session_id, type, initiator_username, receiver_username, status,
+            sender_agent_id, receiver_agent_id, turn_limit, created_at, updated_at
+        ) VALUES (?, 'ask', 'alice', 'bob', 'peer_review', 'alice_agent', 'bob_default_agent', 12, ?, ?)
+        """,
+        (sess_id, now_str, now_str),
+    )
+    alice_node["conn"].commit()
+    bob_node["conn"].commit()
+
+    # Bob responds with ACCEPTANCE specifying a different chosen agent_id = "bob_specialized_scout"
+    acc_res = respond_to_session(
+        bob_node["conn"],
+        bob_node["vault_key"],
+        owner_identity_key=bob_node["ed_priv"],
+        owner_x25519_privkey=bob_node["x255_priv"],
+        owner_username="bob",
+        session_id=sess_id,
+        decision="accept",
+        accepting_agent_id="bob_specialized_scout",
+    )
+    assert acc_res["status"] == "processed"
+
+    def get_pubkey(un):
+        return alice_node["ed_pub"] if un == "alice" else bob_node["ed_pub"]
+
+    # Retrieve acceptance envelope and ingest into Alice's DB
+    bob_cur = bob_node["conn"].cursor()
+    bob_cur.execute("SELECT payload_json, signature, sequence FROM session_events WHERE session_id = ? AND kind = 'acceptance'", (sess_id,))
+    row = bob_cur.fetchone()
+    enc_payload, sig, seq = row
+    from kin.storage.vault import decrypt_field
+    dec_payload = decrypt_field(bob_node["vault_key"], enc_payload)
+    payload_dict = json.loads(dec_payload)
+
+    acc_env = {
+        "schema_version": "1.1",
+        "protocol_version": "1.1",
+        "session_id": sess_id,
+        "sequence": seq,
+        "actor_username": "bob",
+        "actor_agent_id": "bob_specialized_scout",
+        "timestamp": now_str,
+        "kind": MessageKind.ACCEPTANCE.value,
+        "content_hash": compute_content_hash(payload_dict),
+        "payload": payload_dict,
+    }
+    acc_env["signature"] = sign_envelope(acc_env, bob_node["ed_priv"])
+
+    ing_ack = ingest_envelope(alice_node["conn"], alice_node["vault_key"], acc_env, get_public_key_fn=get_pubkey)
+    assert ing_ack.status == "delivered", f"Ingest rejected: {ing_ack.error_code} - {ing_ack.error_message}"
+
+    # Assert sessions.receiver_agent_id on BOTH Alice's and Bob's DB is updated to "bob_specialized_scout"
+    cur_a = alice_node["conn"].cursor()
+    cur_a.execute("SELECT receiver_agent_id FROM sessions WHERE session_id = ?", (sess_id,))
+    assert cur_a.fetchone()[0] == "bob_specialized_scout"
+
+    cur_b = bob_node["conn"].cursor()
+    cur_b.execute("SELECT receiver_agent_id FROM sessions WHERE session_id = ?", (sess_id,))
+    assert cur_b.fetchone()[0] == "bob_specialized_scout"
+
+    # Assert reconstructed SessionState snapshots the substituted receiver_agent_id
+    from kin.session.reducer import reconstruct_session_state
+    state_a = reconstruct_session_state(alice_node["conn"], alice_node["vault_key"], sess_id)
+    assert state_a.participants["bob"].agent_id == "bob_specialized_scout"
+
+
 
 
 

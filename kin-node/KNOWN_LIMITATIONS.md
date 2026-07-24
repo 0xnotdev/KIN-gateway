@@ -43,3 +43,25 @@ This document tracks known design and implementation limitations in current M0/M
 - **Current Behavior**: `SessionEvent` Pydantic model enforces `schema_version: Literal["1.1"] = "1.1"` and `protocol_version: Literal["1.1"] = "1.1"` at the Python validation layer before database insertion.
 - **Limitation**: `session_events` SQLite table does not contain dedicated `schema_version` or `protocol_version` columns; versioning is implicitly anchored at the table level by Migration 0002 (`v11_session_records`).
 - **Resolution Plan**: Validation-layer enforcement guarantees contract compliance on all constructed `SessionEvent` objects without duplicating static constant columns in the SQLite database rows.
+
+---
+
+## Milestone M3
+
+### 7. Outbound Delivery & Retry Queue Backoff Constants
+- **Behavior**: Pending outbound session envelopes are queued in `outbound_envelope_queue` and retried via `retry_outbound_queue()` using exponential backoff formula: `min(3600, 10 * (2 ** (attempt_count - 1)))`.
+- **Constants**: The retry sequence evaluates to 10s, 20s, 40s, 80s, ..., capped at a maximum 3600s (1 hour) interval. Moot items belonging to sessions in terminal states (`completed`, `failed`, `cancelled`, `expired`, `declined`) are automatically marked `'abandoned'` during queue sweeps.
+
+### 8. Relay Blind-Forwarding & Plaintext Confidentiality
+- **Behavior**: The encrypted relay mailbox (`kin-relay`) receives, stores, and forwards opaque X25519 ciphertext payloads.
+- **Guarantees**: The relay server never sees plaintext session objectives, collaboration modes, proposals, or unencrypted payload JSON. Inspection unit tests (`test_relay_mailbox_never_sees_plaintext`) verify that raw relay mailbox stores contain only opaque ciphertext bytes and routing metadata (`sender_username`, `recipient_username`).
+
+### 9. Peer Capability Negotiation & Fallback Behavior
+- **Behavior**: Direct session dispatch (`dispatch_session`) fetches live peer capability advertisements via `GET /v1.1/capabilities`.
+- **Fallback**: If the peer's direct endpoint is unreachable but a cached `CapabilityAdvertisement` exists in `peer_capabilities` table with age <= 72 hours, dispatch falls back to the cached advertisement and routes via encrypted relay mailbox. If no cached advertisement exists or if the cache is older than 72 hours, dispatch refuses outright (`CapabilityMismatchError`).
+
+### 10. Defects Found & Fixed During Close-Out Review
+During the formal Milestone M3 close-out review, three live runtime defects were identified and resolved prior to milestone sign-off:
+1. **Missing `ed25519` Import in `kin/node/routes.py`**: `ed25519` was referenced in `get_contact_pubkey` closures inside `get_published_agent_cards` and `process_v11_session_envelope` but missing at module level. Added `from cryptography.hazmat.primitives.asymmetric import ed25519`.
+2. **`list_cards()` Missing `include_disabled` & Published Card Data**: `list_cards()` lacked filtering on `enabled` and did not return `published_card_json`. Added `include_disabled: bool = False` parameter (preserving default behavior for existing CLI callers) and added `published_card_json` and parsed `published_card` dict to returned items. Updated `get_published_agent_cards` in `routes.py` to correctly extract published card projections.
+3. **Standing Fastapi `TestClient` Coverage Requirement**: Added mandatory project rule in `README.md` requiring every route under `kin/node/routes.py` to be exercised via a real `fastapi.testclient.TestClient` call. Added real `TestClient` route tests for `POST /v1.1/sessions` and `GET /v1.1/agents/cards`, catching all route-level import and contract defects.
