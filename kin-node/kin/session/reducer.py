@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -342,3 +343,80 @@ def process_owner_command(
         events=state.events,
     )
     return ReducerResult(success=True, new_state=updated_state)
+
+
+def reconstruct_session_state(
+    conn: sqlite3.Connection,
+    vault_key: bytes,
+    session_id: str,
+) -> SessionState | None:
+    """Reconstruct a full SessionState object from local storage (sessions + session_events).
+
+    Returns:
+        SessionState with restored actor_sequences, participants, current_turn, status,
+        or None if session_id is not found in database.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """\
+        SELECT session_id, initiator_username, receiver_username, status,
+               sender_agent_id, receiver_agent_id, turn_limit
+        FROM sessions WHERE session_id = ?
+        """,
+        (session_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+
+    (
+        sess_id,
+        init_un,
+        rec_un,
+        status,
+        sender_agent_id,
+        receiver_agent_id,
+        turn_limit,
+    ) = row
+
+    participants: dict[str, ParticipantInfo] = {}
+    if init_un:
+        participants[init_un] = ParticipantInfo(
+            agent_id=sender_agent_id or init_un, role="owner"
+        )
+    if rec_un:
+        participants[rec_un] = ParticipantInfo(
+            agent_id=receiver_agent_id or rec_un, role="owner"
+        )
+
+    cur.execute(
+        """\
+        SELECT actor_username, MAX(sequence) FROM session_events
+        WHERE session_id = ? AND sequence IS NOT NULL
+        GROUP BY actor_username
+        """,
+        (session_id,),
+    )
+    actor_sequences: dict[str, int] = {}
+    for un, max_seq in cur.fetchall():
+        if un and max_seq is not None:
+            actor_sequences[un] = int(max_seq)
+
+    turn_kinds = [k.value for k in TURN_CONSUMING_KINDS]
+    placeholders = ",".join("?" * len(turn_kinds))
+    cur.execute(
+        f"SELECT COUNT(*) FROM session_events WHERE session_id = ? AND kind IN ({placeholders})",
+        [session_id, *turn_kinds],
+    )
+    current_turn = cur.fetchone()[0] or 0
+
+    return SessionState(
+        session_id=sess_id,
+        initiator_username=init_un,
+        receiver_username=rec_un,
+        status=status,
+        current_turn=current_turn,
+        max_turns=turn_limit or 12,
+        actor_sequences=actor_sequences,
+        participants=participants,
+    )

@@ -25,19 +25,21 @@ def test_fresh_profile(tmp_path: Path) -> None:
     report = run_migrations(conn)
 
     assert not report.errors
-    assert report.applied == [1, 2, 3]
+    assert report.applied == [1, 2, 3, 4, 5]
     assert report.starting_version == 0
-    assert report.ending_version == 3
+    assert report.ending_version == 5
     assert set(report.applied).isdisjoint(set(report.skipped))
 
     # Check schema_migrations table
     cur = conn.cursor()
     cur.execute("SELECT version, name FROM schema_migrations ORDER BY version ASC")
     rows = cur.fetchall()
-    assert len(rows) == 3
+    assert len(rows) == 5
     assert rows[0] == (1, "v1_baseline")
     assert rows[1] == (2, "v11_session_records")
     assert rows[2] == (3, "v11_agent_registry_extensions")
+    assert rows[3] == (4, "v11_transport_and_queue")
+    assert rows[4] == (5, "v11_session_column_renames")
     conn.close()
 
 
@@ -73,7 +75,9 @@ def test_legacy_v1_profile(tmp_path: Path) -> None:
     assert 1 in report.applied
     assert 2 in report.applied
     assert 3 in report.applied
-    assert report.ending_version == 3
+    assert 4 in report.applied
+    assert 5 in report.applied
+    assert report.ending_version == 5
     assert set(report.applied).isdisjoint(set(report.skipped))
 
     # Assert legacy data remains byte-for-byte unchanged in content
@@ -96,16 +100,16 @@ def test_idempotency(tmp_path: Path) -> None:
     conn = get_connection(db_path)
 
     report1 = run_migrations(conn)
-    assert report1.applied == [1, 2, 3]
+    assert report1.applied == [1, 2, 3, 4, 5]
     assert report1.skipped == []
     assert set(report1.applied).isdisjoint(set(report1.skipped))
 
     report2 = run_migrations(conn)
     assert not report2.errors
     assert report2.applied == []
-    assert report2.skipped == [1, 2, 3]
-    assert report2.starting_version == 3
-    assert report2.ending_version == 3
+    assert report2.skipped == [1, 2, 3, 4, 5]
+    assert report2.starting_version == 5
+    assert report2.ending_version == 5
     assert set(report2.applied).isdisjoint(set(report2.skipped))
 
     conn.close()
@@ -258,7 +262,7 @@ def test_migrate_profile_isolation(tmp_path: Path, monkeypatch) -> None:
     conn_b.execute(
         """\
         INSERT INTO sessions (
-            session_id, type, owner_username, peer_username, status, turn_limit, created_at, updated_at
+            session_id, type, initiator_username, receiver_username, status, turn_limit, created_at, updated_at
         ) VALUES ('bob-sess-1', 'collaborative', 'bob', 'charlie', 'active', 12, '2026-07-22T12:00:00Z', '2026-07-22T12:00:00Z')
         """
     )
@@ -309,3 +313,47 @@ def test_ordinary_command_refuses_legacy_profile(tmp_path: Path, monkeypatch) ->
     # Now ordinary CLI command works normally
     normal_result = runner.invoke(app, ["--profile", "legacypath", "tasks"])
     assert normal_result.exit_code == 0
+
+
+def test_migration_0005_upgrade_path(tmp_path: Path) -> None:
+    """Assert a database migrated through 1-4 under old column names upgrades forward-only to 5 without checksum drift."""
+    db_path = tmp_path / "kin_m4.db"
+    conn = get_connection(db_path)
+
+    # Manually apply migrations 1-4 using original SQL definitions
+    conn.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL, checksum TEXT NOT NULL)")
+    for m in ALL_MIGRATIONS[:4]:
+        if m.up_fn:
+            m.up_fn(conn)
+        else:
+            conn.executescript(m.up_sql)
+        now_str = "2026-07-22T12:00:00Z"
+        conn.execute(
+            "INSERT INTO schema_migrations (version, name, applied_at, checksum) VALUES (?, ?, ?, ?)",
+            (m.version, m.name, now_str, m.checksum),
+        )
+        conn.commit()
+
+    # Seed data into sessions under original column names owner_username / peer_username
+    conn.execute(
+        """\
+        INSERT INTO sessions (
+            session_id, type, owner_username, peer_username, status, turn_limit, created_at, updated_at
+        ) VALUES ('s_mig5', 'ask', 'alice', 'bob', 'active', 12, '2026-07-22T12:00:00Z', '2026-07-22T12:00:00Z')
+        """
+    )
+    conn.commit()
+
+    # Run migrations — should apply ONLY migration 5
+    report = run_migrations(conn)
+    assert not report.errors
+    assert report.applied == [5]
+    assert report.skipped == [1, 2, 3, 4]
+
+    # Verify column rename succeeded and preserved data
+    cur = conn.cursor()
+    cur.execute("SELECT session_id, initiator_username, receiver_username, status FROM sessions WHERE session_id = 's_mig5'")
+    row = cur.fetchone()
+    assert row == ("s_mig5", "alice", "bob", "active")
+    conn.close()
+

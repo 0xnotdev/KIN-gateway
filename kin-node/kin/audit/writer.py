@@ -62,6 +62,66 @@ def write_audit_event(
     return audit_id
 
 
+def check_sequence_conflict(
+    conn: sqlite3.Connection,
+    vault_key: bytes,
+    *,
+    session_id: str,
+    actor_username: str,
+    sequence: int,
+    payload: Any,
+) -> tuple[str, str | None]:
+    """Evaluate incoming sequence against stored session_events.
+
+    Returns:
+        ("new", None) if sequence is not yet stored.
+        ("duplicate", existing_event_id) if sequence is stored and content hash matches. Audit event recorded.
+        ("conflict", existing_event_id) if sequence is stored and content hash differs. Audit event recorded.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """\
+        SELECT event_id, payload_json FROM session_events
+        WHERE session_id = ? AND actor_username = ? AND sequence = ?
+        """,
+        (session_id, actor_username, sequence),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return ("new", None)
+
+    existing_event_id, existing_enc_payload = row
+    existing_dec_payload = decrypt_field(vault_key, existing_enc_payload)
+
+    incoming_hash = _canonical_payload_hash(payload)
+    existing_hash = _canonical_payload_hash(existing_dec_payload)
+
+    if incoming_hash == existing_hash:
+        write_audit_event(
+            conn,
+            vault_key,
+            category="duplicate_delivery",
+            session_id=session_id,
+            actor_username=actor_username,
+            summary=f"Duplicate envelope sequence {sequence} received for session {session_id}",
+            payload={"sequence": sequence, "existing_event_id": existing_event_id},
+            correlation_id=session_id,
+        )
+        return ("duplicate", existing_event_id)
+    else:
+        write_audit_event(
+            conn,
+            vault_key,
+            category="security_rejection",
+            session_id=session_id,
+            actor_username=actor_username,
+            summary=f"Sequence reuse mismatch: sequence {sequence} received with different content for session {session_id}",
+            payload={"sequence": sequence, "existing_event_id": existing_event_id},
+            correlation_id=session_id,
+        )
+        return ("conflict", existing_event_id)
+
+
 def append_session_event(
     conn: sqlite3.Connection,
     vault_key: bytes,
@@ -84,45 +144,18 @@ def append_session_event(
     cur = conn.cursor()
 
     if sequence is not None:
-        cur.execute(
-            """\
-            SELECT event_id, payload_json FROM session_events
-            WHERE session_id = ? AND actor_username = ? AND sequence = ?
-            """,
-            (session_id, actor_username, sequence),
+        status_kind, existing_id = check_sequence_conflict(
+            conn,
+            vault_key,
+            session_id=session_id,
+            actor_username=actor_username,
+            sequence=sequence,
+            payload=payload,
         )
-        row = cur.fetchone()
-        if row is not None:
-            existing_event_id, existing_enc_payload = row
-            existing_dec_payload = decrypt_field(vault_key, existing_enc_payload)
-            
-            incoming_hash = _canonical_payload_hash(payload)
-            existing_hash = _canonical_payload_hash(existing_dec_payload)
-
-            if incoming_hash == existing_hash:
-                write_audit_event(
-                    conn,
-                    vault_key,
-                    category="duplicate_delivery",
-                    session_id=session_id,
-                    actor_username=actor_username,
-                    summary=f"Duplicate envelope sequence {sequence} received for session {session_id}",
-                    payload={"sequence": sequence, "existing_event_id": existing_event_id},
-                    correlation_id=session_id,
-                )
-                return {"status": "duplicate", "event_id": existing_event_id}
-            else:
-                write_audit_event(
-                    conn,
-                    vault_key,
-                    category="security_rejection",
-                    session_id=session_id,
-                    actor_username=actor_username,
-                    summary=f"Sequence reuse mismatch: sequence {sequence} received with different content for session {session_id}",
-                    payload={"sequence": sequence, "existing_event_id": existing_event_id},
-                    correlation_id=session_id,
-                )
-                return {"status": "rejected", "error_code": "SEQUENCE_REUSE_MISMATCH"}
+        if status_kind == "duplicate":
+            return {"status": "duplicate", "event_id": existing_id}
+        elif status_kind == "conflict":
+            return {"status": "rejected", "error_code": "SEQUENCE_REUSE_MISMATCH"}
 
     # Assign next monotonic event_order
     cur.execute(

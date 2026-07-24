@@ -34,7 +34,7 @@ def test_at_rest_inspection(tmp_path: Path, monkeypatch) -> None:
     conn.execute(
         """\
         INSERT INTO sessions (
-            session_id, type, owner_username, peer_username, status, objective,
+            session_id, type, initiator_username, receiver_username, status, objective,
             participant_snapshot_json, turn_limit, created_at, updated_at, terminal_result_json
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,

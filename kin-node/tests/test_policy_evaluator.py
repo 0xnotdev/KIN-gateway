@@ -254,7 +254,7 @@ def test_persistence_evaluate_action_for_session(test_db, default_card):
     test_db.execute(
         """\
         INSERT INTO sessions (
-            session_id, type, owner_username, peer_username, status, turn_limit, created_at, updated_at
+            session_id, type, initiator_username, receiver_username, status, turn_limit, created_at, updated_at
         ) VALUES (?, 'collaborative', 'alice', 'bob', 'active', 12, ?, ?)
         """,
         (sess_id, now, now),
@@ -293,7 +293,7 @@ def test_record_approval_decision_write_path(test_db, default_card):
 
     # Create sessions row for foreign key
     test_db.execute(
-        "INSERT INTO sessions (session_id, type, owner_username, peer_username, status, turn_limit, created_at, updated_at) "
+        "INSERT INTO sessions (session_id, type, initiator_username, receiver_username, status, turn_limit, created_at, updated_at) "
         "VALUES (?, 'collaborative', 'alice', 'bob', 'active', 12, ?, ?)",
         (sess_id, now, now),
     )

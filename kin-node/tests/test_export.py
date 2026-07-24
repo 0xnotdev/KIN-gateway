@@ -25,7 +25,7 @@ def test_golden_markdown_json_fixtures(tmp_path: Path) -> None:
     conn.execute(
         """\
         INSERT INTO sessions (
-            session_id, type, owner_username, peer_username, status, objective,
+            session_id, type, initiator_username, receiver_username, status, objective,
             sender_agent_id, receiver_agent_id, participant_snapshot_json,
             turn_limit, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -77,7 +77,7 @@ def test_event_ordering(tmp_path: Path) -> None:
     conn.execute(
         """\
         INSERT INTO sessions (
-            session_id, type, owner_username, peer_username, status,
+            session_id, type, initiator_username, receiver_username, status,
             turn_limit, created_at, updated_at
         ) VALUES ('sess-order', 'collaborative', 'alice', 'bob', 'active', 12, '2026-07-22T12:00:00Z', '2026-07-22T12:00:00Z')
         """
@@ -129,7 +129,7 @@ def test_redaction(tmp_path: Path) -> None:
     conn.execute(
         """\
         INSERT INTO sessions (
-            session_id, type, owner_username, peer_username, status,
+            session_id, type, initiator_username, receiver_username, status,
             turn_limit, created_at, updated_at
         ) VALUES ('sess-redact', 'collaborative', 'alice', 'bob', 'active', 12, '2026-07-22T12:00:00Z', '2026-07-22T12:00:00Z')
         """

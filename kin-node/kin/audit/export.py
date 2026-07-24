@@ -21,7 +21,7 @@ def export_session(
     cur = conn.cursor()
     cur.execute(
         """\
-        SELECT session_id, type, owner_username, peer_username, status, objective,
+        SELECT session_id, type, initiator_username, receiver_username, status, objective,
                sender_agent_id, receiver_agent_id, participant_snapshot_json,
                turn_limit, created_at, updated_at, terminal_result_json
         FROM sessions WHERE session_id = ?
@@ -33,7 +33,7 @@ def export_session(
         raise ValueError(f"Session not found: {session_id}")
 
     (
-        s_id, s_type, owner, peer, status, enc_obj,
+        s_id, s_type, init_un, rec_un, status, enc_obj,
         sender_agent, receiver_agent, enc_part_snap,
         turn_limit, created_at, updated_at, enc_term_res
     ) = session_row
@@ -55,8 +55,8 @@ def export_session(
     session_meta = {
         "session_id": s_id,
         "type": s_type,
-        "owner_username": owner,
-        "peer_username": peer,
+        "initiator_username": init_un,
+        "receiver_username": rec_un,
         "status": status,
         "objective": dec_obj,
         "sender_agent_id": sender_agent,
@@ -136,8 +136,8 @@ def export_session(
         lines = [
             f"# Session Transcript: {session_id}",
             f"- **Type**: {s_type}",
-            f"- **Owner**: {owner}",
-            f"- **Peer**: {peer}",
+            f"- **Initiator**: {init_un}",
+            f"- **Receiver**: {rec_un}",
             f"- **Status**: {status}",
             f"- **Objective**: {dec_obj or 'N/A'}",
             f"- **Created At**: {created_at}",

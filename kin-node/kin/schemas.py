@@ -472,6 +472,8 @@ class TransportAcknowledgement(BaseModel):
     status: Literal["delivered", "queued", "rejected"]
     received_at: str
     verified_hash: str
+    error_code: str | None = None
+    error_message: str | None = None
 
     @field_validator("received_at")
     @classmethod

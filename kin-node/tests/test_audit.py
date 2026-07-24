@@ -21,7 +21,7 @@ def test_immutability(tmp_path: Path) -> None:
     conn.execute(
         """\
         INSERT INTO sessions (
-            session_id, type, owner_username, peer_username, status,
+            session_id, type, initiator_username, receiver_username, status,
             turn_limit, created_at, updated_at
         ) VALUES ('sess-imm', 'collaborative', 'alice', 'bob', 'active', 12, '2026-07-22T12:00:00Z', '2026-07-22T12:00:00Z')
         """
@@ -78,7 +78,7 @@ def test_duplicate_delivery(tmp_path: Path) -> None:
     conn.execute(
         """\
         INSERT INTO sessions (
-            session_id, type, owner_username, peer_username, status,
+            session_id, type, initiator_username, receiver_username, status,
             turn_limit, created_at, updated_at
         ) VALUES ('sess-dup', 'collaborative', 'alice', 'bob', 'active', 12, '2026-07-22T12:00:00Z', '2026-07-22T12:00:00Z')
         """

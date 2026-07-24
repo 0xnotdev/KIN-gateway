@@ -611,5 +611,95 @@ async def get_task_status(
 
 
 # ---------------------------------------------------------------------------
-# Section 4.4 — Fetch anything waiting at the relay
+# V1.1 Transport Routes (Milestone M3)
 # ---------------------------------------------------------------------------
+
+@router.get("/v1.1/capabilities")
+async def get_v11_capabilities() -> JSONResponse:
+    from kin.schemas import CapabilityAdvertisement
+    ad = CapabilityAdvertisement(
+        protocol_version="1.1",
+        supported_features=["session_v1", "jcs_signatures", "vault_gcm", "direct_transport", "relay_fallback"],
+        max_turn_limit=12,
+    )
+    return JSONResponse(status_code=200, content=ad.model_dump(mode="json"))
+
+
+@router.get("/v1.1/agents/cards")
+async def get_published_agent_cards(
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> JSONResponse:
+    from kin.identity.auth import verify_signed_auth_headers
+    from kin.agent_registry.registry import list_cards
+
+    def get_contact_pubkey(un: str) -> ed25519.Ed25519PublicKey | None:
+        cur = conn.cursor()
+        cur.execute("SELECT public_key, fingerprint_verified_at FROM contacts WHERE username = ?", (un,))
+        row = cur.fetchone()
+        if row and row[0] and row[1]:
+            return ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(row[0]))
+        return None
+
+    ok, auth_username, err_msg = verify_signed_auth_headers(dict(request.headers), get_contact_pubkey)
+    if not ok:
+        return JSONResponse(status_code=403, content={"detail": err_msg or "Unauthorized agent card request"})
+
+    cur = conn.cursor()
+    cur.execute("SELECT username FROM identity LIMIT 1")
+    owner_row = cur.fetchone()
+    owner_username = owner_row[0] if owner_row else "unknown"
+
+    cards = list_cards(conn, include_disabled=False)
+    pub_cards = []
+    for c in cards:
+        if c.get("published_card_json"):
+            pub_cards.append(json.loads(c["published_card_json"]))
+
+    return JSONResponse(status_code=200, content={"schema_version": "1.1", "owner_username": owner_username, "cards": pub_cards})
+
+
+@router.post("/v1.1/sessions")
+async def process_v11_session_envelope(
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> JSONResponse:
+    from kin.transport.v11 import ingest_envelope
+    from kin.storage.vault import get_or_create_vault_key
+
+    raw_body = await request.json()
+    profile_name = getattr(request.app.state, "profile_name", "default")
+
+    try:
+        vault_key = get_or_create_vault_key(profile_name)
+    except Exception:
+        vault_key = b"0" * 32
+
+    def get_contact_pubkey(un: str) -> ed25519.Ed25519PublicKey | None:
+        cur = conn.cursor()
+        cur.execute("SELECT public_key FROM identity WHERE username = ?", (un,))
+        row = cur.fetchone()
+        if row and row[0]:
+            return ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(row[0]))
+        cur.execute("SELECT public_key, fingerprint_verified_at FROM contacts WHERE username = ?", (un,))
+        row = cur.fetchone()
+        if row and row[0] and row[1]:
+            return ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(row[0]))
+        return None
+
+    ack = ingest_envelope(conn, vault_key, raw_body, get_contact_pubkey)
+
+    if ack.status == "rejected":
+        code = ack.error_code
+        status_code = 400
+        if code in ("INVALID_SIGNATURE", "PUBLIC_KEY_NOT_FOUND"):
+            status_code = 401
+        elif code in ("UNPAIRED_SENDER", "UNAUTHORIZED_ACTOR", "UNAUTHORIZED_AGENT", "UNAUTHORIZED_ROLE_ACTION"):
+            status_code = 403
+        elif code in ("DUPLICATE_SEQUENCE", "OUT_OF_ORDER_SEQUENCE", "INVALID_STATE_TRANSITION", "TERMINAL_STATE_IMMUTABLE"):
+            status_code = 409
+
+        return JSONResponse(status_code=status_code, content=ack.model_dump(mode="json"))
+
+    return JSONResponse(status_code=200, content=ack.model_dump(mode="json"))
+

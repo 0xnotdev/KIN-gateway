@@ -26,7 +26,7 @@ def test_session_recovery_from_db(tmp_path: Path) -> None:
     conn1.execute(
         """\
         INSERT INTO sessions (
-            session_id, type, owner_username, peer_username, status, objective,
+            session_id, type, initiator_username, receiver_username, status, objective,
             sender_agent_id, receiver_agent_id, participant_snapshot_json,
             turn_limit, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -68,7 +68,7 @@ def test_session_recovery_from_db(tmp_path: Path) -> None:
     cur = conn2.cursor()
     cur.execute(
         """\
-        SELECT session_id, type, owner_username, peer_username, status, objective,
+        SELECT session_id, type, initiator_username, receiver_username, status, objective,
                sender_agent_id, receiver_agent_id, turn_limit, created_at, updated_at
         FROM sessions WHERE session_id = ?
         """,
@@ -111,3 +111,59 @@ def test_session_recovery_from_db(tmp_path: Path) -> None:
     assert json.loads(dec_ev_payload)["action"] == "queued_delivery"
 
     conn2.close()
+
+
+def test_session_state_reconstruction_from_db(tmp_path: Path) -> None:
+    """Assert reconstruct_session_state restores full SessionState matching in-memory execution."""
+    from kin.session.reducer import reconstruct_session_state, process_peer_envelope, SessionState, ParticipantInfo
+
+    db_path = tmp_path / "kin_recov.db"
+    vault_key = b"\x07" * 32
+    conn = get_connection(db_path)
+    create_schema(conn)
+
+    session_id = "sess-full-recov"
+    conn.execute(
+        """\
+        INSERT INTO sessions (
+            session_id, type, initiator_username, receiver_username, status,
+            sender_agent_id, receiver_agent_id, turn_limit, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '2026-07-24T00:00:00Z', '2026-07-24T00:00:00Z')
+        """,
+        (session_id, "ask", "alice", "bob", "active", "alice_ag", "bob_ag", 12),
+    )
+
+    append_session_event(
+        conn,
+        vault_key,
+        session_id=session_id,
+        actor_username="alice",
+        actor_agent_id="alice_ag",
+        kind="task_request",
+        payload={"goal": "Test goal"},
+        sequence=1,
+    )
+    append_session_event(
+        conn,
+        vault_key,
+        session_id=session_id,
+        actor_username="bob",
+        actor_agent_id="bob_ag",
+        kind="acceptance",
+        payload={"reason": "Accepted"},
+        sequence=1,
+    )
+    conn.commit()
+
+    # Reconstruct from fresh query
+    state = reconstruct_session_state(conn, vault_key, session_id)
+    assert state is not None
+    assert state.session_id == session_id
+    assert state.initiator_username == "alice"
+    assert state.receiver_username == "bob"
+    assert state.status == "active"
+    assert state.current_turn == 1  # TASK_REQUEST is turn-consuming
+    assert state.actor_sequences == {"alice": 1, "bob": 1}
+    assert state.participants["alice"].agent_id == "alice_ag"
+    assert state.participants["bob"].agent_id == "bob_ag"
+    conn.close()

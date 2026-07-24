@@ -208,6 +208,38 @@ CREATE TABLE IF NOT EXISTS peer_agent_cards (
 CREATE INDEX IF NOT EXISTS idx_peer_agent_cards_status ON peer_agent_cards(status);
 """
 
+MIGRATION_0004_SQL = """\
+CREATE TABLE IF NOT EXISTS outbound_envelope_queue (
+    queue_id            TEXT PRIMARY KEY,
+    session_id          TEXT NOT NULL REFERENCES sessions(session_id),
+    sequence            INTEGER NOT NULL,
+    recipient_username  TEXT NOT NULL,
+    envelope_kind       TEXT NOT NULL,
+    envelope_json_enc   TEXT NOT NULL,
+    delivery_state      TEXT NOT NULL DEFAULT 'pending',
+    attempt_count       INTEGER NOT NULL DEFAULT 0,
+    next_retry_at       TEXT NOT NULL,
+    last_error          TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    UNIQUE(session_id, sequence, recipient_username)
+);
+CREATE INDEX IF NOT EXISTS idx_outbound_queue_pending ON outbound_envelope_queue(delivery_state, next_retry_at);
+
+ALTER TABLE sessions ADD COLUMN expires_at TEXT;
+"""
+
+MIGRATION_0005_SQL = """\
+ALTER TABLE sessions RENAME COLUMN owner_username TO initiator_username;
+ALTER TABLE sessions RENAME COLUMN peer_username TO receiver_username;
+
+CREATE TABLE IF NOT EXISTS peer_capabilities (
+    peer_username       TEXT PRIMARY KEY,
+    capability_json     TEXT NOT NULL,
+    fetched_at          TEXT NOT NULL
+);
+"""
+
 
 def _up_0001(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_0001_SQL)
@@ -221,11 +253,22 @@ def _up_0003(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_0003_SQL)
 
 
+def _up_0004(conn: sqlite3.Connection) -> None:
+    conn.executescript(MIGRATION_0004_SQL)
+
+
+def _up_0005(conn: sqlite3.Connection) -> None:
+    conn.executescript(MIGRATION_0005_SQL)
+
+
 ALL_MIGRATIONS: list[Migration] = [
     Migration(version=1, name="v1_baseline", up_sql=MIGRATION_0001_SQL, up_fn=_up_0001),
     Migration(version=2, name="v11_session_records", up_sql=MIGRATION_0002_SQL, up_fn=_up_0002),
     Migration(version=3, name="v11_agent_registry_extensions", up_sql=MIGRATION_0003_SQL, up_fn=_up_0003),
+    Migration(version=4, name="v11_transport_and_queue", up_sql=MIGRATION_0004_SQL, up_fn=_up_0004),
+    Migration(version=5, name="v11_session_column_renames", up_sql=MIGRATION_0005_SQL, up_fn=_up_0005),
 ]
+
 
 
 
