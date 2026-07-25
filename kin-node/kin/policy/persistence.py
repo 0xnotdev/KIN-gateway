@@ -124,3 +124,53 @@ def record_approval_decision(
         correlation_id=approval_decision.session_id,
     )
     conn.commit()
+
+
+def create_pending_approval(
+    conn: sqlite3.Connection,
+    vault_key: bytes,
+    approval_request: ApprovalRequest,
+    *,
+    agent_id: str,
+    action_class: ActionClass,
+    expires_at: str,
+) -> str:
+    """Insert a pending approval row (decision = NULL) into approvals table and write audit event."""
+    from kin.audit.writer import write_audit_event
+
+    req_json = approval_request.model_dump_json()
+
+    conn.execute(
+        """\
+        INSERT INTO approvals (
+            approval_id, session_id, agent_id, action_class,
+            request_json, decision, decided_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?)
+        """,
+        (
+            approval_request.approval_id,
+            approval_request.session_id,
+            agent_id,
+            action_class.value,
+            req_json,
+            expires_at,
+        ),
+    )
+
+    write_audit_event(
+        conn,
+        vault_key,
+        category="approval_request",
+        session_id=approval_request.session_id,
+        actor_username=agent_id,
+        summary=f"Pending approval request created for agent '{agent_id}' action '{action_class.value}'",
+        payload={
+            "approval_id": approval_request.approval_id,
+            "agent_id": agent_id,
+            "action_class": action_class.value,
+            "expires_at": expires_at,
+        },
+        correlation_id=approval_request.session_id,
+    )
+    conn.commit()
+    return approval_request.approval_id

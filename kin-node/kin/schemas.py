@@ -497,6 +497,8 @@ class InternalEventKind(str, Enum):
     PUBLIC_MSG = "public_msg"
     PRIVATE_NOTE = "private_note"
     OUTBOUND_ENVELOPE_QUEUED = "outbound_envelope_queued"
+    ACTIVITY = "activity"
+    ADAPTER_ERROR = "adapter_error"
 
 
 class SessionEvent(BaseModel):

@@ -248,6 +248,7 @@ def process_node_command(
         "mark_expired": "expired",
         "mark_failed": "failed",
         "mark_awaiting_peer": "awaiting_peer",
+        "mark_awaiting_owner_approval": "awaiting_owner_approval",
     }
 
     target_status = NODE_COMMAND_MAP.get(command)
