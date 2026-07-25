@@ -124,3 +124,12 @@ tests/test_v11_transport_m3.py ...............................             [ 16%
    - Should `LocalCommandAdapter` explicitly pass `preexec_fn=os.setsid` on POSIX platforms during `Popen` spawn to guarantee process group isolation even when `psutil` is absent?
 2. **Action Class Classification for Outbound Messages**:
    - Currently, outgoing turn messages (`PROPOSAL`, `COUNTERPROPOSAL`, `ANSWER`, `PLAN`, etc.) use `ActionClass.SESSION_PARTICIPATION` and `ActionClass.INFORMATIONAL_RELAY`. Should specific envelope kinds trigger granular action classes when policy evaluator checks are performed?
+
+---
+
+## 7. Defects Found & Fixed During Close-Out Review
+
+1. **Orchestrator Node Command Status Persistence Gap**:
+   - **Root Cause**: `advance_session_turn` in `kin/session/orchestrator.py` previously called `process_node_command(state, ...)` as a bare memory mutation without calling `_apply_node_command_transition` to update the `sessions` table in SQLite. Status changes (`failed`, `awaiting_owner_approval`) existed only in transient memory during that single call.
+   - **Fix**: Unified node command status persistence by importing and invoking `_apply_node_command_transition(conn, vault_key, session_id, command_name, now=now)` from `kin.transport.v11`. All status transitions now write `UPDATE sessions SET status = ...` and log structured `session_status_updated` audit events.
+   - **Verification**: Verified by `test_orchestrator_real_policy_evaluator_deny` and `test_orchestrator_real_policy_evaluator_requires_approval` in `tests/test_orchestrator_e2e.py`, which call `reconstruct_session_state()` from SQLite to confirm persistent DB status.

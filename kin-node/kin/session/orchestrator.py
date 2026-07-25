@@ -37,7 +37,7 @@ from kin.session.reducer import (
     reconstruct_session_state,
 )
 from kin.storage.vault import decrypt_field, encrypt_bytes, encrypt_field
-from kin.transport.v11 import _iso_now, ingest_envelope
+from kin.transport.v11 import _apply_node_command_transition, _iso_now, ingest_envelope
 
 
 class OrchestratorError(Exception):
@@ -161,13 +161,13 @@ def advance_session_turn(
             return {"status": "retryable_error", "error": response.error.model_dump(mode="json")}
         else:
             # Hard error -> mark session failed
-            _execute_node_command(conn, state, "mark_failed")
+            _apply_node_command_transition(conn, vault_key, session_id, "mark_failed", now=now)
             return {"status": "failed", "error": response.error.model_dump(mode="json")}
 
     # 5. Run validate_adapter_output
     val_res = validate_adapter_output(response, card, conn, vault_key, session_id)
     if not val_res.valid:
-        _execute_node_command(conn, state, "mark_failed")
+        _apply_node_command_transition(conn, vault_key, session_id, "mark_failed", now=now)
         raise OrchestratorError(f"Adapter output rejected by security validator: {val_res.rejection_reason}", code="SECURITY_REJECTION")
 
     # 6. Process Activity events (local-only observability)
@@ -213,7 +213,7 @@ def advance_session_turn(
                 create_pending_approval(
                     conn, vault_key, app_req, agent_id=local_agent_id, action_class=app_req.action_class, expires_at=exp_at
                 )
-                _execute_node_command(conn, state, "mark_awaiting_owner_approval")
+                _apply_node_command_transition(conn, vault_key, session_id, "mark_awaiting_owner_approval", now=now)
                 return {"status": "awaiting_owner_approval", "approval_id": app_req.approval_id}
 
     if response.message:
@@ -232,7 +232,7 @@ def advance_session_turn(
                 summary=f"Outbound message '{response.message.kind.value}' denied by policy.",
                 payload={"kind": response.message.kind.value},
             )
-            _execute_node_command(conn, state, "mark_failed")
+            _apply_node_command_transition(conn, vault_key, session_id, "mark_failed", now=now)
             return {"status": "failed", "reason": "Outbound message policy denial"}
         elif pol_msg_res.decision == PolicyDecision.REQUIRES_APPROVAL:
             req_id = f"app_{uuid.uuid4().hex[:12]}"
@@ -250,7 +250,7 @@ def advance_session_turn(
                 expires_at=exp_at,
             )
             create_pending_approval(conn, vault_key, app_req, agent_id=local_agent_id, action_class=msg_action_class, expires_at=exp_at)
-            _execute_node_command(conn, state, "mark_awaiting_owner_approval")
+            _apply_node_command_transition(conn, vault_key, session_id, "mark_awaiting_owner_approval", now=now)
             return {"status": "awaiting_owner_approval", "approval_id": req_id}
 
     # 8. Process Artifacts (only after all approval gating clears)
@@ -268,7 +268,7 @@ def advance_session_turn(
                 summary=msg,
                 payload={"artifact_size": len(raw_bytes), "max_bytes": max_bytes},
             )
-            _execute_node_command(conn, state, "mark_failed")
+            _apply_node_command_transition(conn, vault_key, session_id, "mark_failed", now=now)
             raise OrchestratorError(msg, code="ARTIFACT_TOO_LARGE")
 
         art_id = f"art_{uuid.uuid4().hex[:12]}"
