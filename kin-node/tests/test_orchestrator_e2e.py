@@ -195,3 +195,133 @@ def test_orchestrator_multi_turn_history_persistence(node_db):
         # Turn 2 history MUST contain turn 1's event!
         assert len(captured_requests[1].history) >= 1
         assert captured_requests[1].session["type"] == "research"
+
+
+def test_orchestrator_real_policy_evaluator_deny(node_db):
+    """Real evaluate_action_for_session integration test: DENY outbound message when card.autonomy.relay_information == NEVER."""
+    from unittest.mock import MagicMock, patch
+
+    conn = node_db["conn"]
+    vault_key = node_db["vault_key"]
+    alice_priv = node_db["priv"]
+    now_str = "2026-07-22T12:00:00Z"
+    sess_id = "s_real_pol_deny"
+
+    # Register card with relay_information = AutonomyLevel.NEVER
+    deny_card = AgentCard(
+        schema_version="1.1",
+        id="strict_agent",
+        name="Strict Agent",
+        description="Strict Agent",
+        adapter=EmbeddedAdapterConfig(type="embedded", provider="openai", model="gpt-4o"),
+        capabilities=AgentCapabilities(tags=[], accepts=[], produces=[]),
+        boundaries=AgentBoundaries(network_access="deny", filesystem="none", shell="deny", max_runtime_seconds=30, max_artifact_bytes=1048576),
+        autonomy=AgentAutonomy(relay_information=AutonomyLevel.NEVER, propose_actions=AutonomyLevel.ALWAYS_ASK, execute_local_actions=AutonomyLevel.ALWAYS_ASK),
+    )
+    register_card(conn, vault_key, deny_card)
+    conn.execute("UPDATE agents SET enabled = 1 WHERE agent_id = 'strict_agent'")
+
+    conn.execute(
+        """\
+        INSERT INTO sessions (
+            session_id, type, initiator_username, receiver_username, status,
+            sender_agent_id, receiver_agent_id, turn_limit, created_at, updated_at
+        ) VALUES (?, 'ask', 'alice', 'bob', 'active', 'strict_agent', 'bob_agent', 12, ?, ?)
+        """,
+        (sess_id, now_str, now_str),
+    )
+    conn.commit()
+
+    with patch("kin.session.orchestrator.get_adapter") as mock_get_adapter, \
+         patch("kin.session.orchestrator.validate_adapter_output") as mock_val:
+
+        mock_adapter = MagicMock()
+        mock_adapter.invoke.return_value = MagicMock(
+            error=None,
+            events=[],
+            message=MagicMock(kind=MagicMock(value="proposal"), content="Strict proposal"),
+            artifacts=[],
+            terminal=False,
+        )
+        mock_get_adapter.return_value = mock_adapter
+
+        mock_val_out = MagicMock()
+        mock_val_out.valid = True
+        mock_val.return_value = mock_val_out
+
+        # Real policy evaluator runs against strict_agent card -> returns PolicyDecision.DENY
+        res = advance_session_turn(conn, vault_key, alice_priv, "alice", sess_id)
+        assert res["status"] == "failed"
+        assert "Outbound message policy denial" in res["reason"]
+
+        state = reconstruct_session_state(conn, vault_key, sess_id)
+        assert state.status == "failed"
+
+
+def test_orchestrator_real_policy_evaluator_requires_approval(node_db):
+    """Real evaluate_action_for_session integration test: REQUIRES_APPROVAL outbound message when card.autonomy.relay_information == ALWAYS_ASK."""
+    from unittest.mock import MagicMock, patch
+
+    conn = node_db["conn"]
+    vault_key = node_db["vault_key"]
+    alice_priv = node_db["priv"]
+    now_str = "2026-07-22T12:00:00Z"
+    sess_id = "s_real_pol_ask"
+
+    # Register card with relay_information = AutonomyLevel.ALWAYS_ASK
+    ask_card = AgentCard(
+        schema_version="1.1",
+        id="cautious_agent",
+        name="Cautious Agent",
+        description="Cautious Agent",
+        adapter=EmbeddedAdapterConfig(type="embedded", provider="openai", model="gpt-4o"),
+        capabilities=AgentCapabilities(tags=[], accepts=[], produces=[]),
+        boundaries=AgentBoundaries(network_access="deny", filesystem="none", shell="deny", max_runtime_seconds=30, max_artifact_bytes=1048576),
+        autonomy=AgentAutonomy(relay_information=AutonomyLevel.ALWAYS_ASK, propose_actions=AutonomyLevel.ALWAYS_ASK, execute_local_actions=AutonomyLevel.ALWAYS_ASK),
+    )
+    register_card(conn, vault_key, ask_card)
+    conn.execute("UPDATE agents SET enabled = 1 WHERE agent_id = 'cautious_agent'")
+
+    conn.execute(
+        """\
+        INSERT INTO sessions (
+            session_id, type, initiator_username, receiver_username, status,
+            sender_agent_id, receiver_agent_id, turn_limit, created_at, updated_at
+        ) VALUES (?, 'ask', 'alice', 'bob', 'active', 'cautious_agent', 'bob_agent', 12, ?, ?)
+        """,
+        (sess_id, now_str, now_str),
+    )
+    conn.commit()
+
+    with patch("kin.session.orchestrator.get_adapter") as mock_get_adapter, \
+         patch("kin.session.orchestrator.validate_adapter_output") as mock_val:
+
+        mock_adapter = MagicMock()
+        mock_adapter.invoke.return_value = MagicMock(
+            error=None,
+            events=[],
+            message=MagicMock(kind=MagicMock(value="proposal"), content="Cautious proposal"),
+            artifacts=[],
+            terminal=False,
+        )
+        mock_get_adapter.return_value = mock_adapter
+
+        mock_val_out = MagicMock()
+        mock_val_out.valid = True
+        mock_val.return_value = mock_val_out
+
+        # Real policy evaluator runs against cautious_agent card -> returns PolicyDecision.REQUIRES_APPROVAL
+        res = advance_session_turn(conn, vault_key, alice_priv, "alice", sess_id)
+        assert res["status"] == "awaiting_owner_approval"
+        assert "approval_id" in res
+
+        state = reconstruct_session_state(conn, vault_key, sess_id)
+        assert state.status == "awaiting_owner_approval"
+
+        # Confirm pending approval row was inserted into approvals table
+        cur = conn.cursor()
+        cur.execute("SELECT approval_id, action_class FROM approvals WHERE session_id = ?", (sess_id,))
+        row = cur.fetchone()
+        assert row is not None
+        assert row[0] == res["approval_id"]
+        assert row[1] == "informational_relay"

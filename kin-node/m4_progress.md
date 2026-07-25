@@ -113,6 +113,8 @@ tests/test_v11_transport_m3.py ...............................             [ 16%
    - As explicitly documented in §2.2, `boundaries.network_access == "deny"` is not OS-level sandboxed at the kernel socket boundary when executing local command subprocesses on bare metal (without Docker/container namespaces).
 3. **SDK Adapter Out-of-Scope**:
    - SDK adapter type (`SdkAdapterConfig`) is out of scope for M4 per master spec §6.2 and raises `NotImplementedError`.
+4. **Adapter Output Regeneration on Resume**:
+   - When a turn is paused for owner approval (`awaiting_owner_approval`), any unpersisted artifacts or messages accompanying the gated response are dropped. Upon approval resume, the adapter is executed fresh in the next turn and must be capable of regenerating its output rather than relying on orchestrator response replay.
 
 ---
 
