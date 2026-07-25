@@ -112,7 +112,7 @@ kin/transport\v11.py:961:17: local variable 'last_err' is assigned to but never 
 ### New Files:
 - [kin/identity/auth.py](file:///d:/KIN/kin-node/kin/identity/auth.py): Shared Ed25519 auth header creation and verification.
 - [kin/transport/v11.py](file:///d:/KIN/kin-node/kin/transport/v11.py): Complete V1.1 transport dispatch, envelope ingestion, relay polling, queue retries, and control commands.
-- [tests/test_v11_transport_m3.py](file:///d:/KIN/kin-node/tests/test_v11_transport_m3.py): 28 transport unit tests covering direct transport, relay fallback, TestClient route handlers, P0 session types, turn limit exhaustion, backoff sequence numbers, and receiver substitution.
+- [tests/test_v11_transport_m3.py](file:///d:/KIN/kin-node/tests/test_v11_transport_m3.py): 31 collected transport test items (28 distinct test functions) covering direct transport, relay fallback, TestClient route handlers, P0 session types, turn limit exhaustion, backoff sequence numbers, and receiver substitution (including positive and negative security tests).
 
 ---
 

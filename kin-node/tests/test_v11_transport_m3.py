@@ -1228,6 +1228,126 @@ def test_receiver_agent_substitution_on_accept(alice_node, bob_node):
     assert state_a.participants["bob"].agent_id == "bob_specialized_scout"
 
 
+def test_receiver_agent_substitution_negative_cases(alice_node, bob_node):
+    """Test security invariants on receiver substitution:
+    1. Initiator cannot substitute agent_id in ACCEPTANCE or any envelope.
+    2. Receiver cannot substitute agent_id a second time after session is active.
+    """
+    _add_verified_contact(alice_node["conn"], "bob", bob_node["ed_pub"].public_bytes_raw().hex(), bob_node["x255_pub"].hex(), "http://bob-node")
+    _add_verified_contact(bob_node["conn"], "alice", alice_node["ed_pub"].public_bytes_raw().hex(), alice_node["x255_pub"].hex(), "http://alice-node")
+
+    sess_id = "sess_subst_neg"
+    now_str = "2026-07-22T12:00:00Z"
+
+    # Case 1: Initiator attempts substitution in an ACCEPTANCE envelope -> MUST fail with UNAUTHORIZED_AGENT
+    alice_node["conn"].execute(
+        """\
+        INSERT INTO sessions (
+            session_id, type, initiator_username, receiver_username, status,
+            sender_agent_id, receiver_agent_id, turn_limit, created_at, updated_at
+        ) VALUES (?, 'ask', 'alice', 'bob', 'peer_review', 'alice_agent', 'bob_default_agent', 12, ?, ?)
+        """,
+        (sess_id, now_str, now_str),
+    )
+    alice_node["conn"].commit()
+
+    def get_pubkey(un):
+        return alice_node["ed_pub"] if un == "alice" else bob_node["ed_pub"]
+
+    payload_init_subst = {"accepting_agent_id": "alice_rogue_agent"}
+    env_init_subst = {
+        "schema_version": "1.1",
+        "protocol_version": "1.1",
+        "session_id": sess_id,
+        "sequence": 1,
+        "actor_username": "alice",
+        "actor_agent_id": "alice_rogue_agent",
+        "timestamp": now_str,
+        "kind": MessageKind.ACCEPTANCE.value,
+        "content_hash": compute_content_hash(payload_init_subst),
+        "payload": payload_init_subst,
+    }
+    env_init_subst["signature"] = sign_envelope(env_init_subst, alice_node["ed_priv"])
+
+    ack1 = ingest_envelope(alice_node["conn"], alice_node["vault_key"], env_init_subst, get_public_key_fn=get_pubkey)
+    assert ack1.status == "rejected"
+    assert ack1.error_code == "UNAUTHORIZED_AGENT"
+
+    # Case 2: Session is accepted and active; receiver tries to substitute a second agent_id on PROPOSAL -> MUST fail with UNAUTHORIZED_AGENT
+    bob_node["conn"].execute(
+        """\
+        INSERT INTO sessions (
+            session_id, type, initiator_username, receiver_username, status,
+            sender_agent_id, receiver_agent_id, turn_limit, created_at, updated_at
+        ) VALUES (?, 'ask', 'alice', 'bob', 'peer_review', 'alice_agent', 'bob_default_agent', 12, ?, ?)
+        """,
+        (sess_id, now_str, now_str),
+    )
+    bob_node["conn"].commit()
+
+    # Register bob_specialized_scout on Bob's node DB so it's valid and enabled
+    register_card(bob_node["conn"], bob_node["vault_key"], _make_agent_card("bob_specialized_scout", "Bob Specialized Scout"))
+    bob_node["conn"].execute("UPDATE agents SET enabled = 1 WHERE agent_id = 'bob_specialized_scout'")
+    bob_node["conn"].commit()
+
+    acc_res = respond_to_session(
+        bob_node["conn"],
+        bob_node["vault_key"],
+        owner_identity_key=bob_node["ed_priv"],
+        owner_x25519_privkey=bob_node["x255_priv"],
+        owner_username="bob",
+        session_id=sess_id,
+        decision="accept",
+        accepting_agent_id="bob_specialized_scout",
+    )
+    assert acc_res["status"] == "processed"
+
+    # Ingest legitimate acceptance into Alice's DB
+    bob_cur = bob_node["conn"].cursor()
+    bob_cur.execute("SELECT payload_json, signature, sequence FROM session_events WHERE session_id = ? AND kind = 'acceptance'", (sess_id,))
+    row = bob_cur.fetchone()
+    enc_payload, sig, seq = row
+    from kin.storage.vault import decrypt_field
+    dec_payload = decrypt_field(bob_node["vault_key"], enc_payload)
+    payload_dict = json.loads(dec_payload)
+
+    acc_env = {
+        "schema_version": "1.1",
+        "protocol_version": "1.1",
+        "session_id": sess_id,
+        "sequence": seq,
+        "actor_username": "bob",
+        "actor_agent_id": "bob_specialized_scout",
+        "timestamp": now_str,
+        "kind": MessageKind.ACCEPTANCE.value,
+        "content_hash": compute_content_hash(payload_dict),
+        "payload": payload_dict,
+    }
+    acc_env["signature"] = sign_envelope(acc_env, bob_node["ed_priv"])
+    ing_ack = ingest_envelope(alice_node["conn"], alice_node["vault_key"], acc_env, get_public_key_fn=get_pubkey)
+    assert ing_ack.status == "delivered"
+
+    # Now Bob attempts a second substitution on a PROPOSAL envelope (actor_agent_id = "bob_third_agent")
+    payload_prop = {"proposal_text": "Second substitution attempt"}
+    env_second_subst = {
+        "schema_version": "1.1",
+        "protocol_version": "1.1",
+        "session_id": sess_id,
+        "sequence": seq + 1,
+        "actor_username": "bob",
+        "actor_agent_id": "bob_third_agent",
+        "timestamp": now_str,
+        "kind": MessageKind.PROPOSAL.value,
+        "content_hash": compute_content_hash(payload_prop),
+        "payload": payload_prop,
+    }
+    env_second_subst["signature"] = sign_envelope(env_second_subst, bob_node["ed_priv"])
+
+    ack2 = ingest_envelope(alice_node["conn"], alice_node["vault_key"], env_second_subst, get_public_key_fn=get_pubkey)
+    assert ack2.status == "rejected"
+    assert ack2.error_code == "UNAUTHORIZED_AGENT"
+
+
 
 
 
