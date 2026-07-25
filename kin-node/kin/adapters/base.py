@@ -272,4 +272,19 @@ def validate_adapter_output(
             )
         return ValidationOutcome(valid=False, rejection_reason=msg)
 
+    # 4. Check for owner-only message kinds emitted by adapter
+    if response.message and response.message.kind in (MessageKind.CANCEL, MessageKind.APPROVAL_DECISION):
+        msg = f"Adapter attempted to emit owner-only message kind '{response.message.kind.value}'."
+        if conn and vault_key and session_id:
+            write_audit_event(
+                conn,
+                vault_key,
+                category="security_rejection",
+                session_id=session_id,
+                actor_username=card.id,
+                summary=msg,
+                payload={"kind": response.message.kind.value},
+            )
+        return ValidationOutcome(valid=False, rejection_reason=msg)
+
     return ValidationOutcome(valid=True, sanitized_response=response)

@@ -18,6 +18,7 @@ from kin.schemas import (
 )
 from kin.session.orchestrator import (
     OrchestratorError,
+    advance_session_turn,
     send_status_nudge,
     tag_in_handoff,
 )
@@ -125,3 +126,60 @@ def test_orchestrator_restart_recovery(node_db):
     assert state.status == "active"
     assert state.initiator_username == "alice"
     assert state.receiver_username == "bob"
+
+
+def test_orchestrator_multi_turn_history_persistence(node_db):
+    """Test Defect 1 fix: multi-turn turn 2 receives non-empty history from turn 1."""
+    from unittest.mock import MagicMock, patch
+
+    conn = node_db["conn"]
+    vault_key = node_db["vault_key"]
+    alice_priv = node_db["priv"]
+    now_str = "2026-07-22T12:00:00Z"
+    sess_id = "s_history_multi_turn"
+
+    conn.execute(
+        """\
+        INSERT INTO sessions (
+            session_id, type, initiator_username, receiver_username, status,
+            sender_agent_id, receiver_agent_id, turn_limit, created_at, updated_at
+        ) VALUES (?, 'research', 'alice', 'bob', 'active', 'alice_agent', 'bob_agent', 12, ?, ?)
+        """,
+        (sess_id, now_str, now_str),
+    )
+    conn.commit()
+
+    captured_requests = []
+
+    def mock_invoke(req, vault_key=None):
+        captured_requests.append(req)
+        return MagicMock(
+            error=None,
+            events=[],
+            message=MagicMock(kind=MagicMock(value="proposal"), content=f"Turn {len(captured_requests)} response"),
+            artifacts=[],
+            terminal=False,
+        )
+
+    with patch("kin.session.orchestrator.get_adapter") as mock_get_adapter, \
+         patch("kin.session.orchestrator.validate_adapter_output") as mock_val:
+
+        mock_adapter = MagicMock()
+        mock_adapter.invoke.side_effect = mock_invoke
+        mock_get_adapter.return_value = mock_adapter
+
+        mock_val_out = MagicMock()
+        mock_val_out.valid = True
+        mock_val.return_value = mock_val_out
+
+        # Turn 1
+        res1 = advance_session_turn(conn, vault_key, alice_priv, "alice", sess_id)
+        assert res1["status"] == "delivered"
+        assert len(captured_requests[0].history) == 0
+
+        # Turn 2
+        res2 = advance_session_turn(conn, vault_key, alice_priv, "alice", sess_id)
+        assert res2["status"] == "delivered"
+        # Turn 2 history MUST contain turn 1's event!
+        assert len(captured_requests[1].history) >= 1
+        assert captured_requests[1].session["type"] == "research"

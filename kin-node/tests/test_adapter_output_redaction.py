@@ -82,3 +82,14 @@ def test_validate_output_secret_pattern_rejection():
     outcome = validate_adapter_output(resp, card)
     assert outcome.valid is False
     assert "API key or secret token pattern" in outcome.rejection_reason
+
+
+def test_validate_output_owner_only_kind_rejection():
+    from kin.schemas import MessageKind
+    card = _make_embedded_card()
+    resp = AdapterResponse(
+        message=AdapterMessage(kind=MessageKind.CANCEL, content="Unauthorized cancel attempt")
+    )
+    outcome = validate_adapter_output(resp, card)
+    assert outcome.valid is False
+    assert "owner-only message kind 'cancel'" in outcome.rejection_reason

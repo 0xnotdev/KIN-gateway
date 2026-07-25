@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 from kin.adapters.base import (
     AdapterActivityEvent,
@@ -73,21 +74,21 @@ class LocalCommandAdapter:
         max_bytes = int(self.card.boundaries.max_artifact_bytes or 1_048_576)
 
         # 4. Invoke via subprocess.Popen(shell=False)
-        creation_flags = 0
+        popen_kwargs: dict[str, Any] = {
+            "cwd": str(work_dir),
+            "env": minimal_env,
+            "stdin": subprocess.PIPE,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "shell": False,
+        }
         if sys.platform == "win32":
-            creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            popen_kwargs["start_new_session"] = True
 
         try:
-            process = subprocess.Popen(
-                cmd_args,
-                cwd=str(work_dir),
-                env=minimal_env,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=False,
-                creationflags=creation_flags,
-            )
+            process = subprocess.Popen(cmd_args, **popen_kwargs)
         except Exception as e:
             return AdapterResponse(
                 events=[AdapterActivityEvent(label=f"Failed to spawn process: {e}")],

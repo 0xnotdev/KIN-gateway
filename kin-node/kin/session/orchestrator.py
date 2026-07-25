@@ -25,7 +25,6 @@ from kin.policy.evaluator import PolicyResult
 from kin.policy.persistence import create_pending_approval, evaluate_action_for_session
 from kin.schemas import (
     AgentCard,
-    DecisionKind,
     InternalEventKind,
     MessageKind,
     compute_content_hash,
@@ -93,12 +92,13 @@ def advance_session_turn(
         pub_card = raw_card_dict.get("published_card") or raw_card_dict
         card = AgentCard.model_validate(pub_card)
 
-    # 3. Read objective from sessions table
+    # 3. Read objective and session_type from sessions table
     cur = conn.cursor()
-    cur.execute("SELECT objective, initiator_username, receiver_username FROM sessions WHERE session_id = ?", (session_id,))
+    cur.execute("SELECT objective, initiator_username, receiver_username, type FROM sessions WHERE session_id = ?", (session_id,))
     s_row = cur.fetchone()
     objective_text = s_row[0] if s_row and s_row[0] else ""
     init_un, rec_un = s_row[1], s_row[2]
+    session_type = s_row[3] if s_row and len(s_row) > 3 and s_row[3] else (state.type if hasattr(state, "type") else "ask")
     peer_un = rec_un if owner_username == init_un else init_un
     peer_participant = state.participants.get(peer_un)
     peer_agent_id = peer_participant.agent_id if peer_participant else ""
@@ -122,7 +122,7 @@ def advance_session_turn(
     adapter_req = AdapterRequest(
         schema_version="1.1",
         protocol_version="1.1",
-        session={"id": session_id, "type": "ask", "turn": state.current_turn},
+        session={"id": session_id, "type": session_type, "turn": state.current_turn},
         self_participant={"agent_id": local_agent_id, "card_snapshot": card.model_dump(mode="json")},
         peer={"person": peer_un, "agent_id": peer_agent_id, "card_snapshot": {}},
         objective=objective_text,
@@ -146,7 +146,7 @@ def advance_session_turn(
             summary=f"Adapter error code {response.error.code}: {response.error.message}",
             payload={"code": response.error.code, "message": response.error.message},
         )
-        if response.error.code in ("ADAPTER_TIMEOUT", "RATE_LIMITED"):
+        if response.error.code in ("ADAPTER_TIMEOUT", "RATE_LIMITED", "PROCESS_TIMEOUT_KILLED"):
             # Transient error
             return {"status": "retryable_error", "error": response.error.model_dump(mode="json")}
         else:
@@ -160,7 +160,7 @@ def advance_session_turn(
         process_node_command(state, "mark_failed")
         raise OrchestratorError(f"Adapter output rejected by security validator: {val_res.rejection_reason}", code="SECURITY_REJECTION")
 
-    # 6. Process Activity events
+    # 6. Process Activity events (local-only observability)
     for ev in response.events:
         kind_val = getattr(ev, "event_kind", None)
         if kind_val == "activity" or isinstance(ev, AdapterActivityEvent):
@@ -176,7 +176,8 @@ def advance_session_turn(
                 payload={"label": label_val},
             )
 
-    # 7. Process Approval Requests
+    # 7. Process Approval Requests & Outbound Policy Check
+    from kin.policy.evaluator import PolicyDecision
     for ev in response.events:
         kind_val = getattr(ev, "event_kind", None)
         if kind_val == "approval_request" or isinstance(ev, AdapterApprovalEvent):
@@ -186,7 +187,7 @@ def advance_session_turn(
             pol_res: PolicyResult = evaluate_action_for_session(
                 conn, card, app_req.action_class, {"session_id": session_id}, session_id, now_str
             )
-            if pol_res.decision == DecisionKind.DENY:
+            if pol_res.decision == PolicyDecision.DENY:
                 write_audit_event(
                     conn,
                     vault_key,
@@ -196,8 +197,9 @@ def advance_session_turn(
                     summary=f"Action '{app_req.action_class.value}' denied by local policy.",
                     payload={"action_class": app_req.action_class.value},
                 )
-                continue
-            elif pol_res.requires_approval:
+                process_node_command(state, "mark_failed")
+                return {"status": "failed", "reason": f"Action '{app_req.action_class.value}' denied by local policy."}
+            elif pol_res.decision == PolicyDecision.REQUIRES_APPROVAL:
                 exp_at = app_req.expires_at or _iso_now((now or datetime.datetime.now(datetime.timezone.utc)) + datetime.timedelta(seconds=86400))
                 create_pending_approval(
                     conn, vault_key, app_req, agent_id=local_agent_id, action_class=app_req.action_class, expires_at=exp_at
@@ -205,7 +207,44 @@ def advance_session_turn(
                 process_node_command(state, "mark_awaiting_owner_approval")
                 return {"status": "awaiting_owner_approval", "approval_id": app_req.approval_id}
 
-    # 8. Process Artifacts
+    if response.message:
+        from kin.schemas import ActionClass, ApprovalRequest, RiskLabel
+        msg_action_class = ActionClass.INFORMATIONAL_RELAY
+        pol_msg_res: PolicyResult = evaluate_action_for_session(
+            conn, card, msg_action_class, {"session_id": session_id, "kind": response.message.kind.value}, session_id, now_str
+        )
+        if pol_msg_res.decision == PolicyDecision.DENY:
+            write_audit_event(
+                conn,
+                vault_key,
+                category="security_rejection",
+                session_id=session_id,
+                actor_username=owner_username,
+                summary=f"Outbound message '{response.message.kind.value}' denied by policy.",
+                payload={"kind": response.message.kind.value},
+            )
+            process_node_command(state, "mark_failed")
+            return {"status": "failed", "reason": "Outbound message policy denial"}
+        elif pol_msg_res.decision == PolicyDecision.REQUIRES_APPROVAL:
+            req_id = f"app_{uuid.uuid4().hex[:12]}"
+            exp_at = _iso_now((now or datetime.datetime.now(datetime.timezone.utc)) + datetime.timedelta(seconds=86400))
+            app_req = ApprovalRequest(
+                schema_version="1.1",
+                approval_id=req_id,
+                session_id=session_id,
+                agent_id=local_agent_id,
+                action_class=msg_action_class,
+                summary=f"Approve outbound message {response.message.kind.value}",
+                reason="Outbound message requires owner approval",
+                risk_label=RiskLabel.MEDIUM,
+                requested_scope={"content": response.message.content[:100]},
+                expires_at=exp_at,
+            )
+            create_pending_approval(conn, vault_key, app_req, agent_id=local_agent_id, action_class=msg_action_class, expires_at=exp_at)
+            process_node_command(state, "mark_awaiting_owner_approval")
+            return {"status": "awaiting_owner_approval", "approval_id": req_id}
+
+    # 8. Process Artifacts (only after all approval gating clears)
     for art in response.artifacts:
         raw_bytes = art.path_or_bytes if isinstance(art.path_or_bytes, bytes) else art.path_or_bytes.encode("utf-8")
         max_bytes = card.boundaries.max_artifact_bytes or 1_048_576
@@ -237,7 +276,7 @@ def advance_session_turn(
         )
         conn.commit()
 
-    # 9. Process Outbound Message if present
+    # 9. Process Outbound Message if present (only after all approval gating clears)
     if response.message:
         msg = response.message
         cur.execute("SELECT COALESCE(MAX(sequence), 0) + 1 FROM session_events WHERE session_id = ? AND actor_username = ?", (session_id, owner_username))

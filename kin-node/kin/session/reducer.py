@@ -422,6 +422,37 @@ def reconstruct_session_state(
     )
     current_turn = cur.fetchone()[0] or 0
 
+    # Query all session events in chronological event_order
+    cur.execute(
+        """\
+        SELECT event_id, sequence, actor_username, kind, visibility, payload_json, created_at
+        FROM session_events WHERE session_id = ? ORDER BY event_order ASC
+        """,
+        (session_id,),
+    )
+    events_list: list[dict[str, Any]] = []
+    for ev_row in cur.fetchall():
+        payload_enc = ev_row[5]
+        payload_dict = {}
+        if payload_enc:
+            try:
+                from kin.storage.vault import decrypt_field
+                dec_str = decrypt_field(vault_key, payload_enc)
+                import json
+                payload_dict = json.loads(dec_str)
+            except Exception:
+                payload_dict = {"raw": payload_enc}
+
+        events_list.append({
+            "event_id": ev_row[0],
+            "sequence": ev_row[1],
+            "actor_username": ev_row[2],
+            "kind": ev_row[3],
+            "visibility": ev_row[4],
+            "payload": payload_dict,
+            "created_at": ev_row[6],
+        })
+
     return SessionState(
         session_id=sess_id,
         initiator_username=init_un,
@@ -431,4 +462,5 @@ def reconstruct_session_state(
         max_turns=turn_limit or 12,
         actor_sequences=actor_sequences,
         participants=participants,
+        events=events_list,
     )
