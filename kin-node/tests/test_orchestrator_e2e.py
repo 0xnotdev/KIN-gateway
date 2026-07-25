@@ -80,29 +80,41 @@ def test_status_nudge_rate_limiting(node_db):
 
 
 def test_tag_in_handoff_workflow(node_db):
+    from kin.storage.vault import decrypt_field
+    import json
+
     conn = node_db["conn"]
     vault_key = node_db["vault_key"]
     alice_priv = node_db["priv"]
     now_str = "2026-07-22T12:00:00Z"
+    expected_obj = "Perform deep research on quantum state algorithms"
 
     conn.execute(
         """\
         INSERT INTO sessions (
-            session_id, type, initiator_username, receiver_username, status,
+            session_id, type, objective, initiator_username, receiver_username, status,
             sender_agent_id, receiver_agent_id, turn_limit, created_at, updated_at
-        ) VALUES ('s_tag_1', 'ask', 'alice', 'bob', 'active', 'alice_agent', 'bob_agent', 12, ?, ?)
+        ) VALUES ('s_tag_1', 'research', ?, 'alice', 'bob', 'active', 'alice_agent', 'bob_agent', 12, ?, ?)
         """,
-        (now_str, now_str),
+        (expected_obj, now_str, now_str),
     )
     conn.commit()
 
     res = tag_in_handoff(conn, vault_key, alice_priv, "alice", "s_tag_1", "alice_scout")
-    assert res["status"] in ("tagged_in", "delivered")
+    assert res["status"] == "delivered"
     assert res["replacement_agent_id"] == "alice_scout"
 
     cur = conn.cursor()
     cur.execute("SELECT sender_agent_id FROM sessions WHERE session_id = 's_tag_1'")
     assert cur.fetchone()[0] == "alice_scout"
+
+    # Verify decrypted handoff_package payload in session_events
+    cur.execute("SELECT payload_json FROM session_events WHERE session_id = 's_tag_1' AND kind = 'participant_changed'")
+    payload_enc = cur.fetchone()[0]
+    payload = json.loads(decrypt_field(vault_key, payload_enc))
+
+    assert payload["objective"] == expected_obj
+    assert payload["replacement_agent_id"] == "alice_scout"
 
 
 def test_orchestrator_restart_recovery(node_db):

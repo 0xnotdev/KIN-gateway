@@ -396,10 +396,31 @@ def tag_in_handoff(
     if not state:
         raise OrchestratorError(f"Session '{session_id}' not found.", code="SESSION_NOT_FOUND")
 
+    cur = conn.cursor()
+    cur.execute("SELECT objective FROM sessions WHERE session_id = ?", (session_id,))
+    s_row = cur.fetchone()
+    objective_text = s_row[0] if s_row and s_row[0] else ""
+
+    history_summary = []
+    open_questions = []
+    for ev in state.events:
+        ev_kind = ev.get("kind", "")
+        if ev_kind not in ("activity", "status_event"):
+            payload_data = ev.get("payload", {})
+            content_str = payload_data.get("content") if isinstance(payload_data, dict) else str(payload_data)
+            history_summary.append({
+                "actor": ev.get("actor_username", ""),
+                "kind": ev_kind,
+                "content": content_str or "",
+            })
+            if ev_kind == MessageKind.QUESTION.value:
+                open_questions.append(content_str)
+
     handoff_package = {
-        "objective": "",
-        "open_questions": [],
+        "objective": objective_text,
+        "open_questions": open_questions,
         "replacement_agent_id": replacement_agent_id,
+        "recent_history_summary": history_summary,
     }
 
     # 3. Update session table with new agent ID
