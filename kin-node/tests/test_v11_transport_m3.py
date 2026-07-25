@@ -1347,7 +1347,22 @@ def test_receiver_agent_substitution_negative_cases(alice_node, bob_node):
     assert ack2.status == "rejected"
     assert ack2.error_code == "UNAUTHORIZED_AGENT"
 
+    # Case 3: Receiver tries to substitute a second agent_id via a second ACCEPTANCE envelope -> MUST be rejected (INVALID_STATE_TRANSITION or UNAUTHORIZED_AGENT)
+    payload_acc2 = {"accepting_agent_id": "bob_fourth_agent", "reason": "Second acceptance attempt"}
+    env_acc2 = {
+        "schema_version": "1.1",
+        "protocol_version": "1.1",
+        "session_id": sess_id,
+        "sequence": seq + 1,
+        "actor_username": "bob",
+        "actor_agent_id": "bob_fourth_agent",
+        "timestamp": now_str,
+        "kind": MessageKind.ACCEPTANCE.value,
+        "content_hash": compute_content_hash(payload_acc2),
+        "payload": payload_acc2,
+    }
+    env_acc2["signature"] = sign_envelope(env_acc2, bob_node["ed_priv"])
 
-
-
-
+    ack3 = ingest_envelope(alice_node["conn"], alice_node["vault_key"], env_acc2, get_public_key_fn=get_pubkey)
+    assert ack3.status == "rejected"
+    assert ack3.error_code in ("INVALID_STATE_TRANSITION", "UNAUTHORIZED_AGENT")

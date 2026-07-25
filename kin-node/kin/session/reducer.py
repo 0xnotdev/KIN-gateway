@@ -129,7 +129,12 @@ def process_peer_envelope(
             )
 
         participant_info = state.participants[envelope.actor_username]
-        if envelope.actor_agent_id != participant_info.agent_id and (envelope.kind != MessageKind.ACCEPTANCE or envelope.actor_username == state.initiator_username):
+        is_unaccepted_receiver_accept = (
+            envelope.kind == MessageKind.ACCEPTANCE
+            and envelope.actor_username == state.receiver_username
+            and state.status in ("draft", "sent", "queued", "delivered", "peer_review")
+        )
+        if envelope.actor_agent_id != participant_info.agent_id and not is_unaccepted_receiver_accept:
             return ReducerResult(
                 success=False,
                 new_state=state,
