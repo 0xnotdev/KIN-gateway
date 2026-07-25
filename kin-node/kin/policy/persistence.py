@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from kin.schemas import ActionClass, AgentCard, ApprovalDecision, DecisionKind
+from kin.schemas import ActionClass, AgentCard, ApprovalDecision, ApprovalRequest, DecisionKind
 from kin.policy.evaluator import PolicyResult, evaluate_action
 
 

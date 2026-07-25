@@ -7,7 +7,7 @@ import hashlib
 import json
 import sqlite3
 import uuid
-from typing import Any, Callable, Literal
+from typing import Any, Callable
 
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
@@ -21,26 +21,22 @@ from kin.adapters import (
 )
 from kin.agent_registry.registry import get_card
 from kin.audit.writer import append_session_event, write_audit_event
+from kin.policy.evaluator import PolicyResult
+from kin.policy.persistence import create_pending_approval, evaluate_action_for_session
 from kin.schemas import (
-    ActionClass,
     AgentCard,
-    ApprovalDecision,
-    ApprovalRequest,
     DecisionKind,
     InternalEventKind,
     MessageKind,
-    SessionEnvelope,
-    canonical_jcs,
     compute_content_hash,
     sign_envelope,
 )
 from kin.session.reducer import (
     TERMINAL_STATES,
-    SessionState,
     process_node_command,
     reconstruct_session_state,
 )
-from kin.storage.vault import decrypt_bytes, decrypt_field, encrypt_bytes, encrypt_field
+from kin.storage.vault import decrypt_field, encrypt_bytes, encrypt_field
 from kin.transport.v11 import _iso_now, ingest_envelope
 
 
@@ -300,7 +296,6 @@ def send_status_nudge(
 ) -> dict[str, Any]:
     """Send a rate-limited status_event nudge per §2.4 (1 nudge per 60 seconds per session per owner)."""
     now_dt = now or datetime.datetime.now(datetime.timezone.utc)
-    now_str = _iso_now(now_dt)
 
     cur = conn.cursor()
     cur.execute(
@@ -400,4 +395,4 @@ def tag_in_handoff(
     pubkey_fn = get_public_key_fn or default_get_pubkey
     ing_ack = ingest_envelope(conn, vault_key, env_dict, get_public_key_fn=pubkey_fn, now=now)
 
-    return {"status": "tagged_in", "replacement_agent_id": replacement_agent_id, "sequence": seq}
+    return {"status": ing_ack.status, "replacement_agent_id": replacement_agent_id, "sequence": seq}

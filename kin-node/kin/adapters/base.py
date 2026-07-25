@@ -5,13 +5,12 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
-from typing import Any, Literal, Union
+from typing import Any, Final, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from kin.schemas import (
     ActionClass,
-    AgentBoundaries,
     AgentCard,
     ApprovalRequest,
     MessageKind,

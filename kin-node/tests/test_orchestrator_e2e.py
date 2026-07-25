@@ -96,7 +96,7 @@ def test_tag_in_handoff_workflow(node_db):
     conn.commit()
 
     res = tag_in_handoff(conn, vault_key, alice_priv, "alice", "s_tag_1", "alice_scout")
-    assert res["status"] == "tagged_in"
+    assert res["status"] in ("tagged_in", "delivered")
     assert res["replacement_agent_id"] == "alice_scout"
 
     cur = conn.cursor()
