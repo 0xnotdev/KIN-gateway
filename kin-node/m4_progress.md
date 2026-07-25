@@ -101,3 +101,24 @@ tests/test_v11_transport_m3.py ...............................             [ 16%
 - [x] Session Orchestrator (`advance_session_turn`, `send_status_nudge`, `tag_in_handoff`) implemented
 - [x] Local activity events precede peer-visible outbound messages
 - [x] Complete test suite passing (276/276 green) and clean git commit pushed (`8fa2687`)
+
+---
+
+## 5. Known Limitations (§2.2, §2.7)
+
+1. **Subprocess Process-Tree Termination Platform Fallback**:
+   - On Windows, `LocalCommandAdapter._kill_process_tree` uses `taskkill /F /T /PID <pid>`.
+   - On POSIX (Linux/macOS), if `psutil` is installed, it walks child process trees recursively and kills each child. If `psutil` is not installed, it falls back to `os.killpg(os.getpgid(pid), signal.SIGKILL)`. If `os.setpgid` was not invoked during `Popen` creation, process-group killing on non-Windows without `psutil` may leave detached daemonized sub-processes running.
+2. **Local Command Bare-Metal Network Access Non-Isolation**:
+   - As explicitly documented in §2.2, `boundaries.network_access == "deny"` is not OS-level sandboxed at the kernel socket boundary when executing local command subprocesses on bare metal (without Docker/container namespaces).
+3. **SDK Adapter Out-of-Scope**:
+   - SDK adapter type (`SdkAdapterConfig`) is out of scope for M4 per master spec §6.2 and raises `NotImplementedError`.
+
+---
+
+## 6. Open Questions for Tech Lead
+
+1. **Subprocess Process-Group Creation on POSIX**:
+   - Should `LocalCommandAdapter` explicitly pass `preexec_fn=os.setsid` on POSIX platforms during `Popen` spawn to guarantee process group isolation even when `psutil` is absent?
+2. **Action Class Classification for Outbound Messages**:
+   - Currently, outgoing turn messages (`PROPOSAL`, `COUNTERPROPOSAL`, `ANSWER`, `PLAN`, etc.) use `ActionClass.SESSION_PARTICIPATION` and `ActionClass.INFORMATIONAL_RELAY`. Should specific envelope kinds trigger granular action classes when policy evaluator checks are performed?
