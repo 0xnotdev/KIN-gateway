@@ -7,9 +7,9 @@ from typing import Final
 # Complete valid state transitions matrix
 VALID_TRANSITIONS: Final[dict[str, set[str]]] = {
     "draft": {"sent", "cancelled", "expired"},
-    "sent": {"queued", "delivered", "failed", "expired"},
-    "queued": {"delivered", "failed", "expired"},
-    "delivered": {"peer_review", "failed", "expired"},
+    "sent": {"queued", "delivered", "accepted", "failed", "expired"},
+    "queued": {"delivered", "accepted", "failed", "expired"},
+    "delivered": {"peer_review", "accepted", "failed", "expired"},
     "peer_review": {"accepted", "declined", "needs_clarification", "cancelled", "expired"},
     "needs_clarification": {"peer_review", "cancelled", "failed", "expired"},
     "accepted": {"active", "cancelled", "expired"},

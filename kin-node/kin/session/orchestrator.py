@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime
-import hashlib
 import json
 import sqlite3
 import uuid
@@ -19,6 +18,7 @@ from kin.adapters import (
     get_adapter,
     validate_adapter_output,
 )
+from kin.artifacts.vault import ArtifactTooLargeError, store_artifact
 from kin.agent_registry.registry import get_card
 from kin.audit.writer import append_session_event, write_audit_event
 from kin.policy.evaluator import PolicyResult
@@ -36,7 +36,7 @@ from kin.session.reducer import (
     process_node_command,
     reconstruct_session_state,
 )
-from kin.storage.vault import decrypt_field, encrypt_bytes, encrypt_field
+from kin.storage.vault import decrypt_field, encrypt_field
 from kin.transport.v11 import _apply_node_command_transition, _iso_now, ingest_envelope
 
 
@@ -257,7 +257,19 @@ def advance_session_turn(
     for art in response.artifacts:
         raw_bytes = art.path_or_bytes if isinstance(art.path_or_bytes, bytes) else art.path_or_bytes.encode("utf-8")
         max_bytes = card.boundaries.max_artifact_bytes or 1_048_576
-        if len(raw_bytes) > max_bytes:
+        try:
+            store_artifact(
+                conn,
+                vault_key,
+                session_id=session_id,
+                raw_bytes=raw_bytes,
+                mime_type=art.mime_type,
+                offered_by=owner_username,
+                preview_policy="auto",
+                max_bytes=max_bytes,
+                now=now,
+            )
+        except ArtifactTooLargeError:
             msg = f"Artifact size {len(raw_bytes)} bytes exceeds card max_artifact_bytes ({max_bytes})."
             write_audit_event(
                 conn,
@@ -270,20 +282,6 @@ def advance_session_turn(
             )
             _apply_node_command_transition(conn, vault_key, session_id, "mark_failed", now=now)
             raise OrchestratorError(msg, code="ARTIFACT_TOO_LARGE")
-
-        art_id = f"art_{uuid.uuid4().hex[:12]}"
-        sha = hashlib.sha256(raw_bytes).hexdigest()
-        enc_b = encrypt_bytes(vault_key, raw_bytes)
-        conn.execute(
-            """\
-            INSERT INTO artifacts (
-                artifact_id, session_id, sha256, mime_type,
-                bytes_encrypted, metadata_json, offered_by, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (art_id, session_id, sha, art.mime_type, enc_b, json.dumps({"size": len(raw_bytes)}), owner_username, now_str),
-        )
-        conn.commit()
 
     # 9. Process Outbound Message if present (only after all approval gating clears)
     if response.message:

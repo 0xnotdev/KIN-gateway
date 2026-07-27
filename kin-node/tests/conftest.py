@@ -14,6 +14,18 @@ from kin.schemas import (
     LocalCommandAdapterConfig,
     PublishedAgentCard,
 )
+import keyring
+from kin.testing.insecure_memory_keyring import InMemoryTestKeyring
+
+
+@pytest.fixture(autouse=True)
+def isolate_test_keyring(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Ensure every test function gets an isolated keyring file."""
+    keyring_path = tmp_path / "test_keyring.json"
+    monkeypatch.setenv("KIN_TEST_KEYRING_PATH", str(keyring_path))
+    keyring.set_keyring(InMemoryTestKeyring())
+    yield
+
 
 
 @pytest.fixture

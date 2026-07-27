@@ -175,7 +175,7 @@ def process_peer_envelope(
     target_status = mapped_target if mapped_target is not None else state.status
 
     if target_status != state.status:
-        if not is_valid_transition(state.status, target_status):
+        if not is_valid_transition(state.status, target_status) and not is_unaccepted_receiver_accept:
             return ReducerResult(
                 success=False,
                 new_state=state,

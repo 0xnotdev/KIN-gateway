@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import datetime
+import hashlib
 import json
 import sqlite3
 import uuid
@@ -14,11 +16,20 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from kin.agent_registry.peer_cards import cache_peer_card, is_stale
 from kin.agent_registry.registry import get_card
+from kin.artifacts.vault import (
+    ArtifactIdConflictError,
+    ArtifactNotFoundError,
+    ArtifactTooLargeError,
+    get_artifact_metadata,
+    load_artifact_bytes,
+    store_artifact,
+)
 from kin.audit.writer import append_session_event, check_sequence_conflict, write_audit_event
 from kin.identity.auth import create_signed_auth_headers
 from kin.identity.keys import decrypt_from_sender, encrypt_for_recipient
 from kin.schemas import (
     AgentAvailability,
+    ArtifactOffer,
     CapabilityAdvertisement,
     MessageKind,
     PublishedAgentCard,
@@ -204,6 +215,8 @@ def ingest_envelope(
     raw_body: dict[str, Any],
     get_public_key_fn: Callable[[str], ed25519.Ed25519PublicKey | None],
     now: datetime.datetime | None = None,
+    recipient_x25519_privkey: bytes | None = None,
+    owner_identity_key: ed25519.Ed25519PrivateKey | None = None,
 ) -> TransportAcknowledgement:
     """Core 6-stage envelope ingestion pipeline with symmetric self-processing and agent-id locking."""
     now_dt = now or datetime.datetime.now(datetime.timezone.utc)
@@ -338,6 +351,9 @@ def ingest_envelope(
             initiator_username = actor_username
             receiver_username = peer_username
 
+        raw_max_turns = payload.get("max_turns", 12)
+        turn_limit = raw_max_turns if isinstance(raw_max_turns, int) and 1 <= raw_max_turns <= 12 else 12
+
         exp_str = (now_dt + datetime.timedelta(seconds=DEFAULT_EXPIRY_TTL_SECONDS)).isoformat()
         if not exp_str.endswith("Z"):
             exp_str = exp_str.split("+")[0] + "Z"
@@ -348,7 +364,7 @@ def ingest_envelope(
                 session_id, type, initiator_username, receiver_username, status,
                 objective, sender_agent_id, receiver_agent_id, turn_limit,
                 created_at, updated_at, expires_at
-            ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, 12, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 session_id,
@@ -358,6 +374,7 @@ def ingest_envelope(
                 payload.get("goal", ""),
                 actor_agent_id,  # Lock sender_agent_id immediately
                 requested_agent_id if requested_agent_id else None,
+                turn_limit,
                 now_str,
                 now_str,
                 exp_str,
@@ -370,7 +387,7 @@ def ingest_envelope(
             initiator_username=initiator_username,
             receiver_username=receiver_username,
             status="draft",
-            max_turns=12,
+            max_turns=turn_limit,
             participants={
                 actor_username: ParticipantInfo(agent_id=actor_agent_id, role="owner")
             },
@@ -466,6 +483,275 @@ def ingest_envelope(
     )
     conn.commit()
 
+    # Kind-specific handling for ARTIFACT_OFFER on receiving side
+    if env.kind == MessageKind.ARTIFACT_OFFER and env.actor_username != my_username:
+        payload_dict = env.payload or {}
+        try:
+            meta_subset = {
+                "schema_version": payload_dict.get("schema_version", "1.1"),
+                "artifact_id": payload_dict.get("artifact_id"),
+                "session_id": payload_dict.get("session_id"),
+                "sha256": payload_dict.get("sha256"),
+                "mime_type": payload_dict.get("mime_type"),
+                "size_bytes": payload_dict.get("size_bytes"),
+                "offered_by": payload_dict.get("offered_by"),
+                "preview_policy": payload_dict.get("preview_policy"),
+            }
+            offer = ArtifactOffer.model_validate(meta_subset)
+        except Exception as exc:
+            write_audit_event(
+                conn,
+                vault_key,
+                category="security_rejection",
+                actor_username=env.actor_username,
+                actor_agent_id=env.actor_agent_id,
+                summary=f"Invalid ARTIFACT_OFFER metadata payload: {exc}",
+                session_id=session_id,
+            )
+            return TransportAcknowledgement(
+                schema_version="1.1",
+                envelope_session_id=session_id,
+                envelope_sequence=sequence,
+                status="delivered",
+                received_at=now_str,
+                verified_hash=env.content_hash,
+            )
+
+        # Receiver agent card boundary lookup (Directive 2)
+        rec_ag_id = sess_row[3] if my_username == sess_row[1] else sess_row[2]
+        receiver_max_bytes = 1_048_576
+        if rec_ag_id:
+            raw_card_dict = get_card(conn, rec_ag_id)
+            if raw_card_dict and isinstance(raw_card_dict, dict):
+                try:
+                    local_json = raw_card_dict.get("local_card_json")
+                    pub_json = raw_card_dict.get("published_card_json")
+                    if local_json:
+                        from kin.storage.vault import decrypt_field
+                        card_json_str = decrypt_field(vault_key, local_json)
+                        from kin.schemas import AgentCard
+                        card = AgentCard.model_validate_json(card_json_str)
+                    elif pub_json:
+                        from kin.schemas import AgentCard
+                        card = AgentCard.model_validate_json(pub_json)
+                    else:
+                        card = None
+                    if card and card.boundaries and card.boundaries.max_artifact_bytes is not None:
+                        receiver_max_bytes = card.boundaries.max_artifact_bytes
+                except Exception:
+                    pass
+
+        # Early short-circuit size check (Directive 5)
+        if offer.size_bytes > receiver_max_bytes:
+            write_audit_event(
+                conn,
+                vault_key,
+                category="security_rejection",
+                actor_username=env.actor_username,
+                summary=f"Offered artifact size {offer.size_bytes} bytes exceeds receiving card max_artifact_bytes ({receiver_max_bytes}).",
+                session_id=session_id,
+            )
+            return TransportAcknowledgement(
+                schema_version="1.1",
+                envelope_session_id=session_id,
+                envelope_sequence=sequence,
+                status="delivered",
+                received_at=now_str,
+                verified_hash=env.content_hash,
+            )
+
+        # Wire decryption & verification
+        enc_b64 = payload_dict.get("encrypted_bytes_b64")
+        if not enc_b64:
+            write_audit_event(
+                conn,
+                vault_key,
+                category="security_rejection",
+                actor_username=env.actor_username,
+                summary="ARTIFACT_OFFER payload missing encrypted_bytes_b64 field.",
+                session_id=session_id,
+            )
+            return TransportAcknowledgement(
+                schema_version="1.1",
+                envelope_session_id=session_id,
+                envelope_sequence=sequence,
+                status="delivered",
+                received_at=now_str,
+                verified_hash=env.content_hash,
+            )
+
+        try:
+            wire_ciphertext = base64.b64decode(enc_b64)
+            _, sender_x255_bytes, _ = _resolve_peer_contact_info(conn, env.actor_username)
+
+            recip_x255_priv = recipient_x25519_privkey
+            if not recip_x255_priv:
+                try:
+                    from kin.identity.storage import load_x25519_private_key
+                    cur.execute("SELECT username FROM identity LIMIT 1")
+                    id_row = cur.fetchone()
+                    if id_row and id_row[0]:
+                        recip_x255_priv = load_x25519_private_key(id_row[0])
+                except Exception:
+                    pass
+
+            if not sender_x255_bytes or not recip_x255_priv:
+                raise ValueError("Missing X25519 key for wire decryption.")
+
+            decrypted_bytes = decrypt_from_sender(recip_x255_priv, sender_x255_bytes, wire_ciphertext)
+        except Exception as exc:
+            write_audit_event(
+                conn,
+                vault_key,
+                category="security_rejection",
+                actor_username=env.actor_username,
+                summary=f"ARTIFACT_OFFER wire decryption failed: {exc}",
+                session_id=session_id,
+            )
+            return TransportAcknowledgement(
+                schema_version="1.1",
+                envelope_session_id=session_id,
+                envelope_sequence=sequence,
+                status="delivered",
+                received_at=now_str,
+                verified_hash=env.content_hash,
+            )
+
+        # SHA-256 Claim Verification against peer's claimed sha256
+        computed_sha = hashlib.sha256(decrypted_bytes).hexdigest()
+        if computed_sha != offer.sha256:
+            write_audit_event(
+                conn,
+                vault_key,
+                category="security_rejection",
+                actor_username=env.actor_username,
+                summary=f"Claimed sha256 '{offer.sha256}' does not match computed payload hash '{computed_sha}'.",
+                session_id=session_id,
+            )
+            return TransportAcknowledgement(
+                schema_version="1.1",
+                envelope_session_id=session_id,
+                envelope_sequence=sequence,
+                status="delivered",
+                received_at=now_str,
+                verified_hash=env.content_hash,
+            )
+
+        # Decrypted Size Check against receiver boundary
+        if len(decrypted_bytes) > receiver_max_bytes:
+            write_audit_event(
+                conn,
+                vault_key,
+                category="security_rejection",
+                actor_username=env.actor_username,
+                summary=f"Decrypted artifact size {len(decrypted_bytes)} bytes exceeds receiving card max_artifact_bytes ({receiver_max_bytes}).",
+                session_id=session_id,
+            )
+            return TransportAcknowledgement(
+                schema_version="1.1",
+                envelope_session_id=session_id,
+                envelope_sequence=sequence,
+                status="delivered",
+                received_at=now_str,
+                verified_hash=env.content_hash,
+            )
+
+        # Persist to local vault under offer's artifact_id
+        try:
+            store_artifact(
+                conn,
+                vault_key,
+                session_id=session_id,
+                raw_bytes=decrypted_bytes,
+                mime_type=offer.mime_type,
+                offered_by=offer.offered_by,
+                preview_policy=offer.preview_policy,
+                max_bytes=receiver_max_bytes,
+                source="peer_received",
+                now=now_dt,
+                artifact_id=offer.artifact_id,
+            )
+        except (ArtifactTooLargeError, ArtifactIdConflictError) as err:
+            write_audit_event(
+                conn,
+                vault_key,
+                category="security_rejection",
+                actor_username=env.actor_username,
+                summary=f"Vault storage of offered artifact rejected: {err}",
+                session_id=session_id,
+            )
+            return TransportAcknowledgement(
+                schema_version="1.1",
+                envelope_session_id=session_id,
+                envelope_sequence=sequence,
+                status="delivered",
+                received_at=now_str,
+                verified_hash=env.content_hash,
+            )
+
+        # Send ARTIFACT_ACCEPT back to sender
+        accept_payload = {
+            "schema_version": "1.1",
+            "artifact_id": offer.artifact_id,
+            "session_id": session_id,
+            "status": "accepted",
+        }
+        accept_hash = compute_content_hash(accept_payload)
+        cur.execute(
+            "SELECT COALESCE(MAX(sequence), 0) + 1 FROM session_events WHERE session_id = ? AND actor_username = ?",
+            (session_id, my_username),
+        )
+        accept_seq = cur.fetchone()[0]
+
+        accept_env_dict = {
+            "schema_version": "1.1",
+            "protocol_version": "1.1",
+            "session_id": session_id,
+            "sequence": accept_seq,
+            "actor_username": my_username,
+            "actor_agent_id": rec_ag_id or my_username,
+            "timestamp": now_str,
+            "kind": MessageKind.ARTIFACT_ACCEPT.value,
+            "content_hash": accept_hash,
+            "payload": accept_payload,
+        }
+
+        local_ed_priv = owner_identity_key
+        if not local_ed_priv:
+            try:
+                from kin.identity.storage import load_private_key
+                priv_bytes = load_private_key(my_username)
+                local_ed_priv = ed25519.Ed25519PrivateKey.from_private_bytes(priv_bytes)
+            except Exception:
+                pass
+
+        if local_ed_priv:
+            accept_env_dict["signature"] = sign_envelope(accept_env_dict, local_ed_priv)
+
+            def get_accept_pubkey(un: str) -> ed25519.Ed25519PublicKey | None:
+                if un == my_username:
+                    return local_ed_priv.public_key()
+                _, _, sender_ed = _resolve_peer_contact_info(conn, un)
+                return sender_ed
+
+            ingest_envelope(
+                conn,
+                vault_key,
+                accept_env_dict,
+                get_public_key_fn=get_accept_pubkey,
+                now=now_dt,
+                recipient_x25519_privkey=recip_x255_priv,
+                owner_identity_key=local_ed_priv,
+            )
+
+            resolved_ep, _, _ = _resolve_peer_contact_info(conn, env.actor_username)
+            if resolved_ep:
+                try:
+                    client = httpx.Client(timeout=10.0)
+                    client.post(f"{resolved_ep.rstrip('/')}/v1.1/sessions", json=accept_env_dict)
+                except Exception:
+                    pass
+
     return TransportAcknowledgement(
         schema_version="1.1",
         envelope_session_id=session_id,
@@ -495,6 +781,11 @@ def dispatch_session(
     http_client: httpx.Client | None = None,
 ) -> dict[str, Any]:
     """Initiate a new V1.1 session, run capability check (Step 1), stale card check (Step 2), symmetric self-processing, and deliver."""
+    if not isinstance(max_turns, int) or max_turns < 1 or max_turns > 12:
+        raise ValueError(
+            f"Invalid max_turns: {max_turns}. max_turns must be an integer between 1 and 12."
+        )
+
     now_str = _iso_now(now)
     client = http_client or httpx.Client(timeout=10.0)
 
@@ -541,6 +832,7 @@ def dispatch_session(
         "goal": goal,
         "requested_agent_id": receiver_agent_id,
         "peer_username": peer_username,
+        "max_turns": max_turns,
     }
     content_hash = compute_content_hash(payload)
 
@@ -699,6 +991,14 @@ def respond_to_session(
     ack = ingest_envelope(conn, vault_key, env_dict, get_public_key_fn=get_pubkey, now=now)
     if ack.status == "rejected":
         raise TransportError(f"Self-processing of response envelope rejected: {ack.error_message}")
+
+    endpoint = peer_endpoint or resolved_ep
+    if endpoint:
+        try:
+            client = http_client or httpx.Client(timeout=10.0)
+            client.post(f"{endpoint.rstrip('/')}/v1.1/sessions", json=env_dict)
+        except httpx.RequestError:
+            pass
 
     return {"session_id": session_id, "status": "processed", "kind": kind.value}
 
@@ -1069,3 +1369,144 @@ def sync_peer_cards(
     cur.execute("SELECT card_json FROM peer_agent_cards WHERE peer_username = ?", (peer_username,))
     cached = [json.loads(r[0]) for r in cur.fetchall()]
     return {"source": "cache_fallback", "cards": cached}
+
+
+def send_artifact_offer(
+    conn: sqlite3.Connection,
+    vault_key: bytes,
+    owner_identity_key: ed25519.Ed25519PrivateKey,
+    owner_x25519_privkey: bytes,
+    owner_username: str,
+    session_id: str,
+    artifact_id: str,
+    peer_endpoint: str | None = None,
+    relay_url: str | None = None,
+    recipient_x25519_pubkey: bytes | None = None,
+    now: datetime.datetime | None = None,
+    http_client: httpx.Client | None = None,
+) -> dict[str, Any]:
+    """Construct, sign, self-ingest, and transmit an ARTIFACT_OFFER envelope to peer (direct HTTP with relay fallback)."""
+    now_str = _iso_now(now)
+    client = http_client or httpx.Client(timeout=10.0)
+
+    # 1. Verify session exists
+    state = reconstruct_session_state(conn, vault_key, session_id)
+    if not state:
+        raise TransportError(f"Session '{session_id}' not found.")
+
+    peer_username = state.receiver_username if owner_username == state.initiator_username else state.initiator_username
+
+    # 2. Retrieve metadata (raises ArtifactNotFoundError if artifact_id missing)
+    meta = get_artifact_metadata(conn, artifact_id)
+
+    # 3. Validate artifact session ownership (Directive 4)
+    if meta.session_id != session_id:
+        raise ValueError(f"Artifact '{artifact_id}' belongs to session '{meta.session_id}', not '{session_id}'.")
+
+    # 4. Load raw bytes
+    raw_bytes = load_artifact_bytes(conn, vault_key, artifact_id)
+
+    # 5. Resolve contact endpoint / keys if None
+    resolved_ep, resolved_x255, resolved_ed_pub = _resolve_peer_contact_info(conn, peer_username)
+    endpoint = peer_endpoint or resolved_ep
+    recip_x255 = recipient_x25519_pubkey or resolved_x255
+
+    if not recip_x255:
+        raise TransportError(f"Recipient X25519 public key not found for peer '{peer_username}'.")
+
+    # 6. Perform X25519 ECDH + ChaCha20Poly1305 wire encryption
+    wire_ciphertext = encrypt_for_recipient(owner_x25519_privkey, recip_x255, raw_bytes)
+    enc_b64 = base64.b64encode(wire_ciphertext).decode("ascii")
+
+    # 7. Construct payload dictionary
+    payload = {
+        "schema_version": "1.1",
+        "artifact_id": meta.artifact_id,
+        "session_id": session_id,
+        "sha256": meta.sha256,
+        "mime_type": meta.mime_type,
+        "size_bytes": meta.size_bytes,
+        "offered_by": owner_username,
+        "preview_policy": meta.preview_policy,
+        "encrypted_bytes_b64": enc_b64,
+    }
+
+    content_hash = compute_content_hash(payload)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COALESCE(MAX(sequence), 0) + 1 FROM session_events WHERE session_id = ? AND actor_username = ?",
+        (session_id, owner_username),
+    )
+    seq = cur.fetchone()[0]
+
+    actor_ag_id = state.participants.get(owner_username, ParticipantInfo(agent_id=owner_username, role="owner")).agent_id
+
+    env_dict = {
+        "schema_version": "1.1",
+        "protocol_version": "1.1",
+        "session_id": session_id,
+        "sequence": seq,
+        "actor_username": owner_username,
+        "actor_agent_id": actor_ag_id,
+        "timestamp": now_str,
+        "kind": MessageKind.ARTIFACT_OFFER.value,
+        "content_hash": content_hash,
+        "payload": payload,
+    }
+    env_dict["signature"] = sign_envelope(env_dict, owner_identity_key)
+
+    # 8. Symmetric self-processing pass
+    def get_pubkey(un: str) -> ed25519.Ed25519PublicKey | None:
+        if un == owner_username:
+            return owner_identity_key.public_key()
+        return resolved_ed_pub
+
+    ack = ingest_envelope(
+        conn,
+        vault_key,
+        env_dict,
+        get_public_key_fn=get_pubkey,
+        now=now,
+        recipient_x25519_privkey=owner_x25519_privkey,
+        owner_identity_key=owner_identity_key,
+    )
+    if ack.status == "rejected":
+        raise TransportError(f"Self-processing of ARTIFACT_OFFER envelope rejected: {ack.error_message}")
+
+    # 9. Attempt network delivery (Direct -> Relay -> Local Queue)
+    delivered = False
+    queued_at_relay = False
+
+    if endpoint:
+        try:
+            resp = client.post(f"{endpoint.rstrip('/')}/v1.1/sessions", json=env_dict)
+            if resp.status_code == 200:
+                rec_ack = TransportAcknowledgement.model_validate(resp.json())
+                if rec_ack.status == "delivered":
+                    delivered = True
+        except httpx.RequestError:
+            pass
+
+    if not delivered and relay_url and recip_x255:
+        try:
+            raw_env_bytes = json.dumps(env_dict, sort_keys=True).encode("utf-8")
+            enc_payload = encrypt_for_recipient(owner_x25519_privkey, recip_x255, raw_env_bytes)
+            relay_resp = client.post(
+                f"{relay_url.rstrip('/')}/relay/mailbox/{peer_username}",
+                json={
+                    "sender_username": owner_username,
+                    "encrypted_blob": enc_payload.hex(),
+                },
+            )
+            if relay_resp.status_code == 200:
+                queued_at_relay = True
+        except httpx.RequestError:
+            pass
+
+    delivery_status = "direct" if delivered else ("relay" if queued_at_relay else "local-only")
+    return {
+        "session_id": session_id,
+        "artifact_id": artifact_id,
+        "status": "offered",
+        "delivery": delivery_status,
+    }

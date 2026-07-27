@@ -14,35 +14,15 @@ from kin.identity.storage import (
 )
 
 
-class InMemoryKeyring(keyring.backend.KeyringBackend):
-    """A dictionary-backed keyring for unit tests to avoid polluting the OS vault."""
-    priority = 1
-    KIN_TEST_BACKEND = True
-
-    def __init__(self):
-        self.passwords = {}
-
-    def set_password(self, servicename, username, password):
-        self.passwords[(servicename, username)] = password
-
-    def get_password(self, servicename, username):
-        return self.passwords.get((servicename, username))
-
-    def delete_password(self, servicename, username):
-        if (servicename, username) in self.passwords:
-            del self.passwords[(servicename, username)]
-            return 0
-        return -1
+from kin.testing.insecure_memory_keyring import InMemoryTestKeyring
 
 
 @pytest.fixture(autouse=True)
 def mock_keyring():
-    """Fixture that intercepts keyring operations and routes them to InMemoryKeyring."""
-    original_keyring = keyring.get_keyring()
-    mem_keyring = InMemoryKeyring()
+    """Fixture that intercepts keyring operations and routes them to InMemoryTestKeyring."""
+    mem_keyring = InMemoryTestKeyring()
     keyring.set_keyring(mem_keyring)
     yield mem_keyring
-    keyring.set_keyring(original_keyring)
 
 
 def test_private_key_storage_roundtrip() -> None:

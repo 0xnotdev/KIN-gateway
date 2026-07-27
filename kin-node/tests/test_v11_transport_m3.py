@@ -1366,3 +1366,183 @@ def test_receiver_agent_substitution_negative_cases(alice_node, bob_node):
     ack3 = ingest_envelope(alice_node["conn"], alice_node["vault_key"], env_acc2, get_public_key_fn=get_pubkey)
     assert ack3.status == "rejected"
     assert ack3.error_code in ("INVALID_STATE_TRANSITION", "UNAUTHORIZED_AGENT")
+
+
+def test_dispatch_session_custom_max_turns_isolation_and_enforcement(alice_node, bob_node):
+    """Test that max_turns parameter is persisted to both sides and enforced down to the custom limit."""
+    _add_verified_contact(alice_node["conn"], "bob", bob_node["ed_pub"].public_bytes_raw().hex(), bob_node["x255_pub"].hex(), "http://bob-node")
+    _add_verified_contact(bob_node["conn"], "alice", alice_node["ed_pub"].public_bytes_raw().hex(), alice_node["x255_pub"].hex(), "http://alice-node")
+
+    register_card(alice_node["conn"], alice_node["vault_key"], _make_agent_card("alice_agent", "Alice Agent"))
+    register_card(bob_node["conn"], bob_node["vault_key"], _make_agent_card("bob_agent", "Bob Agent"))
+
+    card_b = PublishedAgentCard(schema_version="1.1", protocol_version="1.1", agent_id="bob_agent", name="Bob Agent", description="Bob Agent", capabilities=AgentCapabilities(tags=[], accepts=[], produces=[]), availability=AgentAvailability.READY, requires_owner_acceptance=True)
+    card_a = PublishedAgentCard(schema_version="1.1", protocol_version="1.1", agent_id="alice_agent", name="Alice Agent", description="Alice Agent", capabilities=AgentCapabilities(tags=[], accepts=[], produces=[]), availability=AgentAvailability.READY, requires_owner_acceptance=True)
+    cache_peer_card(alice_node["conn"], "bob", card_b)
+    cache_peer_card(bob_node["conn"], "alice", card_a)
+
+    def mock_post(url, json=None, **kwargs):
+        if "capabilities" in url:
+            return MagicMock(status_code=200, json=lambda: {"protocol_version": "1.1", "supported_features": ["session_v1", "jcs_signatures"], "max_turn_limit": 12})
+        if "/v1.1/sessions" in url:
+            target_conn = alice_node["conn"] if "alice-node" in url else bob_node["conn"]
+            target_vk = alice_node["vault_key"] if "alice-node" in url else bob_node["vault_key"]
+            def get_pubkey(un):
+                return alice_node["ed_pub"] if un == "alice" else bob_node["ed_pub"]
+            ack = ingest_envelope(target_conn, target_vk, json, get_public_key_fn=get_pubkey)
+            return MagicMock(status_code=200, json=lambda: ack.model_dump(mode="json"))
+        return MagicMock(status_code=404)
+
+    def mock_get(url, **kwargs):
+        if "capabilities" in url:
+            return MagicMock(status_code=200, json=lambda: {"protocol_version": "1.1", "supported_features": ["session_v1", "jcs_signatures"], "max_turn_limit": 12})
+        return MagicMock(status_code=404)
+
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.get.side_effect = mock_get
+    mock_client.post.side_effect = mock_post
+
+    # 1. Dispatch with custom max_turns = 4
+    res = dispatch_session(
+        alice_node["conn"],
+        alice_node["vault_key"],
+        sender_identity_key=alice_node["ed_priv"],
+        sender_x25519_privkey=alice_node["x255_priv"],
+        sender_username="alice",
+        peer_username="bob",
+        sender_agent_id="alice_agent",
+        receiver_agent_id="bob_agent",
+        collaboration_mode="ask",
+        goal="Test turn limit",
+        peer_endpoint="http://bob-node",
+        recipient_x25519_pubkey=bob_node["x255_pub"],
+        max_turns=4,
+        http_client=mock_client,
+    )
+    sess_id = res["session_id"]
+
+    # 2. Assert BOTH sides' persisted sessions.turn_limit == 4 after dispatch
+    cur_alice = alice_node["conn"].cursor()
+    cur_alice.execute("SELECT turn_limit FROM sessions WHERE session_id = ?", (sess_id,))
+    alice_row = cur_alice.fetchone()
+    assert alice_row is not None
+    assert alice_row[0] == 4
+
+    cur_bob = bob_node["conn"].cursor()
+    cur_bob.execute("SELECT turn_limit FROM sessions WHERE session_id = ?", (sess_id,))
+    bob_row = cur_bob.fetchone()
+    assert bob_row is not None
+    assert bob_row[0] == 4
+
+    # 3. Assert SessionState max_turns is 4 via reconstruct_session_state
+    from kin.session.reducer import reconstruct_session_state
+    state_alice = reconstruct_session_state(alice_node["conn"], alice_node["vault_key"], sess_id)
+    assert state_alice is not None
+    assert state_alice.max_turns == 4
+
+    state_bob = reconstruct_session_state(bob_node["conn"], bob_node["vault_key"], sess_id)
+    assert state_bob is not None
+    assert state_bob.max_turns == 4
+
+    now_str = "2026-07-25T12:00:00Z"
+    def get_pubkey(un):
+        return alice_node["ed_pub"] if un == "alice" else bob_node["ed_pub"]
+
+    # Bob sends ACCEPTANCE to Alice (Bob sequence 1)
+    payload_acc = {"accepting_agent_id": "bob_agent", "reason": "Ready to assist"}
+    env_acc = {
+        "schema_version": "1.1", "protocol_version": "1.1", "session_id": sess_id,
+        "sequence": 1, "actor_username": "bob", "actor_agent_id": "bob_agent",
+        "timestamp": now_str, "kind": MessageKind.ACCEPTANCE.value,
+        "content_hash": compute_content_hash(payload_acc), "payload": payload_acc,
+    }
+    env_acc["signature"] = sign_envelope(env_acc, bob_node["ed_priv"])
+    ack_acc = ingest_envelope(alice_node["conn"], alice_node["vault_key"], env_acc, get_public_key_fn=get_pubkey)
+    assert ack_acc.status == "delivered"
+
+    # 4. Drive session turns to the limit of 4 using turn-consuming envelopes
+    # Turn 1: TASK_REQUEST (Alice sequence 1)
+    # ACCEPTANCE (Bob sequence 1, not turn-consuming)
+    # Turn 2: PROPOSAL from Bob (Bob sequence 2)
+    # Turn 3: COUNTERPROPOSAL from Alice (Alice sequence 2)
+    # Turn 4: PROPOSAL from Bob (Bob sequence 3)
+    # Turn 5: COUNTERPROPOSAL from Alice (Alice sequence 3) -> MUST be rejected with TURN_LIMIT_EXCEEDED!
+
+    # Bob sequence 2: PROPOSAL (Turn 2)
+    payload_bob_2 = {"proposal_text": "Prop 1"}
+    env_bob_2 = {
+        "schema_version": "1.1", "protocol_version": "1.1", "session_id": sess_id,
+        "sequence": 2, "actor_username": "bob", "actor_agent_id": "bob_agent",
+        "timestamp": now_str, "kind": MessageKind.PROPOSAL.value,
+        "content_hash": compute_content_hash(payload_bob_2), "payload": payload_bob_2,
+    }
+    env_bob_2["signature"] = sign_envelope(env_bob_2, bob_node["ed_priv"])
+    ack_b2 = ingest_envelope(alice_node["conn"], alice_node["vault_key"], env_bob_2, get_public_key_fn=get_pubkey)
+    assert ack_b2.status == "delivered"
+
+    # Alice sequence 2: COUNTERPROPOSAL (Turn 3)
+    payload_alice_2 = {"proposal_text": "Counter 1"}
+    env_alice_2 = {
+        "schema_version": "1.1", "protocol_version": "1.1", "session_id": sess_id,
+        "sequence": 2, "actor_username": "alice", "actor_agent_id": "alice_agent",
+        "timestamp": now_str, "kind": MessageKind.COUNTERPROPOSAL.value,
+        "content_hash": compute_content_hash(payload_alice_2), "payload": payload_alice_2,
+    }
+    env_alice_2["signature"] = sign_envelope(env_alice_2, alice_node["ed_priv"])
+    ack_a2 = ingest_envelope(alice_node["conn"], alice_node["vault_key"], env_alice_2, get_public_key_fn=get_pubkey)
+    assert ack_a2.status == "delivered"
+
+    # Bob sequence 3: PROPOSAL (Turn 4)
+    payload_bob_3 = {"proposal_text": "Prop 2"}
+    env_bob_3 = {
+        "schema_version": "1.1", "protocol_version": "1.1", "session_id": sess_id,
+        "sequence": 3, "actor_username": "bob", "actor_agent_id": "bob_agent",
+        "timestamp": now_str, "kind": MessageKind.PROPOSAL.value,
+        "content_hash": compute_content_hash(payload_bob_3), "payload": payload_bob_3,
+    }
+    env_bob_3["signature"] = sign_envelope(env_bob_3, bob_node["ed_priv"])
+    ack_b3 = ingest_envelope(alice_node["conn"], alice_node["vault_key"], env_bob_3, get_public_key_fn=get_pubkey)
+    assert ack_b3.status == "delivered"
+
+    # Alice sequence 3: COUNTERPROPOSAL (Turn 5 attempt) -> MUST be rejected with TURN_LIMIT_EXCEEDED!
+    payload_alice_3 = {"proposal_text": "Counter 2"}
+    env_alice_3 = {
+        "schema_version": "1.1", "protocol_version": "1.1", "session_id": sess_id,
+        "sequence": 3, "actor_username": "alice", "actor_agent_id": "alice_agent",
+        "timestamp": now_str, "kind": MessageKind.COUNTERPROPOSAL.value,
+        "content_hash": compute_content_hash(payload_alice_3), "payload": payload_alice_3,
+    }
+    env_alice_3["signature"] = sign_envelope(env_alice_3, alice_node["ed_priv"])
+    ack_a3 = ingest_envelope(alice_node["conn"], alice_node["vault_key"], env_alice_3, get_public_key_fn=get_pubkey)
+    assert ack_a3.status == "rejected"
+    assert ack_a3.error_code == "TURN_LIMIT_EXCEEDED"
+
+
+def test_dispatch_session_invalid_max_turns_rejected(alice_node, bob_node):
+    """Test asserting dispatch_session with max_turns > 12 or < 1 is rejected before envelope construction."""
+    _add_verified_contact(alice_node["conn"], "bob", bob_node["ed_pub"].public_bytes_raw().hex(), bob_node["x255_pub"].hex(), "http://bob-node")
+    register_card(alice_node["conn"], alice_node["vault_key"], _make_agent_card("alice_agent", "Alice Agent"))
+
+    with pytest.raises(ValueError) as exc_info:
+        dispatch_session(
+            alice_node["conn"],
+            alice_node["vault_key"],
+            sender_identity_key=alice_node["ed_priv"],
+            sender_x25519_privkey=alice_node["x255_priv"],
+            sender_username="alice",
+            peer_username="bob",
+            sender_agent_id="alice_agent",
+            receiver_agent_id="bob_agent",
+            collaboration_mode="ask",
+            goal="Test invalid max_turns",
+            peer_endpoint="http://bob-node",
+            recipient_x25519_pubkey=bob_node["x255_pub"],
+            max_turns=13,
+        )
+    assert "max_turns" in str(exc_info.value)
+
+    # Assert no session row was created
+    cur = alice_node["conn"].cursor()
+    cur.execute("SELECT COUNT(*) FROM sessions")
+    assert cur.fetchone()[0] == 0
+
