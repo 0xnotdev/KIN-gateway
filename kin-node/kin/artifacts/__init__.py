@@ -1,5 +1,8 @@
-"""Artifact vault package for encrypted artifact storage (§15.8)."""
-
+from kin.artifacts.preview import (
+    ArtifactPreview,
+    generate_preview,
+    get_artifact_preview,
+)
 from kin.artifacts.vault import (
     ArtifactCorruptedError,
     ArtifactIdConflictError,
@@ -16,8 +19,11 @@ __all__ = [
     "ArtifactIdConflictError",
     "ArtifactMetadata",
     "ArtifactNotFoundError",
+    "ArtifactPreview",
     "ArtifactTooLargeError",
+    "generate_preview",
     "get_artifact_metadata",
+    "get_artifact_preview",
     "load_artifact_bytes",
     "store_artifact",
 ]
