@@ -57,7 +57,7 @@ EXPECTED_SCHEMA: dict[str, set[str]] = {
     "sessions": {"session_id", "type", "initiator_username", "receiver_username", "status", "objective", "sender_agent_id", "receiver_agent_id", "participant_snapshot_json", "turn_limit", "created_at", "updated_at", "terminal_result_json", "expires_at"},
     "session_events": {"event_id", "session_id", "event_order", "sequence", "actor_username", "actor_agent_id", "kind", "visibility", "payload_json", "signature", "created_at"},
     "artifacts": {"artifact_id", "session_id", "sha256", "mime_type", "bytes_encrypted", "metadata_json", "offered_by", "created_at"},
-    "approvals": {"approval_id", "session_id", "agent_id", "action_class", "request_json", "decision", "decided_at", "expires_at"},
+    "approvals": {"approval_id", "session_id", "agent_id", "action_class", "request_json", "decision", "decided_at", "expires_at", "consumed_at"},
     "audit_events": {"audit_id", "correlation_id", "session_id", "category", "actor_username", "summary", "payload_json", "created_at"},
     "outbound_envelope_queue": {"queue_id", "session_id", "sequence", "recipient_username", "envelope_kind", "envelope_json_enc", "delivery_state", "attempt_count", "next_retry_at", "last_error", "created_at", "updated_at"},
     "peer_capabilities": {"peer_username", "capability_json", "fetched_at"},

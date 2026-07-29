@@ -11,25 +11,14 @@ from kin.artifacts.preview import (
 from kin.artifacts.vault import ArtifactMetadata, store_artifact
 
 
+from kin.storage.migrations import run_migrations
+
+
 @pytest.fixture
 def in_memory_db():
-    """Create an in-memory SQLite database initialized with artifacts table schema."""
+    """Create an in-memory SQLite database initialized with full migrations schema."""
     conn = sqlite3.connect(":memory:")
-    conn.execute(
-        """\
-        CREATE TABLE artifacts (
-            artifact_id TEXT PRIMARY KEY,
-            session_id TEXT NOT NULL,
-            sha256 TEXT NOT NULL,
-            mime_type TEXT NOT NULL,
-            bytes_encrypted BLOB NOT NULL,
-            metadata_json TEXT,
-            offered_by TEXT,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    conn.commit()
+    run_migrations(conn)
     yield conn
     conn.close()
 
@@ -108,6 +97,26 @@ def test_preview_csv_row_bounding_and_fallback():
     assert p_csv.rows_shown == 10
     assert p_csv.total_rows_estimate == 100
     assert p_csv.truncated is True
+
+
+def test_preview_csv_malformed_fallback():
+    """3b. CSV: malformed CSV inputs gracefully fall back to plain text without throwing exceptions."""
+    meta = ArtifactMetadata(
+        artifact_id="art_csv_bad_1",
+        session_id="sess_1",
+        sha256="abc",
+        mime_type="text/csv",
+        size_bytes=40,
+        offered_by="alice",
+        preview_policy="auto",
+        created_at="2026-07-28T12:00:00Z",
+    )
+    # Unclosed quote string causes csv.reader to raise csv.Error or exception
+    malformed_csv = b'col1,col2\n"unclosed quote line,colB'
+    p_bad = generate_preview(meta, malformed_csv, max_preview_chars=500)
+    assert p_bad.preview_kind in ("csv", "text")
+    assert p_bad.content is not None
+    assert p_bad.truncated is False
 
 
 def test_preview_markdown_no_html_rendering():

@@ -209,6 +209,55 @@ def _apply_node_command_transition(
     return new_state
 
 
+def _apply_owner_command_transition(
+    conn: sqlite3.Connection,
+    vault_key: bytes,
+    session_id: str,
+    owner_username: str,
+    action: str,
+    payload: dict[str, Any] | None = None,
+    now: datetime.datetime | None = None,
+) -> SessionState | None:
+    """Reconstruct SessionState, execute process_owner_command, persist new status, and log audit event.
+
+    Ensures state machine transitions follow valid transition rules and owner authorization.
+    """
+    from kin.session.reducer import process_owner_command
+
+    now_str = _iso_now(now)
+    state = reconstruct_session_state(conn, vault_key, session_id)
+    if not state:
+        return None
+
+    res = process_owner_command(state, owner_username, action, payload)
+    if not res.success:
+        write_audit_event(
+            conn,
+            vault_key,
+            category="session_status_rejected",
+            session_id=session_id,
+            summary=f"Owner command transition '{action}' rejected on state '{state.status}': {res.error_message}",
+        )
+        return None
+
+    new_state = res.new_state
+    conn.execute(
+        "UPDATE sessions SET status = ?, updated_at = ? WHERE session_id = ?",
+        (new_state.status, now_str, session_id),
+    )
+    write_audit_event(
+        conn,
+        vault_key,
+        category="session_status_updated",
+        session_id=session_id,
+        summary=f"Session status updated to '{new_state.status}' via owner action '{action}'",
+        payload={"previous_status": state.status, "new_status": new_state.status, "action": action},
+        correlation_id=session_id,
+    )
+    conn.commit()
+    return new_state
+
+
 def ingest_envelope(
     conn: sqlite3.Connection,
     vault_key: bytes,

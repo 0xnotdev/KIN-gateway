@@ -311,7 +311,7 @@ def process_owner_command(
         target_status = "cancelled"
     elif action == "owner_approval_decision":
         decision = (payload or {}).get("decision")
-        if decision in ("approve_once", "always_allow_bounded"):
+        if decision in ("approve_once", "always_allow_bounded", "edit_constraints"):
             target_status = "active"
         elif decision == "deny":
             target_status = "paused"

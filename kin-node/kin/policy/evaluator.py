@@ -74,7 +74,7 @@ def evaluate_action(
     STRICT EVALUATION ORDER:
     1. Hard Boundary Denial Check: Runs FIRST and short-circuits. Boundary denials CANNOT
        be overridden by prior_approval.
-    2. Prior Approval Check: Non-expired 'always_allow_bounded' grants ALLOW; explicit 'deny'
+    2. Prior Approval Check: Non-expired 'always_allow_bounded' or 'approve_once' grants ALLOW; explicit 'deny'
        grants DENY.
     3. Autonomy Mapping & Fallback: Maps autonomy level or returns REQUIRES_APPROVAL with
        a fully specified ApprovalRequest.
@@ -110,7 +110,12 @@ def evaluate_action(
     # STEP 2: Prior Approval Check
     # --------------------------------------------------------------------------
     if prior_approval is not None:
-        if prior_approval.decision in (DecisionKind.ALWAYS_ALLOW_BOUNDED, "always_allow_bounded"):
+        if prior_approval.decision in (
+            DecisionKind.ALWAYS_ALLOW_BOUNDED,
+            "always_allow_bounded",
+            DecisionKind.APPROVE_ONCE,
+            "approve_once",
+        ):
             if prior_approval_expires_at is None or now < prior_approval_expires_at:
                 return PolicyResult(
                     decision=PolicyDecision.ALLOW,
@@ -121,7 +126,7 @@ def evaluate_action(
                 decision=PolicyDecision.DENY,
                 reason="Action explicitly denied by prior approval decision.",
             )
-        # Note: EDIT_CONSTRAINTS or expired ALWAYS_ALLOW_BOUNDED falls through to Step 3.
+        # Note: EDIT_CONSTRAINTS or expired approvals fall through to Step 3.
 
     # --------------------------------------------------------------------------
     # STEP 3: Autonomy Level & Default Mapping

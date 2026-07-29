@@ -240,6 +240,10 @@ CREATE TABLE IF NOT EXISTS peer_capabilities (
 );
 """
 
+MIGRATION_0006_SQL = """\
+ALTER TABLE approvals ADD COLUMN consumed_at TEXT;
+"""
+
 
 def _up_0001(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_0001_SQL)
@@ -261,12 +265,17 @@ def _up_0005(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_0005_SQL)
 
 
+def _up_0006(conn: sqlite3.Connection) -> None:
+    conn.executescript(MIGRATION_0006_SQL)
+
+
 ALL_MIGRATIONS: list[Migration] = [
     Migration(version=1, name="v1_baseline", up_sql=MIGRATION_0001_SQL, up_fn=_up_0001),
     Migration(version=2, name="v11_session_records", up_sql=MIGRATION_0002_SQL, up_fn=_up_0002),
     Migration(version=3, name="v11_agent_registry_extensions", up_sql=MIGRATION_0003_SQL, up_fn=_up_0003),
     Migration(version=4, name="v11_transport_and_queue", up_sql=MIGRATION_0004_SQL, up_fn=_up_0004),
     Migration(version=5, name="v11_session_column_renames", up_sql=MIGRATION_0005_SQL, up_fn=_up_0005),
+    Migration(version=6, name="v11_approval_consumed_at", up_sql=MIGRATION_0006_SQL, up_fn=_up_0006),
 ]
 
 
