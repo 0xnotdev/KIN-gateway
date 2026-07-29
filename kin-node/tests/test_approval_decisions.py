@@ -499,3 +499,69 @@ def test_alice_cannot_approve_bobs_action_and_peer_rejection():
 
     alice_conn.close()
     bob_conn.close()
+
+
+def test_decide_approval_unauthorized_owner_or_terminal_session_leaves_decision_null(profile_db):
+    """9. Prove transaction ordering & non-partial commit: failed transition leaves decision IS NULL in approvals table.
+
+    Asserts:
+    (a) Calling decide_approval with an un-authorized owner raises RuntimeError, and decision remains NULL.
+    (b) Calling decide_approval on a terminal session raises RuntimeError, and decision remains NULL.
+    """
+    vault_key = b"01234567890123456789012345678901"
+    session_id = "sess_fail_order"
+
+    # Setup session with initiator "alice"
+    _setup_session(profile_db, session_id, initiator="alice", receiver="bob", status="awaiting_owner_approval")
+
+    req = ApprovalRequest(
+        schema_version="1.1",
+        approval_id="req_fo_1",
+        session_id=session_id,
+        agent_id="ag_test_card",
+        action_class=ActionClass.WORKSPACE_WRITE,
+        summary="Test transaction ordering",
+        reason="Reason",
+        risk_label=RiskLabel.HIGH,
+        requested_scope={},
+        expires_at="2026-07-30T12:00:00Z",
+    )
+    create_pending_approval(profile_db, vault_key, req, agent_id="ag_test_card", action_class=ActionClass.WORKSPACE_WRITE, expires_at="2026-07-30T12:00:00Z")
+
+    # (a) Attempt decision with unauthorized owner "mallory" (not alice)
+    with pytest.raises(RuntimeError, match="Owner command transition rejected"):
+        decide_approval(
+            profile_db,
+            vault_key,
+            approval_id="req_fo_1",
+            session_id=session_id,
+            decision=DecisionKind.APPROVE_ONCE,
+            owner_username="mallory",
+            now="2026-07-29T12:05:00Z",
+        )
+
+    # Prove decision IS NULL after failed transition attempt
+    row_a = profile_db.execute("SELECT decision, decided_at FROM approvals WHERE approval_id = ?", ("req_fo_1",)).fetchone()
+    assert row_a[0] is None
+    assert row_a[1] is None
+
+    # (b) Transition session to terminal status 'cancelled'
+    profile_db.execute("UPDATE sessions SET status = 'cancelled' WHERE session_id = ?", (session_id,))
+    profile_db.commit()
+
+    # Attempt decision on terminal session with authorized owner "alice"
+    with pytest.raises(RuntimeError, match="Owner command transition rejected"):
+        decide_approval(
+            profile_db,
+            vault_key,
+            approval_id="req_fo_1",
+            session_id=session_id,
+            decision=DecisionKind.APPROVE_ONCE,
+            owner_username="alice",
+            now="2026-07-29T12:06:00Z",
+        )
+
+    # Prove decision IS NULL after failed transition attempt on terminal session
+    row_b = profile_db.execute("SELECT decision, decided_at FROM approvals WHERE approval_id = ?", ("req_fo_1",)).fetchone()
+    assert row_b[0] is None
+    assert row_b[1] is None

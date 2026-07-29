@@ -306,6 +306,18 @@ def decide_approval(
     else:
         final_constraints = constraints
 
+    # Validate owner authorization and state machine transition feasibility BEFORE writing decision
+    from kin.session.reducer import process_owner_command, reconstruct_session_state
+    from kin.transport.v11 import _apply_owner_command_transition
+
+    state = reconstruct_session_state(conn, vault_key, session_id)
+    if not state:
+        raise ApprovalNotFoundError(f"Session '{session_id}' state could not be reconstructed.")
+
+    trial_res = process_owner_command(state, owner_username, "owner_approval_decision", {"decision": d_kind.value})
+    if not trial_res.success:
+        raise RuntimeError(f"Owner command transition rejected on state '{state.status}': {trial_res.error_message}")
+
     approval_decision = ApprovalDecision(
         schema_version="1.1",
         approval_id=approval_id,
@@ -314,15 +326,6 @@ def decide_approval(
         decided_by=owner_username,
         decided_at=now,
         constraints=final_constraints,
-    )
-
-    record_approval_decision(
-        conn,
-        vault_key,
-        approval_decision,
-        agent_id=agent_id,
-        action_class=ActionClass(act_class_str),
-        expires_at=expires_at,
     )
 
     trans_res = _apply_owner_command_transition(
@@ -335,5 +338,14 @@ def decide_approval(
     )
     if trans_res is None:
         raise RuntimeError(f"Session state transition for owner action 'owner_approval_decision' failed.")
+
+    record_approval_decision(
+        conn,
+        vault_key,
+        approval_decision,
+        agent_id=agent_id,
+        action_class=ActionClass(act_class_str),
+        expires_at=expires_at,
+    )
 
     return approval_decision
