@@ -385,3 +385,51 @@ def test_import_approve_once_single_use_consumption(profile_db, local_agent_card
         import_artifact_to_workspace(profile_db, vault_key, local_agent_card, session_id, "art_ao_file2", tmp_path, "file2.txt", now_eval)
 
     assert not (tmp_path / "file2.txt").exists()
+
+
+def test_patch_drift_rejection_leaves_file_untouched(profile_db, local_agent_card, tmp_path: Path):
+    """11. Required test: patch generated against an old file version fails cleanly on a drifted file and leaves real file untouched."""
+    vault_key = b"01234567890123456789012345678901"
+    session_id = "sess_patch_drift"
+    _setup_session(profile_db, session_id)
+
+    # Real file on disk has drifted by adding log_level line at top
+    drifted_content = "log_level=info\ndebug=false\ntimeout=30\nretries=3\n"
+    target_file = tmp_path / "config.ini"
+    target_file.write_text(drifted_content, encoding="utf-8")
+
+    # Patch generated against older version (without log_level)
+    patch_bytes = b"--- a/config.ini\n+++ b/config.ini\n@@ -1,3 +1,3 @@\n debug=false\n-timeout=30\n+timeout=60\n retries=3\n"
+    _store(profile_db, vault_key, session_id, "art_patch_drift", patch_bytes, mime_type="text/x-diff")
+
+    # 1. Preview patch apply raises InvalidPatchArtifactError due to context mismatch
+    with pytest.raises(InvalidPatchArtifactError, match="Patch context mismatch"):
+        preview_patch_apply(profile_db, vault_key, "art_patch_drift", tmp_path, "config.ini")
+
+    # Confirm file on disk is untouched after preview error
+    assert target_file.read_text(encoding="utf-8") == drifted_content
+
+    # 2. Grant workspace write approval
+    req = ApprovalRequest(
+        schema_version="1.1",
+        approval_id="req_drift_1",
+        session_id=session_id,
+        agent_id=local_agent_card.id,
+        action_class=ActionClass.WORKSPACE_WRITE,
+        summary="Apply drifted patch",
+        reason="Allow write",
+        risk_label=RiskLabel.HIGH,
+        requested_scope={},
+        expires_at="2026-07-30T12:00:00Z",
+    )
+    create_pending_approval(profile_db, vault_key, req, agent_id=local_agent_card.id, action_class=ActionClass.WORKSPACE_WRITE, expires_at="2026-07-30T12:00:00Z")
+    decide_approval(profile_db, vault_key, approval_id="req_drift_1", session_id=session_id, decision=DecisionKind.ALWAYS_ALLOW_BOUNDED, owner_username="alice", now="2026-07-29T12:01:00Z")
+
+    # 3. Call apply_patch_to_workspace: MUST raise InvalidPatchArtifactError in preview phase BEFORE atomic write
+    with pytest.raises(InvalidPatchArtifactError, match="Patch context mismatch"):
+        apply_patch_to_workspace(profile_db, vault_key, local_agent_card, session_id, "art_patch_drift", tmp_path, "config.ini", "2026-07-29T12:05:00Z")
+
+    # CRITICAL SECURITY & DATA INTEGRITY ASSERTION:
+    # Target file on disk MUST remain 100% UNTOUCHED (zero data corruption!)
+    assert target_file.read_text(encoding="utf-8") == drifted_content
+

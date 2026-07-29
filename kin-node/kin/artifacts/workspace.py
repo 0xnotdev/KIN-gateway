@@ -71,15 +71,29 @@ def resolve_safe_workspace_path(workspace_root: str | Path, relative_path: str) 
     if rel_obj.is_absolute():
         raise UnsafeWorkspacePathError(f"Absolute paths are forbidden: '{relative_path}'.")
 
+def resolve_safe_workspace_path(workspace_root: str | Path, relative_path: str) -> Path:
+    """Resolve and validate relative_path cleanly inside workspace_root.
+
+    Rejects:
+    - Empty or whitespace-only paths
+    - Null bytes (\x00)
+    - Absolute paths (e.g. /etc/passwd, C:\\Windows)
+    - Paths whose resolved target is not relative to resolved workspace_root
+    """
+    if not relative_path or not relative_path.strip():
+        raise UnsafeWorkspacePathError("Relative target path cannot be empty.")
+
+    if "\x00" in relative_path:
+        raise UnsafeWorkspacePathError("Null bytes are forbidden in workspace paths.")
+
+    rel_obj = Path(relative_path)
+    if rel_obj.is_absolute():
+        raise UnsafeWorkspacePathError(f"Absolute paths are forbidden: '{relative_path}'.")
+
     root_resolved = Path(workspace_root).resolve()
     candidate_resolved = (root_resolved / rel_obj).resolve()
 
-    try:
-        if not candidate_resolved.is_relative_to(root_resolved):
-            raise UnsafeWorkspacePathError(
-                f"Path traversal detected: '{relative_path}' resolves outside workspace root '{root_resolved}'."
-            )
-    except ValueError:
+    if not candidate_resolved.is_relative_to(root_resolved):
         raise UnsafeWorkspacePathError(
             f"Path traversal detected: '{relative_path}' resolves outside workspace root '{root_resolved}'."
         )
@@ -108,7 +122,8 @@ def apply_unified_patch(original_text: str, patch_text: str) -> tuple[str, str, 
     Returns:
         (patched_text, unified_diff_str, hunks_count)
     Raises:
-        InvalidPatchArtifactError if patch_text cannot be parsed or hunk application fails.
+        InvalidPatchArtifactError if patch_text cannot be parsed, hunk header is invalid,
+        or context/deleted lines do not match target original content.
     """
     if not patch_text or not patch_text.strip():
         raise InvalidPatchArtifactError("Patch content is empty.")
@@ -158,14 +173,20 @@ def apply_unified_patch(original_text: str, patch_text: str) -> tuple[str, str, 
             line_content = hline[1:]
 
             if prefix == " ":
-                if orig_idx < len(orig_lines):
-                    out_lines.append(orig_lines[orig_idx])
-                    orig_idx += 1
-                else:
-                    out_lines.append(line_content)
+                actual = orig_lines[orig_idx] if orig_idx < len(orig_lines) else "<EOF>"
+                if orig_idx >= len(orig_lines) or orig_lines[orig_idx] != line_content:
+                    raise InvalidPatchArtifactError(
+                        f"Patch context mismatch at original line {orig_idx + 1}: expected '{line_content}', found '{actual}'"
+                    )
+                out_lines.append(orig_lines[orig_idx])
+                orig_idx += 1
             elif prefix == "-":
-                if orig_idx < len(orig_lines):
-                    orig_idx += 1
+                actual = orig_lines[orig_idx] if orig_idx < len(orig_lines) else "<EOF>"
+                if orig_idx >= len(orig_lines) or orig_lines[orig_idx] != line_content:
+                    raise InvalidPatchArtifactError(
+                        f"Patch deletion mismatch at original line {orig_idx + 1}: expected '{line_content}', found '{actual}'"
+                    )
+                orig_idx += 1
             elif prefix == "+":
                 out_lines.append(line_content)
 
@@ -265,8 +286,8 @@ def import_artifact_to_workspace(
     2. Path safety check (resolve_safe_workspace_path).
     3. Policy check via evaluate_action_for_session (must return PolicyDecision.ALLOW for WORKSPACE_WRITE).
     """
-    validate_card_workspace(card, workspace_root)
-    safe_target_path = resolve_safe_workspace_path(workspace_root, relative_target_path)
+    resolved_root = validate_card_workspace(card, workspace_root)
+    safe_target_path = resolve_safe_workspace_path(resolved_root, relative_target_path)
 
     session_ctx = {"session_id": session_id, "relative_target_path": relative_target_path}
     policy_res = evaluate_action_for_session(
@@ -304,8 +325,8 @@ def apply_patch_to_workspace(
     2. Path safety check (resolve_safe_workspace_path).
     3. Policy check via evaluate_action_for_session (must return PolicyDecision.ALLOW for WORKSPACE_WRITE).
     """
-    validate_card_workspace(card, workspace_root)
-    preview = preview_patch_apply(conn, vault_key, artifact_id, workspace_root, relative_target_path)
+    resolved_root = validate_card_workspace(card, workspace_root)
+    preview = preview_patch_apply(conn, vault_key, artifact_id, resolved_root, relative_target_path)
 
     session_ctx = {"session_id": session_id, "relative_target_path": relative_target_path}
     policy_res = evaluate_action_for_session(
@@ -322,6 +343,6 @@ def apply_patch_to_workspace(
         )
 
     patched_bytes = preview.patched_content.encode("utf-8")
-    safe_target_path = resolve_safe_workspace_path(workspace_root, relative_target_path)
+    safe_target_path = resolve_safe_workspace_path(resolved_root, relative_target_path)
     _atomic_write_file(safe_target_path, patched_bytes)
     return safe_target_path
