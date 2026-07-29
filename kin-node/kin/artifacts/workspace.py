@@ -71,25 +71,6 @@ def resolve_safe_workspace_path(workspace_root: str | Path, relative_path: str) 
     if rel_obj.is_absolute():
         raise UnsafeWorkspacePathError(f"Absolute paths are forbidden: '{relative_path}'.")
 
-def resolve_safe_workspace_path(workspace_root: str | Path, relative_path: str) -> Path:
-    """Resolve and validate relative_path cleanly inside workspace_root.
-
-    Rejects:
-    - Empty or whitespace-only paths
-    - Null bytes (\x00)
-    - Absolute paths (e.g. /etc/passwd, C:\\Windows)
-    - Paths whose resolved target is not relative to resolved workspace_root
-    """
-    if not relative_path or not relative_path.strip():
-        raise UnsafeWorkspacePathError("Relative target path cannot be empty.")
-
-    if "\x00" in relative_path:
-        raise UnsafeWorkspacePathError("Null bytes are forbidden in workspace paths.")
-
-    rel_obj = Path(relative_path)
-    if rel_obj.is_absolute():
-        raise UnsafeWorkspacePathError(f"Absolute paths are forbidden: '{relative_path}'.")
-
     root_resolved = Path(workspace_root).resolve()
     candidate_resolved = (root_resolved / rel_obj).resolve()
 
