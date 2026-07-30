@@ -15,10 +15,12 @@ from kin.adapters import (
     AdapterApprovalEvent,
     AdapterRequest,
     AdapterResponse,
+    InputItem,
     get_adapter,
     validate_adapter_output,
 )
-from kin.artifacts.vault import ArtifactTooLargeError, store_artifact
+from kin.artifacts.preview import ARCHIVE_MIME_TYPES
+from kin.artifacts.vault import ArtifactTooLargeError, load_artifact_bytes, store_artifact
 from kin.agent_registry.registry import get_card
 from kin.audit.writer import append_session_event, write_audit_event
 from kin.policy.evaluator import PolicyResult
@@ -61,6 +63,20 @@ def _execute_node_command(conn: sqlite3.Connection, state: SessionState, command
         conn.execute("UPDATE sessions SET status = ?, updated_at = ? WHERE session_id = ?", (res.new_state.status, now_str, state.session_id))
         conn.commit()
     return res
+
+
+def _safe_decode_artifact_text(raw_bytes: bytes, mime_type: str | None) -> str | None:
+    """Safe UTF-8 text decoding helper reusing Phase 3 preview binary/archive rules."""
+    mime = (mime_type or "").strip().lower()
+    if mime in ARCHIVE_MIME_TYPES:
+        return None
+    try:
+        text = raw_bytes.decode("utf-8")
+        if "\x00" in text:
+            return None
+        return text
+    except UnicodeDecodeError:
+        return None
 
 
 def advance_session_turn(
@@ -202,6 +218,34 @@ def advance_session_turn(
             "content": str(ev.get("payload", {})),
         })
 
+    # Build inputs list: query all stored artifacts belonging to this session
+    cur.execute(
+        "SELECT artifact_id, mime_type FROM artifacts WHERE session_id = ? ORDER BY created_at ASC",
+        (session_id,),
+    )
+    art_rows = cur.fetchall()
+    input_items: list[InputItem] = []
+
+    for art_id, mime_type in art_rows:
+        try:
+            raw_bytes = load_artifact_bytes(conn, vault_key, art_id)
+            decoded_text = _safe_decode_artifact_text(raw_bytes, mime_type)
+            input_items.append(
+                InputItem(
+                    kind="artifact",
+                    ref=art_id,
+                    content=decoded_text,
+                )
+            )
+        except Exception:
+            input_items.append(
+                InputItem(
+                    kind="artifact",
+                    ref=art_id,
+                    content=None,
+                )
+            )
+
     # Construct AdapterRequest
     local_policy = {
         "filesystem": card.boundaries.filesystem if card.boundaries else "none",
@@ -216,7 +260,7 @@ def advance_session_turn(
         self_participant={"agent_id": local_agent_id, "card_snapshot": card.model_dump(mode="json")},
         peer={"person": peer_un, "agent_id": peer_agent_id, "card_snapshot": {}},
         objective=objective_text,
-        inputs=[],
+        inputs=input_items,
         history=history_items,
         local_policy=local_policy,
     )

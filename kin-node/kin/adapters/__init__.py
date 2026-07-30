@@ -10,6 +10,7 @@ from kin.adapters.base import (
     AdapterMessage,
     AdapterRequest,
     AdapterResponse,
+    InputItem,
     ValidationOutcome,
     validate_adapter_output,
 )
@@ -17,6 +18,7 @@ from kin.adapters.factory import get_adapter
 
 __all__ = [
     "AdapterRequest",
+    "InputItem",
     "AdapterEvent",
     "AdapterActivityEvent",
     "AdapterApprovalEvent",

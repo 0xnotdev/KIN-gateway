@@ -271,6 +271,8 @@ def ingest_envelope(
     now: datetime.datetime | None = None,
     recipient_x25519_privkey: bytes | None = None,
     owner_identity_key: ed25519.Ed25519PrivateKey | None = None,
+    relay_url: str | None = None,
+    http_client: httpx.Client | None = None,
 ) -> TransportAcknowledgement:
     """Core 6-stage envelope ingestion pipeline with symmetric self-processing and agent-id locking."""
     now_dt = now or datetime.datetime.now(datetime.timezone.utc)
@@ -488,8 +490,12 @@ def ingest_envelope(
                 error_message=f"Failed to reconstruct state for session '{session_id}'.",
             )
 
-    # If state is in 'delivered' and incoming envelope is ACCEPTANCE, DECLINE, or CLARIFICATION, advance state to 'peer_review'
-    if state.status == "delivered" and env.kind in (MessageKind.ACCEPTANCE, MessageKind.DECLINE, MessageKind.CLARIFICATION):
+    # If state is in 'queued' or 'delivered' and incoming envelope is ACCEPTANCE, DECLINE, or CLARIFICATION, advance state to 'peer_review'
+    if state.status in ("queued", "delivered") and env.kind in (MessageKind.ACCEPTANCE, MessageKind.DECLINE, MessageKind.CLARIFICATION):
+        if state.status == "queued":
+            del_res = process_node_command(state, "mark_delivered")
+            if del_res.success:
+                state = del_res.new_state
         pr_res = process_node_command(state, "mark_peer_review")
         if pr_res.success:
             state = pr_res.new_state
@@ -557,6 +563,11 @@ def ingest_envelope(
                 pr_res = process_node_command(final_state, "mark_peer_review")
                 if pr_res.success:
                     final_state = pr_res.new_state
+
+    if final_state.status == "accepted" and env.actor_username != my_username:
+        act_res = process_node_command(final_state, "mark_active")
+        if act_res.success:
+            final_state = act_res.new_state
 
     # Update session status
     conn.execute(
@@ -827,11 +838,28 @@ def ingest_envelope(
                 owner_identity_key=local_ed_priv,
             )
 
-            resolved_ep, _, _ = _resolve_peer_contact_info(conn, env.actor_username)
+            resolved_ep, sender_x255_bytes, _ = _resolve_peer_contact_info(conn, env.actor_username)
+            delivered_accept = False
+            cli = http_client or httpx.Client(timeout=10.0)
             if resolved_ep:
                 try:
-                    client = httpx.Client(timeout=10.0)
-                    client.post(f"{resolved_ep.rstrip('/')}/v1.1/sessions", json=accept_env_dict)
+                    resp = cli.post(f"{resolved_ep.rstrip('/')}/v1.1/sessions", json=accept_env_dict)
+                    if resp.status_code == 200:
+                        delivered_accept = True
+                except Exception:
+                    pass
+            if not delivered_accept and relay_url and sender_x255_bytes and recip_x255_priv:
+                try:
+                    raw_bytes = json.dumps(accept_env_dict, sort_keys=True).encode("utf-8")
+                    enc_payload = encrypt_for_recipient(recip_x255_priv, sender_x255_bytes, raw_bytes)
+                    cli.post(
+                        f"{relay_url.rstrip('/')}/relay/mailbox",
+                        json={
+                            "recipient_username": env.actor_username,
+                            "sender_username": my_username,
+                            "payload": enc_payload.hex(),
+                        },
+                    )
                 except Exception:
                     pass
 
@@ -1099,15 +1127,43 @@ def respond_to_session(
     if ack.status == "rejected":
         raise TransportError(f"Self-processing of response envelope rejected: {ack.error_message}")
 
+    delivered = False
+    queued_at_relay = False
+
     endpoint = peer_endpoint or resolved_ep
+    recip_x255 = recipient_x25519_pubkey or resolved_x255
+    client = http_client or httpx.Client(timeout=10.0)
+
     if endpoint:
         try:
-            client = http_client or httpx.Client(timeout=10.0)
-            client.post(f"{endpoint.rstrip('/')}/v1.1/sessions", json=env_dict)
+            resp = client.post(f"{endpoint.rstrip('/')}/v1.1/sessions", json=env_dict)
+            if resp.status_code == 200:
+                delivered = True
         except httpx.RequestError:
             pass
 
-    return {"session_id": session_id, "status": "processed", "kind": kind.value}
+    if not delivered and relay_url and recip_x255:
+        try:
+            raw_bytes = json.dumps(env_dict, sort_keys=True).encode("utf-8")
+            enc_payload = encrypt_for_recipient(owner_x25519_privkey, recip_x255, raw_bytes)
+            relay_resp = client.post(
+                f"{relay_url.rstrip('/')}/relay/mailbox",
+                json={
+                    "recipient_username": peer_username,
+                    "sender_username": owner_username,
+                    "payload": enc_payload.hex(),
+                },
+            )
+            if relay_resp.status_code == 200:
+                queued_at_relay = True
+        except httpx.RequestError:
+            pass
+
+    return {
+        "session_id": session_id,
+        "status": "queued" if queued_at_relay else "processed",
+        "kind": kind.value,
+    }
 
 
 def cancel_session(
@@ -1587,6 +1643,8 @@ def send_artifact_offer(
         now=now,
         recipient_x25519_privkey=owner_x25519_privkey,
         owner_identity_key=owner_identity_key,
+        relay_url=relay_url,
+        http_client=client,
     )
     if ack.status == "rejected":
         raise TransportError(f"Self-processing of ARTIFACT_OFFER envelope rejected: {ack.error_message}")

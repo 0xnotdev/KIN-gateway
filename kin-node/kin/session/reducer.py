@@ -245,6 +245,7 @@ def process_node_command(
         "mark_queued": "queued",
         "mark_delivered": "delivered",
         "mark_peer_review": "peer_review",
+        "mark_active": "active",
         "mark_expired": "expired",
         "mark_failed": "failed",
         "mark_awaiting_peer": "awaiting_peer",
@@ -330,7 +331,7 @@ def process_owner_command(
             error_message=f"Unknown owner action '{action}'.",
         )
 
-    if not is_valid_transition(state.status, target_status):
+    if target_status != state.status and not is_valid_transition(state.status, target_status):
         return ReducerResult(
             success=False,
             new_state=state,
