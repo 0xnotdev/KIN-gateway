@@ -69,6 +69,15 @@ def compute_content_hash(payload: dict[str, Any]) -> str:
 
 
 # Enums
+class SessionType(str, Enum):
+    ASK = "ask"
+    RESEARCH = "research"
+    DEBATE = "debate"
+    BUILD_PIPELINE = "build_pipeline"
+    REVIEW = "review"
+    DELEGATE_SUBTASK = "delegate_subtask"
+
+
 class MessageKind(str, Enum):
     TASK_REQUEST = "task_request"
     ACCEPTANCE = "acceptance"

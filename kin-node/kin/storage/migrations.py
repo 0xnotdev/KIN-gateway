@@ -244,6 +244,14 @@ MIGRATION_0006_SQL = """\
 ALTER TABLE approvals ADD COLUMN consumed_at TEXT;
 """
 
+MIGRATION_0007_SQL = """\
+ALTER TABLE sessions ADD COLUMN runtime_budget_seconds INTEGER NULL;
+ALTER TABLE sessions ADD COLUMN artifact_bytes_budget INTEGER NULL;
+ALTER TABLE sessions ADD COLUMN cumulative_artifact_bytes INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sessions ADD COLUMN cost_budget_estimate REAL NULL;
+ALTER TABLE sessions ADD COLUMN cumulative_cost_estimate REAL NOT NULL DEFAULT 0;
+"""
+
 
 def _up_0001(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_0001_SQL)
@@ -269,6 +277,10 @@ def _up_0006(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_0006_SQL)
 
 
+def _up_0007(conn: sqlite3.Connection) -> None:
+    conn.executescript(MIGRATION_0007_SQL)
+
+
 ALL_MIGRATIONS: list[Migration] = [
     Migration(version=1, name="v1_baseline", up_sql=MIGRATION_0001_SQL, up_fn=_up_0001),
     Migration(version=2, name="v11_session_records", up_sql=MIGRATION_0002_SQL, up_fn=_up_0002),
@@ -276,6 +288,7 @@ ALL_MIGRATIONS: list[Migration] = [
     Migration(version=4, name="v11_transport_and_queue", up_sql=MIGRATION_0004_SQL, up_fn=_up_0004),
     Migration(version=5, name="v11_session_column_renames", up_sql=MIGRATION_0005_SQL, up_fn=_up_0005),
     Migration(version=6, name="v11_approval_consumed_at", up_sql=MIGRATION_0006_SQL, up_fn=_up_0006),
+    Migration(version=7, name="v11_session_budgets", up_sql=MIGRATION_0007_SQL, up_fn=_up_0007),
 ]
 
 

@@ -33,11 +33,17 @@ from kin.schemas import (
     CapabilityAdvertisement,
     MessageKind,
     PublishedAgentCard,
+    SessionType,
     TransportAcknowledgement,
     compute_content_hash,
     sign_envelope,
     verify_and_build_envelope,
 )
+
+DEFAULT_BUILD_RUNTIME_BUDGET = 86400  # 24 hours
+DEFAULT_BUILD_ARTIFACT_BYTES_BUDGET = 50_000_000  # 50 MB
+DEFAULT_BUILD_COST_BUDGET_ESTIMATE = 100.0  # 100 estimated adapter calls
+DEFAULT_BUILD_MAX_TURNS = 50
 from kin.session.compatibility import negotiate_capability
 from kin.session.reducer import (
     ParticipantInfo,
@@ -385,7 +391,21 @@ def ingest_envelope(
     if sess_row is None:
         payload = env.payload or {}
         requested_agent_id = payload.get("requested_agent_id", "")
-        collaboration_mode = payload.get("collaboration_mode", "ask")
+        collaboration_mode_raw = payload.get("collaboration_mode", "ask")
+
+        try:
+            st = SessionType(collaboration_mode_raw)
+        except ValueError:
+            return TransportAcknowledgement(
+                schema_version="1.1",
+                envelope_session_id=session_id,
+                envelope_sequence=env.sequence,
+                status="rejected",
+                received_at=now_str,
+                verified_hash=env.content_hash,
+                error_code="INVALID_SESSION_TYPE",
+                error_message=f"Invalid collaboration_mode '{collaboration_mode_raw}'. Must be a valid SessionType.",
+            )
 
         cur.execute("SELECT username FROM identity LIMIT 1")
         my_identity_row = cur.fetchone()
@@ -400,8 +420,17 @@ def ingest_envelope(
             initiator_username = actor_username
             receiver_username = peer_username
 
-        raw_max_turns = payload.get("max_turns", 12)
-        turn_limit = raw_max_turns if isinstance(raw_max_turns, int) and 1 <= raw_max_turns <= 12 else 12
+        raw_max_turns = payload.get("max_turns")
+        if st in (SessionType.BUILD_PIPELINE, SessionType.DELEGATE_SUBTASK):
+            turn_limit = raw_max_turns if isinstance(raw_max_turns, int) and 1 <= raw_max_turns <= 100 else DEFAULT_BUILD_MAX_TURNS
+            runtime_budget = payload.get("runtime_budget_seconds", DEFAULT_BUILD_RUNTIME_BUDGET)
+            artifact_budget = payload.get("artifact_bytes_budget", DEFAULT_BUILD_ARTIFACT_BYTES_BUDGET)
+            cost_budget = payload.get("cost_budget_estimate", DEFAULT_BUILD_COST_BUDGET_ESTIMATE)
+        else:
+            turn_limit = raw_max_turns if isinstance(raw_max_turns, int) and 1 <= raw_max_turns <= 12 else 12
+            runtime_budget = payload.get("runtime_budget_seconds")
+            artifact_budget = payload.get("artifact_bytes_budget")
+            cost_budget = payload.get("cost_budget_estimate")
 
         exp_str = (now_dt + datetime.timedelta(seconds=DEFAULT_EXPIRY_TTL_SECONDS)).isoformat()
         if not exp_str.endswith("Z"):
@@ -412,18 +441,23 @@ def ingest_envelope(
             INSERT INTO sessions (
                 session_id, type, initiator_username, receiver_username, status,
                 objective, sender_agent_id, receiver_agent_id, turn_limit,
+                runtime_budget_seconds, artifact_bytes_budget, cumulative_artifact_bytes,
+                cost_budget_estimate, cumulative_cost_estimate,
                 created_at, updated_at, expires_at
-            ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 0, ?, 0.0, ?, ?, ?)
             """,
             (
                 session_id,
-                collaboration_mode,
+                st.value,
                 initiator_username,
                 receiver_username,
                 payload.get("goal", ""),
                 actor_agent_id,  # Lock sender_agent_id immediately
                 requested_agent_id if requested_agent_id else None,
                 turn_limit,
+                runtime_budget,
+                artifact_budget,
+                cost_budget,
                 now_str,
                 now_str,
                 exp_str,
@@ -720,6 +754,7 @@ def ingest_envelope(
                 now=now_dt,
                 artifact_id=offer.artifact_id,
             )
+            increment_session_artifact_bytes(conn, session_id, len(decrypted_bytes))
         except (ArtifactTooLargeError, ArtifactIdConflictError) as err:
             write_audit_event(
                 conn,
@@ -820,20 +855,47 @@ def dispatch_session(
     peer_username: str,
     sender_agent_id: str,
     receiver_agent_id: str,
-    collaboration_mode: str,
+    collaboration_mode: str | SessionType,
     goal: str,
     peer_endpoint: str | None = None,
     relay_url: str | None = None,
     recipient_x25519_pubkey: bytes | None = None,
-    max_turns: int = 12,
+    max_turns: int | None = None,
+    runtime_budget_seconds: int | None = None,
+    artifact_bytes_budget: int | None = None,
+    cost_budget_estimate: float | None = None,
     now: datetime.datetime | None = None,
     http_client: httpx.Client | None = None,
 ) -> dict[str, Any]:
     """Initiate a new V1.1 session, run capability check (Step 1), stale card check (Step 2), symmetric self-processing, and deliver."""
-    if not isinstance(max_turns, int) or max_turns < 1 or max_turns > 12:
+    mode_str = collaboration_mode.value if isinstance(collaboration_mode, SessionType) else str(collaboration_mode)
+    try:
+        session_type_enum = SessionType(mode_str)
+    except ValueError:
         raise ValueError(
-            f"Invalid max_turns: {max_turns}. max_turns must be an integer between 1 and 12."
+            f"Invalid collaboration_mode '{collaboration_mode}'. Must be one of {[t.value for t in SessionType]}."
         )
+
+    if session_type_enum in (SessionType.BUILD_PIPELINE, SessionType.DELEGATE_SUBTASK):
+        eff_max_turns = max_turns if (max_turns is not None and max_turns != 12) else DEFAULT_BUILD_MAX_TURNS
+        eff_runtime_budget = runtime_budget_seconds if runtime_budget_seconds is not None else DEFAULT_BUILD_RUNTIME_BUDGET
+        eff_artifact_budget = artifact_bytes_budget if artifact_bytes_budget is not None else DEFAULT_BUILD_ARTIFACT_BYTES_BUDGET
+        eff_cost_budget = cost_budget_estimate if cost_budget_estimate is not None else DEFAULT_BUILD_COST_BUDGET_ESTIMATE
+
+        if not isinstance(eff_max_turns, int) or eff_max_turns < 1 or eff_max_turns > 100:
+            raise ValueError(
+                f"Invalid max_turns: {eff_max_turns}. max_turns for '{session_type_enum.value}' must be an integer between 1 and 100."
+            )
+    else:
+        eff_max_turns = max_turns if max_turns is not None else 12
+        eff_runtime_budget = runtime_budget_seconds
+        eff_artifact_budget = artifact_bytes_budget
+        eff_cost_budget = cost_budget_estimate
+
+        if not isinstance(eff_max_turns, int) or eff_max_turns < 1 or eff_max_turns > 12:
+            raise ValueError(
+                f"Invalid max_turns: {eff_max_turns}. max_turns must be an integer between 1 and 12."
+            )
 
     now_str = _iso_now(now)
     client = http_client or httpx.Client(timeout=10.0)
@@ -877,11 +939,14 @@ def dispatch_session(
     # 4. Construct envelope
     session_id = f"sess_{uuid.uuid4().hex[:16]}"
     payload = {
-        "collaboration_mode": collaboration_mode,
+        "collaboration_mode": session_type_enum.value,
         "goal": goal,
         "requested_agent_id": receiver_agent_id,
         "peer_username": peer_username,
-        "max_turns": max_turns,
+        "max_turns": eff_max_turns,
+        "runtime_budget_seconds": eff_runtime_budget,
+        "artifact_bytes_budget": eff_artifact_budget,
+        "cost_budget_estimate": eff_cost_budget,
     }
     content_hash = compute_content_hash(payload)
 
@@ -1108,13 +1173,24 @@ def cancel_session(
     return {"session_id": session_id, "status": "cancelled"}
 
 
+def increment_session_artifact_bytes(conn: sqlite3.Connection, session_id: str, byte_count: int) -> None:
+    """Increment cumulative_artifact_bytes in the sessions table for the specified session."""
+    if byte_count <= 0:
+        return
+    conn.execute(
+        "UPDATE sessions SET cumulative_artifact_bytes = cumulative_artifact_bytes + ? WHERE session_id = ?",
+        (byte_count, session_id),
+    )
+    conn.commit()
+
+
 def pause_session(
     conn: sqlite3.Connection,
     vault_key: bytes,
     owner_identity_key: ed25519.Ed25519PrivateKey,
-    owner_x25519_privkey: bytes,
-    owner_username: str,
-    session_id: str,
+    owner_x25519_privkey: bytes | None = None,
+    owner_username: str = "",
+    session_id: str = "",
     reason: str = "Owner paused participation",
     peer_endpoint: str | None = None,
     relay_url: str | None = None,

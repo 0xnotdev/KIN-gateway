@@ -37,7 +37,12 @@ from kin.session.reducer import (
     reconstruct_session_state,
 )
 from kin.storage.vault import decrypt_field, encrypt_field
-from kin.transport.v11 import _apply_node_command_transition, _iso_now, ingest_envelope
+from kin.transport.v11 import (
+    _apply_node_command_transition,
+    _iso_now,
+    increment_session_artifact_bytes,
+    ingest_envelope,
+)
 
 
 class OrchestratorError(Exception):
@@ -102,16 +107,89 @@ def advance_session_turn(
         pub_card = raw_card_dict.get("published_card") or raw_card_dict
         card = AgentCard.model_validate(pub_card)
 
-    # 3. Read objective and session_type from sessions table
+    # 3. Read objective, session_type, and budget fields from sessions table
     cur = conn.cursor()
-    cur.execute("SELECT objective, initiator_username, receiver_username, type FROM sessions WHERE session_id = ?", (session_id,))
+    cur.execute(
+        """\
+        SELECT objective, initiator_username, receiver_username, type,
+               turn_limit, created_at, runtime_budget_seconds,
+               artifact_bytes_budget, cumulative_artifact_bytes,
+               cost_budget_estimate, cumulative_cost_estimate
+        FROM sessions WHERE session_id = ?
+        """,
+        (session_id,),
+    )
     s_row = cur.fetchone()
-    objective_text = s_row[0] if s_row and s_row[0] else ""
-    init_un, rec_un = s_row[1], s_row[2]
-    session_type = s_row[3] if s_row and len(s_row) > 3 and s_row[3] else (state.type if hasattr(state, "type") else "ask")
+    if not s_row:
+        raise OrchestratorError(f"Session '{session_id}' not found.", code="SESSION_NOT_FOUND")
+
+    (
+        objective_text,
+        init_un,
+        rec_un,
+        sess_type_raw,
+        turn_limit,
+        created_at_str,
+        runtime_budget_seconds,
+        artifact_bytes_budget,
+        cumulative_artifact_bytes,
+        cost_budget_estimate,
+        cumulative_cost_estimate,
+    ) = s_row
+
+    objective_text = objective_text or ""
+    session_type = sess_type_raw or (state.type if hasattr(state, "type") else "ask")
     peer_un = rec_un if owner_username == init_un else init_un
     peer_participant = state.participants.get(peer_un)
     peer_agent_id = peer_participant.agent_id if peer_participant else ""
+
+    # 3.5. AGGREGATE BUDGET EXHAUSTION CHECK BEFORE ADAPTER INVOCATION (§15.8 M5 Phase 6)
+    now_dt = now or datetime.datetime.now(datetime.timezone.utc)
+    exhausted_dimension: str | None = None
+    exhausted_reason: str | None = None
+
+    if turn_limit is not None and state.current_turn >= turn_limit:
+        exhausted_dimension = "turn_limit"
+        exhausted_reason = f"Session budget exhausted: turn_limit ({turn_limit}) reached."
+    elif runtime_budget_seconds is not None and created_at_str:
+        created_dt = datetime.datetime.fromisoformat(created_at_str.rstrip("Z")).replace(tzinfo=datetime.timezone.utc)
+        elapsed = (now_dt - created_dt).total_seconds()
+        if elapsed >= runtime_budget_seconds:
+            exhausted_dimension = "runtime_budget_seconds"
+            exhausted_reason = f"Session budget exhausted: runtime_budget_seconds ({runtime_budget_seconds}s) reached."
+    elif artifact_bytes_budget is not None and cumulative_artifact_bytes >= artifact_bytes_budget:
+        exhausted_dimension = "artifact_bytes_budget"
+        exhausted_reason = f"Session budget exhausted: artifact_bytes_budget ({artifact_bytes_budget} bytes) reached."
+    elif cost_budget_estimate is not None and cumulative_cost_estimate >= cost_budget_estimate:
+        exhausted_dimension = "cost_budget_estimate"
+        exhausted_reason = f"Session budget exhausted: cost_budget_estimate ({cost_budget_estimate}) reached."
+
+    if exhausted_dimension and exhausted_reason:
+        from kin.transport.v11 import pause_session
+        pause_session(
+            conn,
+            vault_key,
+            owner_identity_key,
+            None,
+            owner_username,
+            session_id,
+            reason=exhausted_reason,
+            now=now_dt,
+        )
+        write_audit_event(
+            conn,
+            vault_key,
+            category="budget_exhausted",
+            session_id=session_id,
+            actor_username=owner_username,
+            summary=exhausted_reason,
+            payload={"exhausted_dimension": exhausted_dimension},
+        )
+        return {
+            "status": "paused",
+            "reason": exhausted_reason,
+            "exhausted_dimension": exhausted_dimension,
+        }
 
     # Build history items from decrypted session events
     history_items = []
@@ -141,7 +219,13 @@ def advance_session_turn(
         local_policy=local_policy,
     )
 
-    # 4. Call adapter via factory
+    # 4. Call adapter via factory (incrementing cumulative_cost_estimate by 1.0)
+    conn.execute(
+        "UPDATE sessions SET cumulative_cost_estimate = cumulative_cost_estimate + 1.0 WHERE session_id = ?",
+        (session_id,),
+    )
+    conn.commit()
+
     adapter = get_adapter(card)
     response: AdapterResponse = adapter.invoke(adapter_req, vault_key=vault_key)
 
@@ -269,6 +353,7 @@ def advance_session_turn(
                 max_bytes=max_bytes,
                 now=now,
             )
+            increment_session_artifact_bytes(conn, session_id, len(raw_bytes))
         except ArtifactTooLargeError:
             msg = f"Artifact size {len(raw_bytes)} bytes exceeds card max_artifact_bytes ({max_bytes})."
             write_audit_event(

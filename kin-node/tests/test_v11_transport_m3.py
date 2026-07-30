@@ -419,8 +419,14 @@ def test_pause_resume_status_event_non_transition(alice_node, bob_node):
 
     # Create active session on both nodes
     now_str = "2026-07-22T12:00:00Z"
-    alice_node["conn"].execute("INSERT INTO sessions VALUES ('s_p', 'ask', 'alice', 'bob', 'active', 'goal', 'a_ag', 'b_ag', NULL, 12, ?, ?, NULL, NULL)", (now_str, now_str))
-    bob_node["conn"].execute("INSERT INTO sessions VALUES ('s_p', 'ask', 'alice', 'bob', 'active', 'goal', 'a_ag', 'b_ag', NULL, 12, ?, ?, NULL, NULL)", (now_str, now_str))
+    alice_node["conn"].execute(
+        "INSERT INTO sessions (session_id, type, initiator_username, receiver_username, status, objective, sender_agent_id, receiver_agent_id, participant_snapshot_json, turn_limit, created_at, updated_at, expires_at) VALUES ('s_p', 'ask', 'alice', 'bob', 'active', 'goal', 'a_ag', 'b_ag', NULL, 12, ?, ?, NULL)",
+        (now_str, now_str),
+    )
+    bob_node["conn"].execute(
+        "INSERT INTO sessions (session_id, type, initiator_username, receiver_username, status, objective, sender_agent_id, receiver_agent_id, participant_snapshot_json, turn_limit, created_at, updated_at, expires_at) VALUES ('s_p', 'ask', 'alice', 'bob', 'active', 'goal', 'a_ag', 'b_ag', NULL, 12, ?, ?, NULL)",
+        (now_str, now_str),
+    )
     alice_node["conn"].commit()
     bob_node["conn"].commit()
 
@@ -441,8 +447,14 @@ def test_cancel_session_dual_path(alice_node, bob_node):
     _add_verified_contact(bob_node["conn"], "alice", alice_node["ed_pub"].public_bytes_raw().hex(), alice_node["x255_pub"].hex())
 
     now_str = "2026-07-22T12:00:00Z"
-    alice_node["conn"].execute("INSERT INTO sessions VALUES ('s_c', 'ask', 'alice', 'bob', 'active', 'goal', 'a_ag', 'b_ag', NULL, 12, ?, ?, NULL, NULL)", (now_str, now_str))
-    bob_node["conn"].execute("INSERT INTO sessions VALUES ('s_c', 'ask', 'alice', 'bob', 'active', 'goal', 'a_ag', 'b_ag', NULL, 12, ?, ?, NULL, NULL)", (now_str, now_str))
+    alice_node["conn"].execute(
+        "INSERT INTO sessions (session_id, type, initiator_username, receiver_username, status, objective, sender_agent_id, receiver_agent_id, participant_snapshot_json, turn_limit, created_at, updated_at, expires_at) VALUES ('s_c', 'ask', 'alice', 'bob', 'active', 'goal', 'a_ag', 'b_ag', NULL, 12, ?, ?, NULL)",
+        (now_str, now_str),
+    )
+    bob_node["conn"].execute(
+        "INSERT INTO sessions (session_id, type, initiator_username, receiver_username, status, objective, sender_agent_id, receiver_agent_id, participant_snapshot_json, turn_limit, created_at, updated_at, expires_at) VALUES ('s_c', 'ask', 'alice', 'bob', 'active', 'goal', 'a_ag', 'b_ag', NULL, 12, ?, ?, NULL)",
+        (now_str, now_str),
+    )
     alice_node["conn"].commit()
     bob_node["conn"].commit()
 
@@ -592,7 +604,7 @@ def test_retry_queue_abandons_moot_terminal_session_items(alice_node):
     """Test GAP L: retry_outbound_queue marks items 'abandoned' when session reaches terminal state."""
     now_str = "2026-07-22T12:00:00Z"
     alice_node["conn"].execute(
-        "INSERT INTO sessions VALUES ('s_moot', 'ask', 'alice', 'bob', 'cancelled', 'goal', 'a_ag', 'b_ag', NULL, 12, ?, ?, NULL, '2026-07-29T12:00:00Z')",
+        "INSERT INTO sessions (session_id, type, initiator_username, receiver_username, status, objective, sender_agent_id, receiver_agent_id, participant_snapshot_json, turn_limit, created_at, updated_at, expires_at) VALUES ('s_moot', 'ask', 'alice', 'bob', 'cancelled', 'goal', 'a_ag', 'b_ag', NULL, 12, ?, ?, '2026-07-29T12:00:00Z')",
         (now_str, now_str),
     )
     alice_node["conn"].execute(
