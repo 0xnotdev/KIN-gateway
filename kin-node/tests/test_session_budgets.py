@@ -27,7 +27,6 @@ from kin.storage.migrations import run_migrations
 from kin.transport.v11 import (
     DEFAULT_BUILD_ARTIFACT_BYTES_BUDGET,
     DEFAULT_BUILD_COST_BUDGET_ESTIMATE,
-    DEFAULT_BUILD_MAX_TURNS,
     DEFAULT_BUILD_RUNTIME_BUDGET,
     dispatch_session,
     ingest_envelope,
@@ -206,7 +205,7 @@ def test_default_budgets_for_build_and_delegate(profile_db, identity_keys):
         (s_id_build,),
     )
     b_row = cur.fetchone()
-    assert b_row[0] == DEFAULT_BUILD_MAX_TURNS  # 50
+    assert b_row[0] == 12  # hard ceiling 12 turns for all session types
     assert b_row[1] == DEFAULT_BUILD_RUNTIME_BUDGET  # 86400
     assert b_row[2] == DEFAULT_BUILD_ARTIFACT_BYTES_BUDGET  # 50_000_000
     assert b_row[3] == DEFAULT_BUILD_COST_BUDGET_ESTIMATE  # 100.0

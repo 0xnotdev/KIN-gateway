@@ -43,7 +43,6 @@ from kin.schemas import (
 DEFAULT_BUILD_RUNTIME_BUDGET = 86400  # 24 hours
 DEFAULT_BUILD_ARTIFACT_BYTES_BUDGET = 50_000_000  # 50 MB
 DEFAULT_BUILD_COST_BUDGET_ESTIMATE = 100.0  # 100 estimated adapter calls
-DEFAULT_BUILD_MAX_TURNS = 50
 from kin.session.compatibility import negotiate_capability
 from kin.session.reducer import (
     ParticipantInfo,
@@ -420,14 +419,14 @@ def ingest_envelope(
             initiator_username = actor_username
             receiver_username = peer_username
 
-        raw_max_turns = payload.get("max_turns")
+        raw_max_turns = payload.get("max_turns", 12)
+        turn_limit = raw_max_turns if isinstance(raw_max_turns, int) and 1 <= raw_max_turns <= 12 else 12
+
         if st in (SessionType.BUILD_PIPELINE, SessionType.DELEGATE_SUBTASK):
-            turn_limit = raw_max_turns if isinstance(raw_max_turns, int) and 1 <= raw_max_turns <= 100 else DEFAULT_BUILD_MAX_TURNS
             runtime_budget = payload.get("runtime_budget_seconds", DEFAULT_BUILD_RUNTIME_BUDGET)
             artifact_budget = payload.get("artifact_bytes_budget", DEFAULT_BUILD_ARTIFACT_BYTES_BUDGET)
             cost_budget = payload.get("cost_budget_estimate", DEFAULT_BUILD_COST_BUDGET_ESTIMATE)
         else:
-            turn_limit = raw_max_turns if isinstance(raw_max_turns, int) and 1 <= raw_max_turns <= 12 else 12
             runtime_budget = payload.get("runtime_budget_seconds")
             artifact_budget = payload.get("artifact_bytes_budget")
             cost_budget = payload.get("cost_budget_estimate")
@@ -876,26 +875,20 @@ def dispatch_session(
             f"Invalid collaboration_mode '{collaboration_mode}'. Must be one of {[t.value for t in SessionType]}."
         )
 
+    eff_max_turns = max_turns if max_turns is not None else 12
+    if not isinstance(eff_max_turns, int) or eff_max_turns < 1 or eff_max_turns > 12:
+        raise ValueError(
+            f"Invalid max_turns: {eff_max_turns}. max_turns must be an integer between 1 and 12."
+        )
+
     if session_type_enum in (SessionType.BUILD_PIPELINE, SessionType.DELEGATE_SUBTASK):
-        eff_max_turns = max_turns if (max_turns is not None and max_turns != 12) else DEFAULT_BUILD_MAX_TURNS
         eff_runtime_budget = runtime_budget_seconds if runtime_budget_seconds is not None else DEFAULT_BUILD_RUNTIME_BUDGET
         eff_artifact_budget = artifact_bytes_budget if artifact_bytes_budget is not None else DEFAULT_BUILD_ARTIFACT_BYTES_BUDGET
         eff_cost_budget = cost_budget_estimate if cost_budget_estimate is not None else DEFAULT_BUILD_COST_BUDGET_ESTIMATE
-
-        if not isinstance(eff_max_turns, int) or eff_max_turns < 1 or eff_max_turns > 100:
-            raise ValueError(
-                f"Invalid max_turns: {eff_max_turns}. max_turns for '{session_type_enum.value}' must be an integer between 1 and 100."
-            )
     else:
-        eff_max_turns = max_turns if max_turns is not None else 12
         eff_runtime_budget = runtime_budget_seconds
         eff_artifact_budget = artifact_bytes_budget
         eff_cost_budget = cost_budget_estimate
-
-        if not isinstance(eff_max_turns, int) or eff_max_turns < 1 or eff_max_turns > 12:
-            raise ValueError(
-                f"Invalid max_turns: {eff_max_turns}. max_turns must be an integer between 1 and 12."
-            )
 
     now_str = _iso_now(now)
     client = http_client or httpx.Client(timeout=10.0)

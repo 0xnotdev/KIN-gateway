@@ -219,7 +219,8 @@ def advance_session_turn(
         local_policy=local_policy,
     )
 
-    # 4. Call adapter via factory (incrementing cumulative_cost_estimate by 1.0)
+    # 4. Call adapter via factory.
+    # Cost estimate approximation: incremented by 1.0 per LLM adapter call (estimated adapter call count, not real USD cost).
     conn.execute(
         "UPDATE sessions SET cumulative_cost_estimate = cumulative_cost_estimate + 1.0 WHERE session_id = ?",
         (session_id,),
