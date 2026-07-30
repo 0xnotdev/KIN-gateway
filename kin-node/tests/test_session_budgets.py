@@ -417,6 +417,50 @@ def test_exhaustion_via_single_dimension(profile_db, identity_keys, mock_agent_c
     assert mock_adapter.invoke.call_count == 0
 
 
+def test_artifact_bytes_exhaustion_when_runtime_budget_configured_and_unexhausted(profile_db, identity_keys, mock_agent_card, monkeypatch):
+    """Prove bug: when runtime_budget_seconds is configured but unexhausted, artifact_bytes_budget exhaustion MUST still trigger a pause."""
+    ed_priv, ed_pub, x255_priv, x255_pub = identity_keys
+    vault_key = b"01234567890123456789012345678901"
+    session_id = "sess_art_unex_rt"
+
+    # All three budgets configured (matching real build_pipeline defaults):
+    # runtime_budget_seconds = 86400 (elapsed is 10s -> UNEXHAUSTED)
+    # artifact_bytes_budget = 1000 (cumulative is 1500 -> EXHAUSTED)
+    # cost_budget_estimate = 100.0 (cumulative is 1.0 -> UNEXHAUSTED)
+    created_at_now = "2026-07-30T10:00:00Z"
+    now_current = datetime.datetime.fromisoformat("2026-07-30T10:00:10Z")  # 10s elapsed
+
+    profile_db.execute(
+        """\
+        INSERT INTO sessions (
+            session_id, type, initiator_username, receiver_username, status,
+            objective, sender_agent_id, receiver_agent_id, turn_limit,
+            runtime_budget_seconds, artifact_bytes_budget, cumulative_artifact_bytes,
+            cost_budget_estimate, cumulative_cost_estimate,
+            created_at, updated_at
+        ) VALUES (?, 'build_pipeline', 'alice', 'bob', 'active', 'Build task', ?, 'ag_receiver', 12, 86400, 1000, 1500, 100.0, 1.0, ?, ?)
+        """,
+        (session_id, mock_agent_card.id, created_at_now, created_at_now),
+    )
+    profile_db.commit()
+
+    mock_adapter = MagicMock()
+    monkeypatch.setattr("kin.session.orchestrator.get_adapter", lambda card: mock_adapter)
+
+    res = advance_session_turn(
+        profile_db,
+        vault_key,
+        ed_priv,
+        "alice",
+        session_id,
+        now=now_current,
+    )
+
+    assert res["status"] == "paused"
+    assert res["exhausted_dimension"] == "artifact_bytes_budget"
+    assert mock_adapter.invoke.call_count == 0
+
+
 def test_peer_notification_on_budget_pause(profile_db, identity_keys, mock_agent_card, monkeypatch):
     """8. Confirm peer notification: after budget-triggered pause, peer STATUS_EVENT (owner_paused) is generated and ingested."""
     ed_priv, ed_pub, x255_priv, x255_pub = identity_keys

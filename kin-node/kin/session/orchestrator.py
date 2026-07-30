@@ -148,15 +148,17 @@ def advance_session_turn(
     exhausted_dimension: str | None = None
     exhausted_reason: str | None = None
 
+    elapsed_seconds: float | None = None
+    if created_at_str:
+        created_dt = datetime.datetime.fromisoformat(created_at_str.rstrip("Z")).replace(tzinfo=datetime.timezone.utc)
+        elapsed_seconds = (now_dt - created_dt).total_seconds()
+
     if turn_limit is not None and state.current_turn >= turn_limit:
         exhausted_dimension = "turn_limit"
         exhausted_reason = f"Session budget exhausted: turn_limit ({turn_limit}) reached."
-    elif runtime_budget_seconds is not None and created_at_str:
-        created_dt = datetime.datetime.fromisoformat(created_at_str.rstrip("Z")).replace(tzinfo=datetime.timezone.utc)
-        elapsed = (now_dt - created_dt).total_seconds()
-        if elapsed >= runtime_budget_seconds:
-            exhausted_dimension = "runtime_budget_seconds"
-            exhausted_reason = f"Session budget exhausted: runtime_budget_seconds ({runtime_budget_seconds}s) reached."
+    elif runtime_budget_seconds is not None and elapsed_seconds is not None and elapsed_seconds >= runtime_budget_seconds:
+        exhausted_dimension = "runtime_budget_seconds"
+        exhausted_reason = f"Session budget exhausted: runtime_budget_seconds ({runtime_budget_seconds}s) reached."
     elif artifact_bytes_budget is not None and cumulative_artifact_bytes >= artifact_bytes_budget:
         exhausted_dimension = "artifact_bytes_budget"
         exhausted_reason = f"Session budget exhausted: artifact_bytes_budget ({artifact_bytes_budget} bytes) reached."
