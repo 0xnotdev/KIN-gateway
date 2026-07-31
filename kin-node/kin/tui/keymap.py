@@ -27,6 +27,16 @@ class KeyBindingSpec:
     section: Literal["global", "collection", "arena"] = "global"
     consequential: bool = False
     justification: str = ""
+    explicit_action: Optional[str] = None
+
+    @property
+    def target_action(self) -> str:
+        """Exact Textual action string for KinApp binding dispatch without hardcoded exception tuples (§14.4)."""
+        if self.explicit_action:
+            return self.explicit_action
+        if self.action.startswith("action_"):
+            return self.action
+        return f"action_{self.action}"
 
 
 # Central authoritative list of all registered keybindings (§5.1 - §5.3, including T1 geometry controls)
@@ -40,6 +50,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         suppressed_when_text_focused=False,
         section="global",
         justification="Global system interrupt signal.",
+        explicit_action="quit",
     ),
     KeyBindingSpec(
         key="ctrl+k",
@@ -212,6 +223,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         suppressed_when_text_focused=False,
         section="global",
         justification="Alt+[ modifier shortcut for sidebar resize.",
+        explicit_action="decrease_sidebar_width",
     ),
     KeyBindingSpec(
         key="alt+right_square_bracket",
@@ -221,6 +233,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         suppressed_when_text_focused=False,
         section="global",
         justification="Alt+] modifier shortcut for sidebar resize.",
+        explicit_action="increase_sidebar_width",
     ),
     KeyBindingSpec(
         key="alt+shift+left_square_bracket",
@@ -230,6 +243,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         suppressed_when_text_focused=False,
         section="global",
         justification="Alt+{ modifier shortcut for inspector resize.",
+        explicit_action="decrease_inspector_width",
     ),
     KeyBindingSpec(
         key="alt+shift+right_square_bracket",
@@ -239,6 +253,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         suppressed_when_text_focused=False,
         section="global",
         justification="Alt+} modifier shortcut for inspector resize.",
+        explicit_action="increase_inspector_width",
     ),
     KeyBindingSpec(
         key="left_square_bracket",
@@ -248,6 +263,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         suppressed_when_text_focused=True,
         section="global",
         justification="Printable symbol '['; must yield to text input fields when focused.",
+        explicit_action="toggle_sidebar",
     ),
     KeyBindingSpec(
         key="right_square_bracket",
@@ -257,6 +273,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         suppressed_when_text_focused=True,
         section="global",
         justification="Printable symbol ']'; must yield to text input fields when focused.",
+        explicit_action="toggle_inspector",
     ),
     # Alt+1..9 Jump to Tab N
     *[
@@ -464,22 +481,16 @@ def build_textual_bindings(bindings: Optional[List[KeyBindingSpec]] = None) -> L
     Guarantees KinApp.BINDINGS is 100% driven directly by keymap.py definitions.
     """
     target = bindings if bindings is not None else DEFAULT_KEYMAP
-    res: List[Binding] = []
-
-    for b in target:
-        # Standardize action handler method naming (e.g. action_open_dispatch, action_decrease_sidebar_width)
-        action_method = b.action if b.action in ("quit", "decrease_sidebar_width", "increase_sidebar_width", "decrease_inspector_width", "increase_inspector_width", "toggle_sidebar", "toggle_inspector") else f"action_{b.action}"
-        res.append(
-            Binding(
-                key=b.key,
-                action=action_method,
-                description=b.label,
-                show=False,
-                priority=b.priority,
-            )
+    return [
+        Binding(
+            key=b.key,
+            action=b.target_action,
+            description=b.label,
+            show=False,
+            priority=b.priority,
         )
-
-    return res
+        for b in target
+    ]
 
 
 # Run validation on import to fail fast on startup

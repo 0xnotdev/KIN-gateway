@@ -48,6 +48,9 @@ def log_exception_to_diagnostics(
     return tech_detail
 
 
+from kin.tui.redaction import redact_ui_text
+
+
 def convert_exception_to_recoverable_error(
     exc: Exception, profile_dir: Optional[Path] = None
 ) -> RecoverableError:
@@ -57,11 +60,11 @@ def convert_exception_to_recoverable_error(
     exc_msg = str(exc) or "An unexpected runtime error occurred."
 
     return RecoverableError(
-        what_happened=f"Unexpected {exc_type}: {exc_msg}",
+        what_happened=redact_ui_text(f"Unexpected {exc_type}: {exc_msg}"),
         impact="The current operation was safely interrupted.",
         preserved="All previous session state and storage items remain intact.",
         next_action="Press 'r' to retry operation or check diagnostics.log for technical details.",
-        technical_detail=tech_detail,
+        technical_detail=redact_ui_text(tech_detail),
     )
 
 

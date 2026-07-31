@@ -25,6 +25,7 @@ from kin.tui.persistence import (
 )
 from kin.tui.shell import ConfirmationModal, Inspector, MainCanvas, Sidebar, StatusBar, WorkspaceTabBar
 from kin.tui.tokens import resolve_theme
+from kin.tui.widgets import WidgetLifecycleState
 from kin.tui.workspace import WorkspaceTabManager
 
 
@@ -49,18 +50,19 @@ class KinApp(App[None]):
     # BINDINGS are programmatically driven directly by DEFAULT_KEYMAP from keymap.py (§14.4)
     BINDINGS = build_textual_bindings()
 
-    def __init__(self, theme_name: str = "kin-graphite", profile_name: str = "default", **kwargs) -> None:
+    def __init__(self, theme_name: str = "kin-graphite", profile_name: str = "default", profile_dir: Optional[Path] = None, **kwargs) -> None:
         super().__init__(**kwargs)
         resolution = resolve_theme(theme_name)
         self.theme_tokens = resolution.theme
         self.requested_theme = resolution.requested_name
         self.is_theme_fallback = resolution.is_fallback
         self.profile_name = profile_name
+        self.profile_dir = profile_dir or (Path.home() / ".kin" / "profiles" / profile_name)
 
         self.tab_manager = WorkspaceTabManager()
 
         self.tab_bar = WorkspaceTabBar()
-        self.sidebar = Sidebar()
+        self.sidebar = Sidebar(profile_dir=self.profile_dir, profile_name=self.profile_name)
         self.canvas = MainCanvas()
         self.inspector = Inspector()
         self.status_bar = StatusBar(profile_name=profile_name)
@@ -77,6 +79,7 @@ class KinApp(App[None]):
             CommandItem("open_inbox", "Open Inbox / Needs You", "Navigation", "i", contextual=True),
             CommandItem("open_approvals", "Open Approvals queue", "Navigation", "p", contextual=True),
             CommandItem("help", "Contextual help", "System", "?"),
+            CommandItem("guide", "Open kin guide", "System"),
             CommandItem("theme_graphite", "Change theme: KIN Graphite", "Settings"),
             CommandItem("cancel_archive", "Cancel / Archive active work", "Actions", "x", consequential=True),
         ]
@@ -206,23 +209,35 @@ class KinApp(App[None]):
             self.exit(0)
 
     def action_action_quick_switcher(self) -> None:
-        """Open Quick Switcher modal overlay (Ctrl+P)."""
-        candidates = [
-            ("tab_home", "Home Workspace", "Workspace"),
-            ("tab_agents", "Agents Directory", "Workspace"),
-            ("tab_network", "Trusted Network", "Workspace"),
-            ("tab_inbox", "Inbox / Needs You", "Workspace"),
-            ("agent_scout", "Code Scout (ready)", "Agent"),
-            ("agent_cleaner", "Data Cleaner (working)", "Agent"),
-            ("peer_bob", "Bob (3 agents)", "Contact"),
-            ("peer_priya", "Priya (offline)", "Contact"),
-        ]
+        """Open Quick Switcher modal overlay (Ctrl+P) (§A3)."""
+        from kin.tui.local_state import get_all_agent_summaries, get_local_contacts_summaries
+
+        candidates: List[Tuple[str, str, str]] = []
+
+        # 1. Real open workspace tabs
+        for tab in self.tab_manager.tabs:
+            candidates.append((f"tab_{tab.kind}", f"{tab.title} Workspace", "Workspace"))
+
+        p_dir = getattr(self, "profile_dir", None) or (Path.home() / ".kin" / "profiles" / self.profile_name)
+
+        # 2. Real agents
+        if p_dir.exists():
+            local_agents, peer_agents = get_all_agent_summaries(p_dir, self.profile_name)
+            for a in local_agents + peer_agents:
+                candidates.append((f"agent_{a.agent_id}", f"{a.name} ({a.availability})", "Agent"))
+
+        # 3. Real contacts
+        if p_dir.exists():
+            contacts = get_local_contacts_summaries(p_dir, self.profile_name)
+            for c in contacts:
+                status_lbl = "verified" if c.verified_at else "unverified"
+                candidates.append((f"peer_{c.username}", f"{c.display_name or c.username} ({status_lbl})", "Contact"))
 
         def handle_selected(target_id: Optional[str]) -> None:
             if target_id:
                 if target_id.startswith("tab_"):
                     k = target_id.replace("tab_", "")
-                    self.tab_manager.open_tab(k, k.title(), k if k in ("agents", "network", "inbox") else "home")
+                    self.tab_manager.open_tab(k, k.title(), k if k in ("agents", "network", "inbox", "dispatch") else "home")
                     self.sync_tab_bar()
                 else:
                     self.status_bar.status_message = f"Quick switched to '{target_id}'."
@@ -268,6 +283,13 @@ class KinApp(App[None]):
     def action_action_open_approvals(self) -> None:
         ok, msg = self.tab_manager.open_tab("inbox", "Inbox", "inbox", singleton=True)
         self.sync_tab_bar()
+
+    def action_action_help(self) -> None:
+        self.push_screen(HelpOverlayScreen())
+
+    def action_open_guide(self) -> None:
+        from kin.tui.guide import GuideOverlayScreen
+        self.push_screen(GuideOverlayScreen())
 
     def action_action_next_tab(self) -> None:
         self.tab_manager.cycle_tab(+1)
@@ -338,7 +360,16 @@ class KinApp(App[None]):
         self.sidebar.move_to_boundary(first=False)
 
     def action_action_focus_filter(self) -> None:
-        self.sidebar.filter_query = "a"
+        """Focus SearchField widget in SidebarTree (§14.5)."""
+        if hasattr(self.sidebar, "search_field"):
+            self.sidebar.search_field.set_query("")
+            self.sidebar.search_field.set_lifecycle_state(WidgetLifecycleState.FOCUSED)
+            try:
+                self.set_focus(self.sidebar.search_field)
+            except Exception:
+                pass
+        elif hasattr(self.sidebar, "filter_query"):
+            self.sidebar.filter_query = ""
         self.sidebar.refresh()
 
     def action_action_activate_selection(self) -> None:

@@ -1,0 +1,17 @@
+# Ephemeral test verification dumps and reports
+*_verify.txt
+*_output.txt
+combined_*.txt
+durations.txt
+raw_pytest_*.txt
+t4*_*.txt
+t5*_*.txt
+tui_*.txt
+snapshot_report.html
+test_debug_*
+test_tmp_*
+
+# Python & pytest caches
+__pycache__/
+.pytest_cache/
+*.pyc

@@ -238,6 +238,35 @@ class ApprovalView:
 class AgentCardView:
     """UI projection wrapping local AgentCard or peer PublishedAgentCard."""
 
+@dataclass
+class ContextPantryItem:
+    """Item stored in the Dispatch Context Pantry (§7.8)."""
+
+    kind: Literal["message", "pasted_text", "approved_artifact", "local_reference"]
+    size_bytes: int
+    classification: Literal["local_only", "share_with_peer", "private"] = "share_with_peer"
+    expiry: Optional[str] = None
+
+
+@dataclass
+class DispatchDraft:
+    """Draft state for active Dispatch session wizard (§5.4)."""
+
+    session_type: str = "ask"
+    peer_username: str = ""
+    sender_agent_id: str = ""
+    receiver_agent_id: str = ""
+    goal: str = ""
+    pantry_items: List[ContextPantryItem] = field(default_factory=list)
+    max_turns: Optional[int] = None
+    current_step: int = 0
+    dirty: bool = False
+
+
+@dataclass
+class AgentCardView:
+    """UI projection wrapping local AgentCard or peer PublishedAgentCard."""
+
     agent_id: str
     name: str
     description: str
@@ -246,11 +275,19 @@ class AgentCardView:
     is_peer: bool
     # Only populated if local card
     capabilities_tags: List[str] = field(default_factory=list)
+    adapter_kind: str = "Local • ready"
+    accepts: List[str] = field(default_factory=list)
+    produces: List[str] = field(default_factory=list)
+    boundary_summary: Optional[str] = None
 
     @classmethod
     def from_local_card(
         cls, card: AgentCard, availability: AgentAvailability, readiness_reason: str
     ) -> "AgentCardView":
+        accepts_list = list(card.capabilities.accepts) if (card.capabilities and card.capabilities.accepts) else []
+        produces_list = list(card.capabilities.produces) if (card.capabilities and card.capabilities.produces) else []
+        b_summary = f"Workspace: {card.boundaries.filesystem}" if (card.boundaries and hasattr(card.boundaries, "filesystem")) else "Workspace restricted"
+        adapter_type = "Webhook" if "Webhook" in card.adapter.__class__.__name__ else "Local"
         return cls(
             agent_id=card.id,
             name=card.name,
@@ -259,10 +296,16 @@ class AgentCardView:
             readiness_reason=readiness_reason,
             is_peer=False,
             capabilities_tags=list(card.capabilities.tags) if card.capabilities else [],
+            adapter_kind=f"{adapter_type} • {availability}",
+            accepts=accepts_list,
+            produces=produces_list,
+            boundary_summary=b_summary,
         )
 
     @classmethod
     def from_published_card(cls, card: PublishedAgentCard, readiness_reason: str) -> "AgentCardView":
+        accepts_list = list(card.capabilities.accepts) if (card.capabilities and card.capabilities.accepts) else []
+        produces_list = list(card.capabilities.produces) if (card.capabilities and card.capabilities.produces) else []
         return cls(
             agent_id=card.agent_id,
             name=card.name,
@@ -271,6 +314,10 @@ class AgentCardView:
             readiness_reason=readiness_reason,
             is_peer=True,
             capabilities_tags=list(card.capabilities.tags) if card.capabilities else [],
+            adapter_kind=f"Peer • {card.availability}",
+            accepts=accepts_list,
+            produces=produces_list,
+            boundary_summary="Owner-controlled; reviewed on acceptance",
         )
 
 
@@ -293,6 +340,32 @@ class RecoverableError:
     preserved: str
     next_action: str
     technical_detail: Optional[str] = None
+
+
+@dataclass
+class ContactSummary:
+    """UI projection of a paired trusted contact (§14.6 Phase B)."""
+
+    username: str
+    display_name: str
+    public_key: str
+    x25519_public_key: str
+    endpoint: str
+    autonomy_level: str = "always_ask"
+    fingerprint: Optional[str] = None
+    verified_at: Optional[str] = None
+
+
+@dataclass
+class NeedsYouItem:
+    """View model for items requiring human owner attention / action (§5.8)."""
+
+    item_id: str
+    session_id: str
+    kind: Literal["session_acceptance", "clarification", "approval", "outcome_review"]
+    human_readable_reason: str
+    urgency: Literal["low", "medium", "high", "critical"]
+    created_at: str
 
 
 @dataclass

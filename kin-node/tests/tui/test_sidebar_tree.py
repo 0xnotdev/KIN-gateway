@@ -8,6 +8,7 @@ import pytest
 from kin.tui.app import KinApp
 from kin.tui.persistence import UiStatePreferences, load_ui_preferences, save_ui_preferences
 from kin.tui.shell import Sidebar, SidebarNode
+from kin.tui.widgets import WidgetLifecycleState
 
 
 @pytest.fixture
@@ -85,3 +86,38 @@ async def test_space_key_previews_in_inspector(mock_profile_dir):
         pilot.app.set_focus(None)
         await pilot.press("space")
         assert pilot.app.inspector.preview_title.startswith("INSPECTOR:")
+
+
+@pytest.mark.asyncio
+async def test_sidebar_search_field_interactive_filtering(mock_profile_dir):
+    """SPEC REQUIRED TEST (§14.5).
+
+    Assert SearchField accepts real interactive character entry via pilot.press() character-by-character
+    in a mounted KinApp and narrows visible nodes. Zero direct set_query() or action_action_focus_filter() calls.
+    """
+    app = KinApp()
+    async with app.run_test(size=(160, 44)) as pilot:
+        initial_count = len(pilot.app.sidebar.get_visible_nodes())
+        assert initial_count >= 5
+
+        # Unfocus command input so non-priority slash shortcut is dispatched (§5.1)
+        pilot.app.set_focus(None)
+
+        # Press '/' key to focus SearchFieldWidget via app keymap handler
+        await pilot.press("slash")
+
+        # Type character-by-character into mounted SearchFieldWidget via pilot.press()
+        await pilot.press("i", "n", "b", "o", "x")
+
+        # Assert query was typed character-by-character into SearchFieldWidget
+        assert pilot.app.sidebar.search_field.query == "inbox"
+
+        # Assert real narrowing
+        vis_narrow = pilot.app.sidebar.get_visible_nodes()
+        assert len(vis_narrow) < initial_count
+        assert any(n.node_id == "space_inbox" for n in vis_narrow)
+
+        # Clear query via Escape keypress
+        await pilot.press("escape")
+        assert pilot.app.sidebar.search_field.query == ""
+        assert len(pilot.app.sidebar.get_visible_nodes()) == initial_count

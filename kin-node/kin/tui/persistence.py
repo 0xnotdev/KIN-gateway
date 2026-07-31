@@ -20,6 +20,9 @@ from kin.tui.layout import (
 )
 
 
+from typing import Any, Dict, List, Literal, Optional, Tuple
+
+
 class UiStatePreferences(BaseModel):
     """Pydantic model representing ui-state.json preferences (§3.4, §14.3).
 
@@ -38,6 +41,11 @@ class UiStatePreferences(BaseModel):
     focus_mode_default: bool = False
     workspace_tabs: List[str] = Field(default_factory=lambda: ["home"])
     active_tab: str = "home"
+    first_flight_progress: Dict[str, Any] = Field(default_factory=dict)
+    quiet_hours_enabled: bool = False
+    quiet_hours_start: str = "22:00"
+    quiet_hours_end: str = "08:00"
+    snoozed_items: Dict[str, str] = Field(default_factory=dict)
 
 
 def get_profile_dir(profile_name: str = "default") -> Path:

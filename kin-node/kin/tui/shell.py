@@ -5,6 +5,7 @@ Spec authority: KIN-V1.1-TUI-SYSTEM.md §3.1, §3.2, §3.3, §4.3, §14.3, §14.
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
 from textual.app import ComposeResult
@@ -26,6 +27,13 @@ from kin.tui.layout import (
 )
 from kin.tui.state import HealthSnapshot
 from kin.tui.tokens import get_glyph
+from kin.tui.widgets.agents_screen import AgentsScreenWidget
+from kin.tui.widgets.dispatch_wizard import DispatchWizardWidget
+from kin.tui.widgets.home_screen import HomeScreenWidget
+from kin.tui.widgets.inbox_screen import InboxScreenWidget
+from kin.tui.widgets.network_screen import NetworkScreenWidget
+from kin.tui.widgets.lifecycle import WidgetLifecycleState
+from kin.tui.widgets.search_field import SearchFieldWidget
 
 
 @dataclass
@@ -93,38 +101,114 @@ class Sidebar(Static):
         width: int = SIDEBAR_DEFAULT_WIDTH,
         collapsed: bool = False,
         section_collapse: Optional[Dict[str, bool]] = None,
+        profile_dir: Optional[Path] = None,
+        profile_name: str = "default",
         **kwargs,
     ) -> None:
         super().__init__(id="sidebar", **kwargs)
         self.sidebar_width = clamp_sidebar_width(width)
         self.collapsed = collapsed
         self.styles.width = self.sidebar_width
+        self.profile_dir = profile_dir
+        self.profile_name = profile_name
 
         # Persistent section collapse state (§4.3)
         self.section_collapse: Dict[str, bool] = section_collapse or {}
 
-        # Default tree nodes populated from fixtures (§4.3)
-        self.nodes: List[SidebarNode] = [
+        # Dynamically build real tree nodes (§A2)
+        self.nodes: List[SidebarNode] = []
+        self.build_nodes()
+
+        self.selected_index: int = 1  # Default selected on Home item
+        self.search_field = SearchFieldWidget(
+            placeholder="Filter Tree...",
+            on_query_change=self._on_search_query_change,
+        )
+
+    def build_nodes(self) -> None:
+        """Build real Sidebar tree nodes from local_state queries (§A2)."""
+        from pathlib import Path
+        from kin.schemas import AgentAvailability
+        from kin.tui.local_state import (
+            get_local_agents_summaries,
+            get_local_contacts_summaries,
+            get_needs_you_items,
+            get_pending_approvals,
+            get_peer_capabilities_recency,
+        )
+
+        p_dir = self.profile_dir or (Path.home() / ".kin" / "profiles" / self.profile_name)
+
+        local_agents = get_local_agents_summaries(p_dir, self.profile_name) if p_dir.exists() else []
+        contacts = get_local_contacts_summaries(p_dir, self.profile_name) if p_dir.exists() else []
+        needs_you_items = get_needs_you_items(p_dir, self.profile_name) if p_dir.exists() else []
+        pending_approvals = get_pending_approvals(p_dir, self.profile_name) if p_dir.exists() else []
+        total_pending = len(needs_you_items) + len(pending_approvals)
+
+        nodes: List[SidebarNode] = [
             # SPACES
             SidebarNode("sec_spaces", "SPACES", "section", "SPACES"),
             SidebarNode("space_home", "Home", "item", "SPACES", glyph="●", target_tab_id="home"),
-            SidebarNode("space_inbox", "Inbox", "item", "SPACES", glyph="○", badge="3", target_tab_id="inbox"),
+            SidebarNode("space_inbox", "Inbox", "item", "SPACES", glyph="●" if total_pending > 0 else "○", badge=str(total_pending) if total_pending > 0 else None, target_tab_id="inbox"),
             SidebarNode("space_recents", "Recent Sessions", "item", "SPACES", glyph="○", target_tab_id="session:recent"),
             # AGENTS
             SidebarNode("sec_agents", "AGENTS", "section", "AGENTS"),
-            SidebarNode("agent_scout", "Code Scout", "item", "AGENTS", glyph="✓", detail="ready", target_tab_id="agents"),
-            SidebarNode("agent_cleaner", "Data Cleaner", "item", "AGENTS", glyph="!", detail="working", target_tab_id="agents"),
-            # NETWORK
-            SidebarNode("sec_network", "NETWORK", "section", "NETWORK"),
-            SidebarNode("peer_bob", "Bob", "item", "NETWORK", glyph="●", detail="3 agents", target_tab_id="network"),
-            SidebarNode("peer_priya", "Priya", "item", "NETWORK", glyph="○", detail="offline", target_tab_id="network"),
-            # NEEDS YOU
-            SidebarNode("sec_needs_you", "NEEDS YOU", "section", "NEEDS YOU"),
-            SidebarNode("req_approval", "Write Approval", "item", "NEEDS YOU", glyph="→", badge="1", target_tab_id="inbox"),
         ]
 
-        self.selected_index: int = 1  # Default selected on Home item
-        self.filter_query: str = ""
+        if local_agents:
+            for card in local_agents:
+                is_ready = card.availability in (AgentAvailability.READY, AgentAvailability.BUSY, AgentAvailability.RESERVED) or str(card.availability) in ("ready", "busy", "reserved")
+                g = "●" if is_ready else "○"
+                detail = card.readiness_reason or card.adapter_kind
+                nodes.append(SidebarNode(f"agent_{card.agent_id}", card.name, "item", "AGENTS", glyph=g, detail=detail, target_tab_id="agents"))
+        else:
+            nodes.append(SidebarNode("agent_empty", "(No local agents)", "item", "AGENTS", glyph="○", target_tab_id="agents"))
+
+        # NETWORK
+        nodes.append(SidebarNode("sec_network", "NETWORK", "section", "NETWORK"))
+        if contacts:
+            for c in contacts:
+                recency = get_peer_capabilities_recency(p_dir, c.username) if p_dir.exists() else None
+                detail = f"reachable ({recency})" if recency else "cached"
+                nodes.append(SidebarNode(f"peer_{c.username}", c.display_name or c.username, "item", "NETWORK", glyph="●" if c.verified_at else "○", detail=detail, target_tab_id="network"))
+        else:
+            nodes.append(SidebarNode("peer_empty", "(No paired contacts)", "item", "NETWORK", glyph="○", target_tab_id="network"))
+
+        # NEEDS YOU
+        nodes.append(SidebarNode("sec_needs_you", "NEEDS YOU", "section", "NEEDS YOU", badge=str(total_pending) if total_pending > 0 else None))
+        if total_pending == 0:
+            nodes.append(SidebarNode("needs_you_empty", "(All clear)", "item", "NEEDS YOU", glyph="✓", target_tab_id="inbox"))
+        else:
+            for ny in needs_you_items:
+                nodes.append(SidebarNode(f"ny_{ny.item_id}", ny.human_readable_reason, "item", "NEEDS YOU", glyph="!", badge="1", target_tab_id="inbox"))
+            for app in pending_approvals:
+                app_req = app.request.agent_id if app.request else "agent"
+                app_id = app.request.approval_id if app.request else "app"
+                nodes.append(SidebarNode(f"app_{app_id}", f"Approval: {app_req}", "item", "NEEDS YOU", glyph="→", badge="1", target_tab_id="inbox"))
+
+        self.nodes = nodes
+
+    def compose(self) -> ComposeResult:
+        yield self.search_field
+
+    def _on_search_query_change(self, query: str) -> None:
+        vis = self.get_visible_nodes()
+        self.search_field.update_match_count(len(vis) if query else None)
+        self.refresh()
+
+    @property
+    def filter_query(self) -> str:
+        return self.search_field.query
+
+    @filter_query.setter
+    def filter_query(self, value: str) -> None:
+        self.search_field.set_query(value)
+
+    def on_key(self, event) -> None:
+        """Forward key events to SearchFieldWidget when filter is active (§14.5)."""
+        if self.search_field.lifecycle_state == WidgetLifecycleState.FOCUSED or self.search_field.has_focus or self.search_field.query:
+            self.search_field.on_key(event)
+            self.refresh()
 
     def set_width(self, width: int) -> None:
         self.sidebar_width = clamp_sidebar_width(width)
@@ -286,7 +370,10 @@ class Sidebar(Static):
 
 
 class MainCanvas(Vertical):
-    """Main canvas region (#main-canvas) per §3.1."""
+    """Main Canvas region (#main-canvas) per §3.1, §3.3.
+
+    Renders active workspace view content or tab placeholders (§14.6 Phase B).
+    """
 
     DEFAULT_CSS = """
     MainCanvas {
@@ -297,17 +384,45 @@ class MainCanvas(Vertical):
     }
     """
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(
+        self,
+        active_tab_kind: str = "home",
+        home_widget: Optional[HomeScreenWidget] = None,
+        agents_widget: Optional[AgentsScreenWidget] = None,
+        network_widget: Optional[NetworkScreenWidget] = None,
+        inbox_widget: Optional[InboxScreenWidget] = None,
+        dispatch_widget: Optional[DispatchWizardWidget] = None,
+        **kwargs,
+    ) -> None:
         super().__init__(id="main-canvas", **kwargs)
+        self.active_tab_kind = active_tab_kind
+        self.home_widget = home_widget or HomeScreenWidget()
+        self.agents_widget = agents_widget or AgentsScreenWidget()
+        self.network_widget = network_widget or NetworkScreenWidget()
+        self.inbox_widget = inbox_widget or InboxScreenWidget()
+        self.dispatch_widget = dispatch_widget or DispatchWizardWidget()
+
+    def set_active_tab_kind(self, tab_kind: str) -> None:
+        self.active_tab_kind = tab_kind
+        self.refresh(recompose=True)
 
     def compose(self):
-        yield Static(
-            "[bold green]KIN V1.1 TUI Shell[/bold green]\n"
-            "Five Stable Regions Mounted: [TabBar | Sidebar | Canvas | Inspector | StatusBar]\n\n"
-            "[bold yellow]ACTIVE APPROVAL REQUEST (HIGH RISK)[/bold yellow]\n"
-            "Agent 'code-scout' requests WORKSPACE_WRITE for /work/src/main.py\n",
-            id="canvas-content",
-        )
+        if self.active_tab_kind == "home":
+            yield self.home_widget
+        elif self.active_tab_kind == "agents":
+            yield self.agents_widget
+        elif self.active_tab_kind == "network":
+            yield self.network_widget
+        elif self.active_tab_kind in ("inbox", "approvals"):
+            yield self.inbox_widget
+        elif self.active_tab_kind == "dispatch":
+            yield self.dispatch_widget
+        else:
+            yield Static(
+                f"[bold cyan]{self.active_tab_kind.upper()} WORKSPACE[/bold cyan]\n"
+                f"[dim]Screen arriving in Phase E/T5/T6.[/dim]\n",
+                id="canvas-content",
+            )
         yield Input(placeholder="Type command or query...", id="command-input")
 
 
@@ -450,52 +565,23 @@ class StatusBar(Static):
         return f"profile:{self.profile_name} | {keychain_str} {identity_str} {relay_str} {node_str} | {inbox_str}{msg}{time_str}"
 
 
-class ConfirmationModal(ModalScreen[bool]):
-    """Modal screen for gating dangerous / consequential actions (§5.3, §14.4)."""
+from kin.tui.widgets.modal import ModalScreenWidget
 
-    DEFAULT_CSS = """
-    ConfirmationModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.7);
-    }
-    #confirm-container {
-        width: 56;
-        height: 11;
-        background: $surface-darken-1;
-        border: thick $error;
-        padding: 1 2;
-    }
-    #confirm-buttons {
-        height: 3;
-        margin-top: 1;
-        align: center middle;
-    }
+
+class ConfirmationModal(ModalScreenWidget):
+    """Modal screen for gating dangerous / consequential actions (§5.3, §14.4, §14.5).
+
+    Extends foundation ModalScreenWidget to guarantee unified keyboard handling (y/n/escape) and button consistency.
     """
 
     def __init__(self, action_name: str, target_name: str, **kwargs) -> None:
-        super().__init__(**kwargs)
+        super().__init__(
+            title="CONFIRMATION REQUIRED",
+            body_text=f"Are you sure you want to execute '[bold]{action_name}[/bold]' on [cyan]{target_name}[/cyan]?",
+            confirm_label="Confirm (y)",
+            cancel_label="Cancel (n)",
+            variant="error",
+            **kwargs,
+        )
         self.action_name = action_name
         self.target_name = target_name
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="confirm-container"):
-            yield Static("[bold red]CONFIRMATION REQUIRED[/bold red]", id="confirm-header")
-            yield Static(
-                f"Are you sure you want to execute '[bold]{self.action_name}[/bold]' on [cyan]{self.target_name}[/cyan]?",
-                id="confirm-body",
-            )
-            with Horizontal(id="confirm-buttons"):
-                yield Button("Confirm (y)", id="btn-confirm", variant="error")
-                yield Button("Cancel (n)", id="btn-cancel", variant="default")
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn-confirm":
-            self.dismiss(True)
-        else:
-            self.dismiss(False)
-
-    def on_key(self, event) -> None:
-        if event.key in ("y", "Y"):
-            self.dismiss(True)
-        elif event.key in ("n", "N", "escape"):
-            self.dismiss(False)

@@ -66,7 +66,7 @@ def rank_command_palette(query: str, items: List[CommandItem]) -> List[CommandIt
 
 
 # Whitelist of allowed colon commands (§5.4)
-ALLOWED_COLON_COMMANDS = {"theme", "open", "quit", "help", "clear"}
+ALLOWED_COLON_COMMANDS = {"theme", "open", "quit", "help", "clear", "guide"}
 SHELL_INJECTION_PATTERN = re.compile(r"[:\s]!|exec\(|eval\(|import\s|system\(|passthru\(|popen\(", re.IGNORECASE)
 
 

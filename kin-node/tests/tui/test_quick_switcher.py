@@ -28,10 +28,10 @@ async def test_quick_switcher_keyboard_navigation_and_filtering(mock_profile_dir
         switcher = pilot.app.screen
         assert isinstance(switcher, QuickSwitcherModal)
 
-        # Type filter query 'bob'
-        await pilot.press("b", "o", "b")
+        # Type filter query 'home'
+        await pilot.press("h", "o", "m", "e")
         assert len(switcher.filtered_items) >= 1
-        assert switcher.filtered_items[0][0] == "peer_bob"
+        assert switcher.filtered_items[0][0] == "tab_home"
 
         # Press Enter to select
         await pilot.press("enter")

@@ -46,6 +46,14 @@ class WorkspaceTabManager:
         active = self.get_tab(self.active_tab_id)
         return active if active else self.home_tab
 
+    @property
+    def active_index(self) -> int:
+        """Return 0-based index of active tab."""
+        for idx, t in enumerate(self.tabs):
+            if t.tab_id == self.active_tab_id:
+                return idx
+        return 0
+
     def open_tab(
         self,
         tab_id: str,
