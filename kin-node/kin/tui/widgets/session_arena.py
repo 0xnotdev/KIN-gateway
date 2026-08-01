@@ -258,10 +258,6 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
 
         bp = classify_breakpoint(width, height)
 
-        # Temporary instrumentation log requested by Tech Lead Claude
-        import sys
-        print(f"[INSTRUMENTATION_LOG] render(): self.size={self.size}, app_size={app_size}, resolved_width={width}, resolved_height={height}, bp='{bp}'", file=sys.stderr)
-
         header_str = self.trust_strip_widget.render()
         timeline_str = self.exchange_timeline_widget.render()
         inspector_str = self.inspector_widget.render()
