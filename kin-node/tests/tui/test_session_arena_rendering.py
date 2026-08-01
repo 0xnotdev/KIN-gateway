@@ -22,6 +22,11 @@ from kin.tui.widgets.session_map import SessionMapWidget
 from kin.tui.widgets.trust_strip import TrustStripWidget
 
 
+from datetime import datetime, timezone
+
+PINNED_SNAPSHOT_NOW = datetime(2026, 8, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+
 # -----------------------------------------------------------------------------
 # Test App Harness for Direct Widget Snapshot Rendering (§14.8)
 # -----------------------------------------------------------------------------
@@ -35,6 +40,7 @@ class ArenaSnapshotApp(App):
             events=events,
             artifacts=artifacts,
             approvals=approvals,
+            now=PINNED_SNAPSHOT_NOW,
         )
 
     def compose(self) -> ComposeResult:

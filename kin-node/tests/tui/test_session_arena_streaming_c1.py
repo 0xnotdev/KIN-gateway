@@ -111,17 +111,19 @@ def test_at_tail_auto_follow_moves_cursor_to_new_tail(initial_events):
 # 4. 120ms Tail Pulse Timing via Injected Clock (§14.8 Phase C1)
 # -----------------------------------------------------------------------------
 def test_tail_pulse_timing_via_injected_clock(initial_events):
-    """Assert pulse styling present <120ms from first render, absent >=120ms (§14.8 Phase C1)."""
+    """Assert pulse styling present <120ms from live append, absent >=120ms (§14.8 Phase C1)."""
     timeline = ExchangeTimelineWidget(
         events=initial_events,
         allowed_presentation_classes=ExchangeTimelineWidget.ALL_7_CLASSES,
         reduced_motion=False,
     )
     t_start = datetime(2026, 8, 1, 12, 0, 0, tzinfo=timezone.utc)
+    live_evt = UiEvent("pulse-1", "sess-1", "task_request", "2026-08-01T12:00:00Z", "alice", "message")
+    timeline.append_events([live_evt], now=t_start)
 
     # First render at T_start (0ms elapsed) -> pulse active
-    rendered_50ms = timeline.render(now=t_start)
-    assert "[TAIL PULSE]" in rendered_50ms
+    rendered_0ms = timeline.render(now=t_start)
+    assert "[TAIL PULSE]" in rendered_0ms
 
     # Second render at T_start + 50ms -> pulse active
     t_50ms = datetime(2026, 8, 1, 12, 0, 0, 50000, tzinfo=timezone.utc)
@@ -197,3 +199,70 @@ def test_activity_coalescing_collapses_repeats_but_never_approval_security_state
     rendered = timeline.render()
     assert "x5" in rendered
     assert "5 events" in rendered
+
+
+# -----------------------------------------------------------------------------
+# 7. Live-Only Pulse Scope Test (§14.8 Phase C1 Round 2)
+# -----------------------------------------------------------------------------
+def test_historical_events_never_pulse_only_live_appended_events_pulse():
+    """Assert historical events at construction NEVER pulse on render; live-appended events DO pulse (§14.8 C1 Round 2)."""
+    historical_events = [
+        UiEvent(f"h-{i}", "sess-1", "task", "2026-08-01T12:00:00Z", "alice", "message")
+        for i in range(7)
+    ]
+
+    # 1. Historical construction: render immediately with no append_events call
+    timeline = ExchangeTimelineWidget(
+        events=historical_events,
+        allowed_presentation_classes=ExchangeTimelineWidget.ALL_7_CLASSES,
+        reduced_motion=False,
+    )
+    rendered_history = timeline.render()
+    assert "[TAIL PULSE]" not in rendered_history
+
+    # 2. Live append call: fresh event appended live
+    live_evt = UiEvent("live-1", "sess-1", "task", "2026-08-01T12:05:00Z", "bob", "message")
+    now_live = datetime(2026, 8, 1, 12, 5, 0, tzinfo=timezone.utc)
+    timeline.append_events([live_evt], now=now_live)
+
+    # Render at arrival time -> live event pulses!
+    rendered_live = timeline.render(now=now_live)
+    assert "[TAIL PULSE]" in rendered_live
+
+
+# -----------------------------------------------------------------------------
+# 8. Performance Memoization & Cache Invalidation Test (§14.8 Phase C1 Round 2)
+# -----------------------------------------------------------------------------
+def test_coalesced_groups_memoization_avoids_recomputation_on_cursor_moves():
+    """Assert navigating cursor 50 times over 10,000 events does NOT recompute coalesced groups repeatedly (§14.8 C1 Round 2)."""
+    scale_events = [
+        UiEvent(f"scale-{i}", "sess-1", "finding", "2026-08-01T12:00:00Z", "bob", "activity")
+        for i in range(10000)
+    ]
+
+    timeline = ExchangeTimelineWidget(
+        events=scale_events,
+        allowed_presentation_classes=ExchangeTimelineWidget.ALL_7_CLASSES,
+    )
+
+    # Initial coalescing computes once
+    groups_initial = timeline.get_coalesced_groups()
+    assert len(groups_initial) == 1
+    assert groups_initial[0].count == 10000
+    assert timeline._get_coalesced_groups_call_count == 1
+
+    # 50 cursor moves
+    for _ in range(50):
+        timeline.cursor_down()
+
+    # Call count remains 1 because cache was reused!
+    assert timeline._get_coalesced_groups_call_count == 1
+
+    # Append new event -> invalidates cache and recomputes exactly once
+    new_evt = UiEvent("scale-10001", "sess-1", "checkpoint", "2026-08-01T12:00:01Z", "system", "checkpoint")
+    timeline.append_events([new_evt])
+
+    groups_after = timeline.get_coalesced_groups()
+    assert len(groups_after) == 2
+    assert timeline._get_coalesced_groups_call_count == 2
+

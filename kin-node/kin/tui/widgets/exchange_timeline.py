@@ -47,13 +47,15 @@ def _parse_now(now: Optional[Union[datetime, str, float]]) -> datetime:
 class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
     """ExchangeTimeline domain widget rendering session events across presentation classes (§14.8 Step 3, Phase C1).
 
-    Features (Phase C1):
+    Features (Phase C1 Round 2):
     1. Tail-follow: auto-follows new events when reader is at tail.
     2. Off-tail retention: retains reader cursor position when off-tail and surfaces fixed '↓ N new events' control.
     3. Jump-to-tail: 'G' / 'End' keys jump cursor to newest event and clear counter.
-    4. 120ms Tail Pulse: 120ms pulse badge on newly rendered events using injectable `now` clock.
+    4. Live-Only 120ms Tail Pulse: pulse badge renders ONLY for genuinely live-appended events within 120ms of arrival.
+       Historical events provided at construction NEVER pulse on first render.
     5. Reduced motion: `reduced_motion=True` suppresses tail pulse animations completely.
-    6. Activity Coalescing: consecutive repeated `activity` events from same actor collapse to single card with count.
+    6. Activity Coalescing & Memoization: consecutive repeated `activity` events collapse into single cards;
+       coalesced groups are memoized to avoid redundant O(n) recomputations on cursor moves.
        Approval, Security, and State_Transition events are NEVER coalesced.
     """
 
@@ -96,9 +98,14 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         self.on_event_selected = on_event_selected
         self.reduced_motion: bool = reduced_motion
 
-        # Streaming state (§7.2, §14.8 Phase C1)
+        # Streaming state & pulse tracking (§7.2, §14.8 Phase C1 Round 2)
         self.new_events_off_tail_count: int = 0
-        self.first_rendered_at_map: Dict[str, datetime] = {}
+        # Tracks arrival timestamp ONLY for events added live via append_events()/append_event()
+        self.live_appended_at_map: Dict[str, datetime] = {}
+
+        # Performance memoization cache
+        self._coalesced_groups_cache: Optional[List[CoalescedTimelineGroup]] = None
+        self._get_coalesced_groups_call_count: int = 0
 
         groups = self.get_coalesced_groups()
         if selected_event_id and groups:
@@ -107,11 +114,18 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
                     self.selected_index = idx
                     break
 
+    def _invalidate_cache(self) -> None:
+        self._coalesced_groups_cache = None
+
     def get_filtered_events(self) -> List[UiEvent]:
         return [e for e in self.events if e.presentation_class in self.allowed_presentation_classes]
 
     def get_coalesced_groups(self) -> List[CoalescedTimelineGroup]:
-        """Group consecutive events: collapse repeated activity from same actor; NEVER coalesce approval/security/state_transition."""
+        """Group consecutive events with memoization cache (§14.8 Phase C1 Round 2)."""
+        if self._coalesced_groups_cache is not None:
+            return self._coalesced_groups_cache
+
+        self._get_coalesced_groups_call_count += 1
         filtered = self.get_filtered_events()
         groups: List[CoalescedTimelineGroup] = []
 
@@ -139,6 +153,7 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
                     is_coalesced_activity=False,
                 ))
 
+        self._coalesced_groups_cache = groups
         return groups
 
     def is_at_tail(self) -> bool:
@@ -154,15 +169,21 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         return None
 
     def append_events(self, new_events: List[UiEvent], now: Optional[Union[datetime, str, float]] = None) -> None:
-        """Append new events into stream: follow tail if at tail; retain position & count if off-tail (§14.8 Phase C1)."""
+        """Append new live events into stream: follow tail if at tail; retain position & count if off-tail (§14.8 Phase C1)."""
         if not new_events:
             return
+
+        now_dt = _parse_now(now)
+        for evt in new_events:
+            # Register live arrival timestamp ONLY for newly appended events
+            self.live_appended_at_map[evt.event_id] = now_dt
 
         was_at_tail = self.is_at_tail()
         old_groups = self.get_coalesced_groups()
         old_group_count = len(old_groups)
 
         self.events.extend(new_events)
+        self._invalidate_cache()
 
         new_groups = self.get_coalesced_groups()
         new_group_count = len(new_groups)
@@ -253,12 +274,14 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         prefix = "▶ " if is_selected else "  "
         select_tag = " [bold yellow][INSPECTED][/bold yellow]" if is_selected else ""
 
-        # 120ms Tail Pulse Tracking (§7.2, §14.8 Phase C1)
-        if evt.event_id not in self.first_rendered_at_map:
-            self.first_rendered_at_map[evt.event_id] = now_dt
+        # Live-Only Tail Pulse Tracking (§7.2, §14.8 Phase C1 Round 2)
+        # Pulse badge is rendered ONLY for events explicitly registered via live append
+        is_pulsing = False
+        if evt.event_id in self.live_appended_at_map:
+            elapsed_sec = (now_dt - self.live_appended_at_map[evt.event_id]).total_seconds()
+            if (not self.reduced_motion) and (0.0 <= elapsed_sec < 0.120):
+                is_pulsing = True
 
-        elapsed_sec = (now_dt - self.first_rendered_at_map[evt.event_id]).total_seconds()
-        is_pulsing = (not self.reduced_motion) and (0.0 <= elapsed_sec < 0.120)
         pulse_badge = " [bold green]⚡ [TAIL PULSE][/bold green]" if is_pulsing else ""
 
         # Coalesced Activity Group (Multiple repeats)
