@@ -2,16 +2,17 @@
 
 Covers:
 1. Chronological merging of session_events and audit_events covering all 6 reachable presentation classes.
-2. Strict ValueError exception on unrecognized audit categories.
-3. Inclusion of decided approvals in get_approvals_for_session vs exclusion in get_pending_approvals.
-4. Session list and detail queries using migrated DB schema (initiator_username/receiver_username).
-5. Artifact view querying for session artifacts.
+2. Real production write path (append_session_event) verification ensuring audit mirror rows are not double-counted.
+3. Strict ValueError exception on unrecognized audit categories.
+4. Inclusion of decided approvals in get_approvals_for_session vs exclusion in get_pending_approvals.
+5. Session list and detail queries using migrated DB schema (initiator_username/receiver_username).
+6. Artifact view querying for session artifacts.
 """
 
 from pathlib import Path
 import pytest
 
-from kin.schemas import MessageKind
+from kin.audit.writer import append_session_event, write_audit_event
 from kin.tui.local_state import (
     ensure_profile_db,
     get_approvals_for_session,
@@ -191,6 +192,83 @@ def test_session_events_merging_all_6_classes_chronological(session_db: Path):
     # Verify all 6 presentation classes are represented
     all_classes = {e.presentation_class for e in events}
     assert all_classes == {"message", "state_transition", "activity", "security", "artifact", "approval"}
+
+
+def test_session_events_real_write_path_no_duplicate_mirror_rows(tmp_path: Path):
+    """Assert calling append_session_event() populates session_events + audit_events mirror rows without double-counting (§14.8 Phase A Round 2)."""
+    db_path = tmp_path / "kin.db"
+    conn = ensure_profile_db(db_path)
+    vault_key = b"0" * 32
+
+    session_id = "sess-real-path-200"
+
+    # Seed parent sessions row for foreign key constraint
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO sessions (
+            session_id, type, initiator_username, receiver_username, status,
+            objective, turn_limit, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            session_id,
+            "ask",
+            "alice",
+            "bob",
+            "active",
+            "Real write path test session",
+            12,
+            "2026-08-01T11:00:00Z",
+            "2026-08-01T11:00:00Z",
+        ),
+    )
+    conn.commit()
+
+    # Seed 3 session events via real production write path (append_session_event)
+    append_session_event(
+        conn,
+        vault_key,
+        session_id=session_id,
+        actor_username="alice",
+        actor_agent_id="scout-1",
+        kind="task_request",
+    )
+    append_session_event(
+        conn,
+        vault_key,
+        session_id=session_id,
+        actor_username="bob",
+        actor_agent_id="scout-2",
+        kind="acceptance",
+    )
+    append_session_event(
+        conn,
+        vault_key,
+        session_id=session_id,
+        actor_username="bob",
+        actor_agent_id="scout-2",
+        kind="plan",
+    )
+
+    # Seed 1 real security audit event
+    write_audit_event(
+        conn,
+        vault_key,
+        category="security_rejection",
+        summary="Signature mismatch on sequence 2",
+        session_id=session_id,
+    )
+
+    conn.close()
+
+    # Query merged session events
+    events = get_session_events(tmp_path, session_id)
+
+    # Assert exactly 4 unique events are returned (3 session_events + 1 security audit event), NOT doubled to 7!
+    assert len(events) == 4
+    event_kinds = {e.kind for e in events}
+    assert event_kinds == {"task_request", "acceptance", "security_rejection", "plan"}
 
 
 def test_unrecognized_audit_category_raises():

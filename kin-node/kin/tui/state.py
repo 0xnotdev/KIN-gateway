@@ -105,7 +105,7 @@ AUDIT_CATEGORY_MAPPING: Dict[str, PresentationClass] = {
     "approval_request": "approval",         # Policy approval requested
     "approval_decision": "approval",        # Policy approval decided
     "relay_poll_error": "activity",         # Transient network/relay polling error
-    "state_transition": "state_transition", # Generic system state transition
+    "state_transition": "state_transition", # Audit log test fixture category (tests/test_audit.py)
     "ColonCommand": "activity",             # Internal command palette action audit log
 }
 

@@ -810,20 +810,22 @@ def get_session_events(
             e_id, s_id, kind_str, c_at, actor = row
             try:
                 p_class = map_event_kind_to_presentation_class(kind_str)
-                events.append(
-                    UiEvent(
-                        event_id=e_id,
-                        session_id=s_id,
-                        kind=kind_str,
-                        created_at=c_at,
-                        actor_username=actor,
-                        presentation_class=p_class,
-                    )
-                )
             except ValueError:
-                pass
+                # Unrecognized event kind fallback: surface safely under security presentation class rather than dropping
+                p_class = "security"
 
-        # 2. Query audit_events table for session_id
+            events.append(
+                UiEvent(
+                    event_id=e_id,
+                    session_id=s_id,
+                    kind=kind_str,
+                    created_at=c_at,
+                    actor_username=actor,
+                    presentation_class=p_class,
+                )
+            )
+
+        # 2. Query audit_events table for session_id (excluding session_event_<kind> mirror rows to avoid duplication)
         cur.execute(
             """
             SELECT audit_id, session_id, category, created_at, actor_username, summary
@@ -834,14 +836,29 @@ def get_session_events(
         )
         for row in cur.fetchall():
             a_id, s_id, cat, c_at, actor, summ = row
-            evt = UiEvent.from_audit_event(
-                audit_id=a_id,
-                session_id=s_id or session_id,
-                category=cat,
-                created_at=c_at,
-                actor_username=actor,
-                summary=summ or "",
-            )
+            if cat.startswith("session_event_"):
+                # Skip mirror rows to prevent double-counting session_events
+                continue
+
+            try:
+                evt = UiEvent.from_audit_event(
+                    audit_id=a_id,
+                    session_id=s_id or session_id,
+                    category=cat,
+                    created_at=c_at,
+                    actor_username=actor,
+                    summary=summ or "",
+                )
+            except ValueError:
+                # Unrecognized audit category fallback: surface safely under security presentation class
+                evt = UiEvent(
+                    event_id=a_id,
+                    session_id=s_id or session_id,
+                    kind=cat,
+                    created_at=c_at,
+                    actor_username=actor,
+                    presentation_class="security",
+                )
             events.append(evt)
 
         # Sort combined events strictly by ISO created_at timestamp
