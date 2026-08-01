@@ -122,10 +122,10 @@ def test_reconnect_inserts_exactly_one_transition_and_deduplicates_replayed_even
 # -----------------------------------------------------------------------------
 # 4. Standing Requirement Guard Test (§14.8 Phase C2)
 # -----------------------------------------------------------------------------
-def test_worker_standing_requirement_guard_prevents_polling_placeholder_sessions():
-    """Assert run_event_polling_worker aborts immediately and does ZERO polling for placeholder session IDs (§14.8 C2)."""
-    for placeholder_id in ("sess-arena-default", "alice", "peer_agent", "placeholder", ""):
-        arena = SessionArenaWidget(session_id=placeholder_id)
+def test_worker_standing_requirement_guard_prevents_polling_when_session_id_unspecified():
+    """Assert run_event_polling_worker aborts immediately and does ZERO polling when session_id is None or empty (§14.8 C2)."""
+    for empty_id in (None, ""):
+        arena = SessionArenaWidget(session_id=empty_id)
         arena.is_polling_active = True
 
         # Polling worker logic must exit immediately without attempting DB fetches

@@ -59,7 +59,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
 
     def __init__(
         self,
-        session_id: str = "sess-arena-default",
+        session_id: Optional[str] = None,
         profile_name: str = "default",
         profile_dir: Optional[Path] = None,
         session_summary: Optional[SessionSummary] = None,
@@ -246,8 +246,8 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         """Core polling worker logic (§14.8 Phase C2)."""
         import time
 
-        # Standing requirement guard: NEVER poll for placeholder or empty session_id
-        if not self.session_id or self.session_id in ("sess-arena-default", "alice", "peer_agent", "placeholder"):
+        # Standing requirement guard: NEVER poll when session_id is empty or None
+        if not self.session_id:
             return
 
         last_count = len(self.events)
