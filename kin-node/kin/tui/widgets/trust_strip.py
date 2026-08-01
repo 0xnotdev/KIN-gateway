@@ -18,7 +18,7 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
     """TrustStrip domain widget for agent identity & session trust header (§14.5, §14.8).
 
     Renders trust security level ([LOCAL TRUSTED] vs [PEER VERIFIED]), transport mode,
-    peer staleness alerts, and missing peer fallback without crashing.
+    peer staleness alerts, missing peer fallback, and explicit trust-status-unknown error states.
     """
 
     can_focus = True
@@ -43,6 +43,7 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
         is_stale_peer: bool = False,
         is_direct_transport: bool = True,
         is_missing_peer: bool = False,
+        is_trust_unknown: bool = False,
         now: Optional[Union[datetime, str, float]] = None,
         **kwargs,
     ) -> None:
@@ -52,6 +53,7 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
         self.is_stale_peer: bool = is_stale_peer
         self.is_direct_transport: bool = is_direct_transport
         self.is_missing_peer: bool = is_missing_peer
+        self.is_trust_unknown: bool = is_trust_unknown
 
     def render(self) -> str:
         state = self.lifecycle_state
@@ -73,7 +75,10 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
             sess = self.session_summary
             init_user = redact_ui_text(sess.initiator_username or "local_user")
             
-            if self.is_missing_peer:
+            if self.is_trust_unknown:
+                peer_trust = "[bold red][TRUST STATUS UNKNOWN / CHECK ERROR][/bold red]"
+                rec_user = f"@{redact_ui_text(sess.receiver_username or 'unknown')}"
+            elif self.is_missing_peer:
                 rec_user = f"@{redact_ui_text(sess.receiver_username or 'unknown')} [bold yellow][UNKNOWN PEER][/bold yellow]"
                 peer_trust = "[bold red][UNVERIFIED PEER][/bold red]"
             else:

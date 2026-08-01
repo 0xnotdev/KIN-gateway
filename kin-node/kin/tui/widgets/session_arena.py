@@ -1,12 +1,15 @@
 """SessionArenaWidget domain screen for KIN V1.1 TUI.
 
-Spec authority: KIN-V1.1-TUI-SYSTEM.md §5.3, §7.2, §14.8 Steps 1-2 (Static Rendering)
+Spec authority: KIN-V1.1-TUI-SYSTEM.md §5.3, §7.1, §7.2, §14.8 Steps 1-2 (Static Rendering)
 """
 
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Union
 
+from rich.console import Group
+from rich.panel import Panel
+from rich.table import Table
 from textual.events import Key, Resize
 from textual.widgets import Static
 
@@ -20,8 +23,7 @@ from kin.tui.local_state import (
     get_session_list,
     get_stale_peer_card_count,
 )
-from kin.tui.redaction import redact_ui_text
-from kin.tui.state import ApprovalView, ArtifactView, SessionSummary, UiEvent
+from kin.tui.state import ApprovalView, ArtifactView, RecoverableError, SessionSummary, UiEvent
 from kin.tui.tokens import get_glyph
 from kin.tui.widgets.exchange_timeline import ExchangeTimelineWidget
 from kin.tui.widgets.inspector import InspectorWidget
@@ -34,7 +36,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
     """Static Session Arena domain widget composing header, session map, exchange timeline, and inspector (§14.8).
 
     Supports three responsive layout modes via classify_breakpoint():
-    1. Cockpit mode (full breakpoint): 3-lane layout (Session Map | Exchange Timeline | Inspector).
+    1. Cockpit mode (full breakpoint): 3-lane side-by-side grid layout (Session Map | Exchange Timeline | Inspector).
     2. Standard mode (standard breakpoint): Docked Inspector (Exchange Timeline | Inspector).
     3. Stacked mode (compact/minimal breakpoint): Vertically stacked lanes.
     """
@@ -79,6 +81,9 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
 
         self.selected_event_id = selected_event_id
         self.selected_event: Optional[UiEvent] = None
+        self.session_summary: Optional[SessionSummary] = None
+        self.last_arena_error: Optional[RecoverableError] = None
+        self.last_trust_error: Optional[str] = None
         self.breakpoint: Breakpoint = "full"
 
         # Child sub-widgets
@@ -90,51 +95,57 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self.load_arena_data()
 
     def load_arena_data(self) -> None:
-        """Load session data using Phase A data functions."""
-        # 1. Session summary
+        """Load session data using Phase A data functions (§14.8 Phase B Round 2)."""
+        # 1. Session summary resolution (Zero fake SessionSummary synthesis)
         if self._session_summary_override is not None:
             self.session_summary = self._session_summary_override
         else:
             self.session_summary = get_session_detail(self.profile_dir, self.session_id, self.profile_name)
             if self.session_summary is None:
-                # Fallback summary for non-existent session
-                self.session_summary = SessionSummary(
-                    session_id=self.session_id,
-                    status="active",
-                    type="ask",
-                    initiator_username="local_user",
-                    receiver_username="peer_user",
-                    objective="Collaborate on task",
+                self.last_arena_error = RecoverableError(
+                    what_happened="Session Not Found",
+                    impact="Session details and event logs cannot be loaded.",
+                    preserved="Your local database and profile keyrings remain intact.",
+                    next_action="Select a valid, existing session ID from the Session Map or Inbox.",
+                    technical_detail=f"Session ID '{self.session_id}' not found in profile '{self.profile_name}'.",
                 )
+                self._lifecycle_state = WidgetLifecycleState.RECOVERABLE_ERROR
+                return
 
         # 2. Events
         if self._events_override is not None:
             self.events = self._events_override
         else:
-            self.events = get_session_events(self.profile_dir, self.session_id, self.profile_name)
+            self.events = get_session_events(self.profile_dir, self.session_id, self.profile_name) or []
 
         # 3. Artifacts
         if self._artifacts_override is not None:
             self.artifacts = self._artifacts_override
         else:
-            self.artifacts = get_artifacts_for_session(self.profile_dir, self.session_id, self.profile_name)
+            self.artifacts = get_artifacts_for_session(self.profile_dir, self.session_id, self.profile_name) or []
 
         # 4. Approvals
         if self._approvals_override is not None:
             self.approvals = self._approvals_override
         else:
-            self.approvals = get_approvals_for_session(self.profile_dir, self.session_id, self.profile_name)
+            self.approvals = get_approvals_for_session(self.profile_dir, self.session_id, self.profile_name) or []
 
-        # 5. Peer trust checks
+        # 5. Peer trust checks (Narrow exception handling - surface trust errors, never reassure on failure)
+        is_trust_unknown = False
+        is_missing_peer = False
+        is_stale_peer = False
         try:
             contacts = get_local_contacts_summaries(self.profile_dir)
             contact_usernames = {c.username for c in contacts}
-            is_missing_peer = bool(self.session_summary.receiver_username and self.session_summary.receiver_username not in contact_usernames)
-            peer_u = self.session_summary.receiver_username or ""
+            rec_user = self.session_summary.receiver_username
+            is_missing_peer = bool(rec_user and rec_user not in contact_usernames)
+            peer_u = rec_user or ""
             stale_count = get_stale_peer_card_count(self.profile_dir, peer_u) if peer_u else 0
             is_stale_peer = (stale_count > 0)
-        except Exception:
-            is_missing_peer = False
+        except Exception as exc:
+            self.last_trust_error = str(exc)
+            is_trust_unknown = True
+            is_missing_peer = True
             is_stale_peer = False
 
         # Configure sub-widgets
@@ -143,6 +154,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             is_stale_peer=is_stale_peer,
             is_direct_transport=True,
             is_missing_peer=is_missing_peer,
+            is_trust_unknown=is_trust_unknown,
         )
 
         all_sessions = get_session_list(self.profile_dir, self.profile_name) or [self.session_summary]
@@ -192,7 +204,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             self.refresh()
             event.stop()
 
-    def render(self) -> str:
+    def render(self) -> Union[str, Group]:
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -203,9 +215,15 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             reason = self.disabled_reason or "SessionArena disabled"
             return f"[dim]SessionArena (DISABLED: {reason})[/dim]"
 
-        if state == WidgetLifecycleState.RECOVERABLE_ERROR:
+        if state == WidgetLifecycleState.RECOVERABLE_ERROR or self.session_summary is None:
+            err = getattr(self, "last_arena_error", None)
+            err_msg = err.what_happened if err else "Session Not Found"
+            tech_detail = f"\n[dim]{err.technical_detail}[/dim]" if err and err.technical_detail else ""
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} SessionArena Error: Arena state unreadable. Press [Retry].[/bold red]"
+            return (
+                f"[bold red]{glyph} SessionArena Error: {err_msg}[/bold red]{tech_detail}\n"
+                f"[dim]No synthetic data constructed. Select a valid session ID.[/dim]"
+            )
 
         # Classify terminal size breakpoint
         size = self.size
@@ -220,13 +238,21 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
 
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
 
-        # 1. COCKPIT MODE (full breakpoint: >=140x30) -> 3-lane layout
+        # 1. COCKPIT MODE (full breakpoint: >=140x30) -> Genuine side-by-side Rich Table grid (§7.1, §14.8 Round 2)
         if bp == "full":
-            return (
-                f"{header_str}{focus_mark}\n\n"
-                f"[bold cyan]─── SESSION MAP ───[/bold cyan]\n{map_str}\n\n"
-                f"[bold green]─── EXCHANGE TIMELINE ───[/bold green]\n{timeline_str}\n\n"
-                f"[bold magenta]─── DETAIL INSPECTOR ───[/bold magenta]\n{inspector_str}"
+            grid = Table.grid(expand=True)
+            grid.add_column("map", ratio=1)
+            grid.add_column("timeline", ratio=2)
+            grid.add_column("inspector", ratio=1)
+
+            panel_map = Panel(map_str, title="[bold cyan]SESSION MAP[/bold cyan]", border_style="cyan")
+            panel_timeline = Panel(timeline_str, title="[bold green]EXCHANGE TIMELINE[/bold green]", border_style="green")
+            panel_inspector = Panel(inspector_str, title="[bold magenta]DETAIL INSPECTOR[/bold magenta]", border_style="magenta")
+
+            grid.add_row(panel_map, panel_timeline, panel_inspector)
+            return Group(
+                header_str + focus_mark,
+                grid,
             )
 
         # 2. DOCKED INSPECTOR MODE (standard breakpoint: 90x28 - 140x30) -> 2-lane layout

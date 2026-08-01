@@ -184,11 +184,49 @@ def test_arena_missing_peer_renders_cleanly_without_crashing(sample_session_summ
         session_summary=sample_session_summary,
         profile_dir=Path("non_existent_profile_dir"),
     )
-    rendered = arena.render()
+    rendered = arena.trust_strip_widget.render()
 
     # Must render clean unverified peer badge without raising exception
     assert "UNVERIFIED PEER" in rendered or "UNKNOWN PEER" in rendered
     assert "@bob" in rendered
+
+
+def test_arena_nonexistent_session_id_produces_error_state_not_fabricated_data():
+    """6. Nonexistent session test: assert nonexistent session_id produces RECOVERABLE_ERROR without fabricated data (§14.8 Round 2)."""
+    from kin.tui.widgets.lifecycle import WidgetLifecycleState
+
+    arena = SessionArenaWidget(
+        session_id="sess-nonexistent-9999",
+        profile_dir=Path("non_existent_profile_dir"),
+    )
+    # Must NOT fabricate a synthetic SessionSummary
+    assert arena.session_summary is None
+    assert arena.lifecycle_state == WidgetLifecycleState.RECOVERABLE_ERROR
+    assert arena.last_arena_error is not None
+    assert arena.last_arena_error.what_happened == "Session Not Found"
+
+    rendered = str(arena.render())
+    assert "Session Not Found" in rendered
+    assert "sess-nonexistent-9999" in rendered
+    # Assert zero synthetic placeholders like "local_user" or "peer_user"
+    assert "local_user" not in rendered
+    assert "peer_user" not in rendered
+
+
+def test_arena_trust_check_failure_surfaces_error_and_does_not_reassure(sample_session_summary, monkeypatch):
+    """7. Trust failure test: assert disk/crypto error during trust check surfaces explicit trust error (§14.8 Round 2)."""
+    def mock_broken_contacts(*args, **kwargs):
+        raise RuntimeError("Disk IO error reading contacts DB")
+
+    monkeypatch.setattr("kin.tui.widgets.session_arena.get_local_contacts_summaries", mock_broken_contacts)
+
+    arena = SessionArenaWidget(
+        session_summary=sample_session_summary,
+        profile_dir=Path("some_profile_dir"),
+    )
+    assert arena.trust_strip_widget.is_trust_unknown is True
+    rendered_trust = arena.trust_strip_widget.render()
+    assert "TRUST STATUS UNKNOWN" in rendered_trust
 
 
 # -----------------------------------------------------------------------------
