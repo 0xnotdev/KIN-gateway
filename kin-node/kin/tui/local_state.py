@@ -400,6 +400,8 @@ def get_needs_you_items(profile_dir: Path, profile_name: str = "default") -> Lis
                         )
                     )
         except Exception as exc:
+            from kin.tui.errors import log_exception_to_diagnostics
+            log_exception_to_diagnostics(exc, profile_dir)
             logger.warning("Failed to query security events for Needs-You queue: %s", exc, exc_info=True)
 
         return items
