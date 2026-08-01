@@ -10,17 +10,35 @@ Covers:
 
 from pathlib import Path
 import pytest
+from textual.app import App, ComposeResult
 
 from kin.artifacts.vault import ArtifactMetadata
-from kin.tui.app import KinApp
 from kin.tui.redaction import redact_ui_text
-from kin.tui.shell import MainCanvas
 from kin.tui.state import ApprovalView, ArtifactView, SessionSummary, UiEvent
 from kin.tui.widgets.exchange_timeline import ExchangeTimelineWidget
 from kin.tui.widgets.inspector import InspectorWidget
 from kin.tui.widgets.session_arena import SessionArenaWidget
 from kin.tui.widgets.session_map import SessionMapWidget
 from kin.tui.widgets.trust_strip import TrustStripWidget
+
+
+# -----------------------------------------------------------------------------
+# Test App Harness for Direct Widget Snapshot Rendering (§14.8)
+# -----------------------------------------------------------------------------
+class ArenaSnapshotApp(App):
+    """Minimal test App mounting SessionArenaWidget populated with real data for snapshot testing."""
+
+    def __init__(self, session_summary=None, events=None, artifacts=None, approvals=None, **kwargs):
+        super().__init__(**kwargs)
+        self.arena_widget = SessionArenaWidget(
+            session_summary=session_summary,
+            events=events,
+            artifacts=artifacts,
+            approvals=approvals,
+        )
+
+    def compose(self) -> ComposeResult:
+        yield self.arena_widget
 
 
 # -----------------------------------------------------------------------------
@@ -81,7 +99,6 @@ def test_security_event_guard_has_zero_action_affordances(events_all_7_classes):
     arena = SessionArenaWidget(events=[sec_event])
 
     rendered_timeline = timeline.render()
-    rendered_arena = arena.render()
 
     # Must render persistent red card
     assert "SECURITY REJECTION CARD" in rendered_timeline
@@ -114,7 +131,6 @@ def test_artifact_inspection_negative_test_has_no_import_or_apply_code_paths():
     arena = SessionArenaWidget(artifacts=[art_view])
 
     rendered_inspector = inspector.render()
-    rendered_arena = arena.render()
 
     assert "INSPECT ARTIFACT" in rendered_inspector
     assert "Read-Only Artifact Preview" in rendered_inspector
@@ -156,10 +172,10 @@ def test_arena_redaction_verifies_scrubbing_across_all_views():
     )
     rendered = arena.render()
 
-    # Assert secret string and sensitive path are scrubbed
+    # Assert secret string and sensitive path are scrubbed against exact redaction markers
     assert secret_key not in rendered
     assert secret_path not in rendered
-    assert "[REDACTED]" in rendered or "•••" in rendered or "alice_" in rendered
+    assert "[REDACTED SECRET]" in rendered or "[REDACTED PATH]" in rendered
 
 
 def test_arena_missing_peer_renders_cleanly_without_crashing(sample_session_summary):
@@ -178,25 +194,25 @@ def test_arena_missing_peer_renders_cleanly_without_crashing(sample_session_summ
 # -----------------------------------------------------------------------------
 # Snapshots for Terminal Sizes and Event Variations (§14.8)
 # -----------------------------------------------------------------------------
-def test_arena_snapshot_cockpit_full_mode_160x44(snap_compare):
+def test_arena_snapshot_cockpit_full_mode_160x44(snap_compare, sample_session_summary, events_all_7_classes):
     """Snapshot: Arena Cockpit 3-lane mode at 160x44 resolution (§14.8)."""
-    app = KinApp()
+    app = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
     assert snap_compare(app, terminal_size=(160, 44))
 
 
-def test_arena_snapshot_docked_standard_mode_120x36(snap_compare):
+def test_arena_snapshot_docked_standard_mode_120x36(snap_compare, sample_session_summary, events_all_7_classes):
     """Snapshot: Arena Docked Inspector mode at 120x36 resolution (§14.8)."""
-    app = KinApp()
+    app = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
     assert snap_compare(app, terminal_size=(120, 36))
 
 
-def test_arena_snapshot_compact_mode_90x28(snap_compare):
+def test_arena_snapshot_compact_mode_90x28(snap_compare, sample_session_summary, events_all_7_classes):
     """Snapshot: Arena Compact mode at 90x28 resolution (§14.8)."""
-    app = KinApp()
+    app = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
     assert snap_compare(app, terminal_size=(90, 28))
 
 
-def test_arena_snapshot_minimal_mode_80x24(snap_compare):
+def test_arena_snapshot_minimal_mode_80x24(snap_compare, sample_session_summary, events_all_7_classes):
     """Snapshot: Arena Minimal mode at 80x24 resolution (§14.8)."""
-    app = KinApp()
+    app = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
     assert snap_compare(app, terminal_size=(80, 24))
