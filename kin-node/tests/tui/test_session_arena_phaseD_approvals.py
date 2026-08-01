@@ -85,16 +85,47 @@ async def test_no_single_key_executes_consequential_approval_or_state_action(sam
 # 3. Interactive Approval Actions Modal Integration (§14.8 Phase D)
 # -----------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_arena_needs_you_lane_approval_key_triggers_confirmation_modal(sample_session_summary, sample_approval_view):
-    """Assert pressing 'a' in Needs-You lane pushes ApproveConfirmModal before decision execution (§14.8 Phase D)."""
+async def test_arena_needs_you_lane_all_approval_keys_drive_real_on_key_path(sample_session_summary, sample_approval_view):
+    """Assert pressing 'a', 'd', 'e', 'b' via real on_key path in Needs-You lane pushes correct modals, and 'e' switches to activity lane when outside Needs-You (§14.8 Phase D)."""
     app = ArenaSnapshotApp(session_summary=sample_session_summary, approvals=[sample_approval_view])
     async with app.run_test() as pilot:
         arena = pilot.app.query_one(SessionArenaWidget)
-        arena.open_needs_you_lane()
         pilot.app.set_focus(arena)
 
-        # Press 'a' -> ApproveConfirmModal pushed to screen stack
+        # 1. Collision verification: 'e' pressed while active_lane is 'transcript' MUST switch lane to 'activity'
+        arena.switch_lane("transcript")
+        assert arena.active_lane == "transcript"
+        await pilot.press("e")
+        assert arena.active_lane == "activity"
+
+        # Switch to 'needs_you' lane for approval actions
+        arena.open_needs_you_lane()
+        assert arena.active_lane == "needs_you"
+
+        # 2. Press 'a' via real on_key -> ApproveConfirmModal pushed
         await pilot.press("a")
         assert len(pilot.app.screen_stack) > 1
-        top_screen = pilot.app.screen_stack[-1]
-        assert top_screen.__class__.__name__ == "ApproveConfirmModal"
+        assert pilot.app.screen_stack[-1].__class__.__name__ == "ApproveConfirmModal"
+        await pilot.press("escape")
+        assert len(pilot.app.screen_stack) == 1
+
+        # 3. Press 'd' via real on_key -> DenyReasonModal pushed
+        await pilot.press("d")
+        assert len(pilot.app.screen_stack) > 1
+        assert pilot.app.screen_stack[-1].__class__.__name__ == "DenyReasonModal"
+        await pilot.press("escape")
+        assert len(pilot.app.screen_stack) == 1
+
+        # 4. Press 'e' via real on_key in Needs-You lane -> EditConstraintsModal pushed (unblocked by collision fix)
+        await pilot.press("e")
+        assert len(pilot.app.screen_stack) > 1
+        assert pilot.app.screen_stack[-1].__class__.__name__ == "EditConstraintsModal"
+        await pilot.press("escape")
+        assert len(pilot.app.screen_stack) == 1
+
+        # 5. Press 'b' via real on_key -> ApproveConfirmModal pushed
+        await pilot.press("b")
+        assert len(pilot.app.screen_stack) > 1
+        assert pilot.app.screen_stack[-1].__class__.__name__ == "ApproveConfirmModal"
+        await pilot.press("escape")
+        assert len(pilot.app.screen_stack) == 1

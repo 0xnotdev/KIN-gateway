@@ -379,6 +379,13 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             return
 
         k = event.key
+
+        # 1. Needs-You Approval Actions (checked first to prevent key collision on 'e' with activity lane switch)
+        if self.active_lane == "needs_you" and k in ("a", "d", "e", "b"):
+            self.handle_approval_key(k)
+            event.stop()
+            return
+
         if k == "z":
             self.toggle_focus_mode()
             event.stop()
@@ -448,9 +455,6 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             elif self.active_lane == "needs_you" and self.approvals:
                 self.selected_approval_index = len(self.approvals) - 1
             self.refresh()
-            event.stop()
-        elif k in ("a", "d", "e", "b") and self.active_lane == "needs_you":
-            self.handle_approval_key(k)
             event.stop()
 
     def append_events(self, new_events: List[UiEvent], now: Optional[Union[datetime, str, float]] = None) -> None:

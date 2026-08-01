@@ -385,8 +385,8 @@ def get_needs_you_items(profile_dir: Path, profile_name: str = "default") -> Lis
                 try:
                     p_class = map_event_kind_to_presentation_class(e_kind)
                 except ValueError as exc:
-                    logger.warning("Unrecognized event kind '%s' during Needs-You classification: %s", e_kind, exc)
-                    continue
+                    logger.warning("Unrecognized event kind '%s' during Needs-You classification; defaulting to 'security' (safe/visible): %s", e_kind, exc)
+                    p_class = "security"
 
                 if p_class == "security":
                     items.append(

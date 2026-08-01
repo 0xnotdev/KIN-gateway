@@ -214,3 +214,34 @@ def test_all_known_event_kinds_and_audit_categories_classify_cleanly():
     for kind in all_kinds:
         p_class = map_event_kind_to_presentation_class(kind)
         assert p_class in ("message", "activity", "checkpoint", "artifact", "approval", "state_transition", "security")
+
+
+def test_unrecognized_event_kind_defaults_to_security_in_needs_you_items(tmp_path):
+    """Assert an unrecognized event kind raises a warning log and defaults to visible 'security' tier in get_needs_you_items (§10.1)."""
+    from kin.tui.local_state import ensure_profile_db
+
+    db_path = tmp_path / "kin.db"
+    conn = ensure_profile_db(db_path)
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        INSERT INTO sessions (session_id, initiator_username, receiver_username, status, type, created_at, updated_at)
+        VALUES ('sess-unrec-1', 'alice', 'bob', 'active', 'research', '2026-08-01T12:00:00Z', '2026-08-01T12:00:00Z')
+        """
+    )
+    cur.execute(
+        """
+        INSERT INTO session_events (event_id, session_id, event_order, actor_username, kind, visibility, created_at)
+        VALUES ('evt-unrec-88', 'sess-unrec-1', 1, 'eve', 'unrecognized_custom_kind_99', 'peer_visible', '2026-08-01T12:00:05Z')
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    items = get_needs_you_items(tmp_path)
+    assert len(items) == 1
+    unrec_item = items[0]
+    assert unrec_item.kind == "security"
+    assert unrec_item.urgency == "high"
+    assert "unrecognized_custom_kind_99" in unrec_item.human_readable_reason

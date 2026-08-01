@@ -70,8 +70,8 @@ During the formal Milestone M3 close-out review, three live runtime defects were
 - **Defect A (Shared Keyring Isolation)**: `InMemoryTestKeyring` formerly persisted test key material to a fixed shared file path (`Path(tempfile.gettempdir()) / "kin_insecure_test_keyring.json"`). When `KIN_UNSAFE_TEST_KEYRING=1` was enabled, test fixtures using the profile `"test-p"` leaked keys across test cases. Resolved by adding an autouse pytest fixture `isolate_test_keyring` in `tests/conftest.py` setting `KIN_TEST_KEYRING_PATH` to a per-test unique `tmp_path / "test_keyring.json"`, ensuring 100% isolation across test functions.
 - **Defect B (`dispatch_session` Dead Code `max_turns`)**: `dispatch_session` signature accepted `max_turns: int = 12`, but body hardcoded 12 into envelope payload ingestion. Resolved by validating `1 <= max_turns <= 12` in `dispatch_session` (raising `ValueError` on invalid bounds prior to envelope creation), inserting `max_turns` into the signed/hashed payload, and reading `payload.get("max_turns")` during envelope ingestion into `sessions.turn_limit` and `SessionState.max_turns`.
 
-### 12. Milestone T6 Needs-You Queue Event Scan Optimization (2026-08-01)
-- **Current Behavior**: `get_needs_you_items(profile_dir)` queries `session_events` in SQLite and classifies events in memory via `map_event_kind_to_presentation_class`.
+### 12. Milestone T6 Needs-You Queue Event Scan Optimization & Unrecognized Kind Handling (2026-08-01)
+- **Current Behavior**: `get_needs_you_items(profile_dir)` queries `session_events` in SQLite and classifies events in memory via `map_event_kind_to_presentation_class`. Unrecognized event kinds log a diagnostic warning and default to visible `"security"` tier per §10.1.
 - **Limitation**: Evaluates events across local profile DB sessions without pagination or SQL `presentation_class` index.
 - **Resolution Plan**: Deferred optimization for large local SQLite profile history; local event count overhead is negligible for local node operation.
 
