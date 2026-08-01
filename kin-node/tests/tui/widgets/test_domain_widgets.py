@@ -62,7 +62,7 @@ def test_dispatch_wizard_confirm_boundary_is_ui_only():
     Verifies pressing confirm in DispatchWizardWidget transitions to a UI-only draft preview state ('would_dispatch')
     with zero side-effects toward network or backend session creation.
     """
-    wizard = DispatchWizardWidget(agent_id="peer_scout", prompt="Run safety audit", risk_level="HIGH")
+    wizard = DispatchWizardWidget(agent_id="peer_scout", prompt="Run safety audit", risk_level="HIGH", for_preview=True)
     assert wizard.is_submitted is False
     assert wizard.step_index == 0
 

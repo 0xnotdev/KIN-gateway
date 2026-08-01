@@ -137,12 +137,13 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
 
     def __init__(
         self,
-        agent_id: str = "agent_scout",
-        prompt: str = "Perform codebase security audit",
+        agent_id: str = "",
+        prompt: str = "",
         risk_level: str = "MEDIUM",
         profile_name: str = "default",
         profile_dir: Optional[Path] = None,
         now: Optional[Union[datetime, str, float]] = None,
+        for_preview: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(now=now, **kwargs)
@@ -150,12 +151,20 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
         self.profile_dir = profile_dir or (Path.home() / ".kin" / "profiles" / profile_name)
 
         # Backing controller and draft (§C1)
-        initial_draft = DispatchDraft(
-            peer_username="alice",
-            sender_agent_id=agent_id,
-            receiver_agent_id="peer_agent",
-            goal=prompt,
-        )
+        if for_preview:
+            initial_draft = DispatchDraft(
+                peer_username="alice",
+                sender_agent_id=agent_id or "agent_scout",
+                receiver_agent_id="peer_agent",
+                goal=prompt or "Perform codebase security audit",
+            )
+        else:
+            initial_draft = DispatchDraft(
+                peer_username="",
+                sender_agent_id=agent_id,
+                receiver_agent_id="",
+                goal=prompt,
+            )
         self.controller = DispatchController(
             profile_name=profile_name,
             profile_dir=self.profile_dir,
@@ -232,10 +241,13 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
                 self._on_peer_selected(contacts[0])
         except Exception as exc:
             self.last_dispatch_error = RecoverableError(
-                headline="Modal Launch Error",
+                what_happened="Modal Launch Error",
+                impact="Picker modal could not be launched.",
+                preserved="Current dispatch draft remains intact.",
+                next_action="Retry modal interaction.",
                 technical_detail=str(exc),
             )
-            self.lifecycle_state = WidgetLifecycleState.RECOVERABLE_ERROR
+            self._lifecycle_state = WidgetLifecycleState.RECOVERABLE_ERROR
             self.refresh()
 
     def _on_peer_selected(self, contact: Optional[ContactSummary]) -> None:
@@ -253,10 +265,13 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
                 self._on_sender_selected(local_agents[0])
         except Exception as exc:
             self.last_dispatch_error = RecoverableError(
-                headline="Modal Launch Error",
+                what_happened="Modal Launch Error",
+                impact="Picker modal could not be launched.",
+                preserved="Current dispatch draft remains intact.",
+                next_action="Retry modal interaction.",
                 technical_detail=str(exc),
             )
-            self.lifecycle_state = WidgetLifecycleState.RECOVERABLE_ERROR
+            self._lifecycle_state = WidgetLifecycleState.RECOVERABLE_ERROR
             self.refresh()
 
     def _on_sender_selected(self, agent: Optional[AgentCardView]) -> None:
@@ -278,10 +293,13 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
                 self._on_receiver_selected(peer_agents[0])
         except Exception as exc:
             self.last_dispatch_error = RecoverableError(
-                headline="Modal Launch Error",
+                what_happened="Modal Launch Error",
+                impact="Picker modal could not be launched.",
+                preserved="Current dispatch draft remains intact.",
+                next_action="Retry modal interaction.",
                 technical_detail=str(exc),
             )
-            self.lifecycle_state = WidgetLifecycleState.RECOVERABLE_ERROR
+            self._lifecycle_state = WidgetLifecycleState.RECOVERABLE_ERROR
             self.refresh()
 
     def _on_receiver_selected(self, agent: Optional[AgentCardView]) -> None:
@@ -302,6 +320,31 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
         if self.is_sending or self.is_submitted:
             return
 
+        draft = self.controller.draft
+        if not (draft.peer_username and draft.sender_agent_id and draft.receiver_agent_id and draft.goal and draft.goal.strip()):
+            missing = []
+            if not draft.peer_username:
+                missing.append("Peer contact not selected")
+            if not draft.sender_agent_id:
+                missing.append("Sender agent not selected")
+            if not draft.receiver_agent_id:
+                missing.append("Receiver agent not selected")
+            if not (draft.goal and draft.goal.strip()):
+                missing.append("Goal not defined")
+
+            err_detail = ", ".join(missing)
+            self.status_message = f"Cannot dispatch: {err_detail}"
+            self.last_dispatch_error = RecoverableError(
+                what_happened="Dispatch Blocked: Required fields missing",
+                impact="Session dispatch was not initiated.",
+                preserved="Your profile and keyrings remain intact.",
+                next_action=f"Select missing items: {err_detail}",
+                technical_detail=f"Cannot dispatch incomplete request: {err_detail}",
+            )
+            self._lifecycle_state = WidgetLifecycleState.RECOVERABLE_ERROR
+            self.refresh()
+            return
+
         self.is_submitted = True
         self.is_sending = True
         self.status_message = "Packaging payload..."
@@ -315,10 +358,13 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
         except Exception as exc:
             self.is_sending = False
             self.last_dispatch_error = RecoverableError(
-                headline="Dispatch Worker Error",
+                what_happened="Dispatch Worker Error",
+                impact="Session request could not be dispatched.",
+                preserved="Your local draft remains intact.",
+                next_action="Retry dispatch operation.",
                 technical_detail=str(exc),
             )
-            self.lifecycle_state = WidgetLifecycleState.RECOVERABLE_ERROR
+            self._lifecycle_state = WidgetLifecycleState.RECOVERABLE_ERROR
             self.refresh()
 
     @work(thread=True)
@@ -330,11 +376,11 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
         import time
 
         draft = self.controller.draft
-        p_user = draft.peer_username or "alice"
-        s_agent = draft.sender_agent_id or "agent1"
-        r_agent = draft.receiver_agent_id or "agent2"
-        s_type = draft.session_type or "ask"
-        goal = draft.goal or "Collaborate on task"
+        p_user = draft.peer_username
+        s_agent = draft.sender_agent_id
+        r_agent = draft.receiver_agent_id
+        s_type = draft.session_type
+        goal = draft.goal
 
         time.sleep(0.02)
         self.status_message = "Signing identity signature..."

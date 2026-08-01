@@ -20,6 +20,7 @@ from kin.tui.shell import MainCanvas
 from kin.tui.state import AgentCardView, ContactSummary, ContextPantryItem
 from kin.tui.widgets.agent_picker import AgentPickerWidget
 from kin.tui.widgets.dispatch_wizard import ContactPickerModal, DispatchWizardWidget
+from kin.tui.widgets.lifecycle import WidgetLifecycleState
 
 
 @pytest.fixture
@@ -265,3 +266,42 @@ async def test_dispatch_wizard_invalid_key_preserves_session_type(mock_profile_d
         await pilot.press("z")
         # Assert session type remains unchanged
         assert wizard.controller.draft.session_type == original_mode
+
+
+@pytest.mark.asyncio
+async def test_dispatch_wizard_skip_all_steps_without_selection_blocks_dispatch(mock_profile_dir, monkeypatch):
+    """7. Assert constructing DispatchWizardWidget() zero-args and skipping all steps without selection BLOCKS dispatch (§14.7 Phase C Rework)."""
+    dispatch_calls = []
+
+    def mock_dispatch(*args, **kwargs):
+        dispatch_calls.append((args, kwargs))
+        return True, {"session_id": "mock-123"}, None
+
+    monkeypatch.setattr("kin.tui.widgets.dispatch_wizard.dispatch_new_session", mock_dispatch)
+
+    app = KinApp()
+    async with app.run_test(size=(160, 44)) as pilot:
+        canvas = pilot.app.query_one(MainCanvas)
+        canvas.set_active_tab_kind("dispatch")
+        await pilot.pause()
+
+        # Get default zero-arg DispatchWizardWidget constructed by shell.py
+        wizard = pilot.app.query_one(DispatchWizardWidget)
+        wizard.focus()
+
+        # Press 'right' / 'n' 7 times without making any selections or typing a goal
+        for _ in range(7):
+            await pilot.press("right")
+            await pilot.pause(0.01)
+
+        # Assert navigation was blocked at Step 0 due to missing required peer_username
+        assert wizard.step_index == 0
+
+        # Attempt to confirm dispatch
+        wizard.confirm_dispatch()
+        await pilot.pause(0.1)
+
+        # ASSERT: dispatch_new_session MUST NOT be called!
+        assert len(dispatch_calls) == 0, f"CRITICAL BUG: dispatch_new_session was called with unselected data: {dispatch_calls}"
+        # ASSERT: wizard MUST show blocking error status
+        assert "Cannot dispatch" in wizard.status_message or wizard.lifecycle_state == WidgetLifecycleState.RECOVERABLE_ERROR
