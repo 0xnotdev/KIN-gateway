@@ -562,6 +562,198 @@ def decide_pending_approval(
         conn.close()
 
 
+def pause_session(
+    profile_dir: Path, session_id: str, reason: Optional[str] = None, profile_name: str = "default"
+) -> Tuple[bool, Optional[RecoverableError]]:
+    """Pause an active session (§14.8 Phase D)."""
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.transport.v11 import pause_session as _transport_pause
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return False, RecoverableError(
+            what_happened="Database file not found.",
+            impact="Cannot pause session.",
+            preserved="Local state unchanged.",
+            next_action="Initialize profile first.",
+        )
+
+    _, local_username, _ = get_local_identity_info(profile_name, profile_dir)
+    owner_user = local_username or "owner"
+    now_dt = datetime.now(timezone.utc)
+    vault_key = get_or_create_vault_key(profile_name)
+
+    conn = ensure_profile_db(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
+        row = cur.fetchone()
+        if row is None:
+            return False, RecoverableError(
+                what_happened=f"Session '{session_id}' not found.",
+                impact="Pause action rejected.",
+                preserved="Database intact.",
+                next_action="Verify session ID.",
+            )
+        status = row[0]
+        if status in ("completed", "cancelled", "failed", "rejected"):
+            return False, RecoverableError(
+                what_happened=f"Session '{session_id}' is already in terminal state '{status}'.",
+                impact="Pause action rejected.",
+                preserved="Terminal session state retained.",
+                next_action="No further state changes possible.",
+            )
+
+        _transport_pause(
+            conn,
+            vault_key,
+            owner_identity_key=None,
+            sender_x25519_privkey=None,
+            owner_username=owner_user,
+            session_id=session_id,
+            reason=reason or "Paused by owner via TUI Arena",
+            now=now_dt,
+        )
+        return True, None
+    except Exception as exc:
+        return False, RecoverableError(
+            what_happened=f"Failed to pause session: {exc}",
+            impact="Session state transition failed.",
+            preserved="Local database intact.",
+            next_action="Retry pause operation.",
+        )
+    finally:
+        conn.close()
+
+
+def resume_session(
+    profile_dir: Path, session_id: str, reason: Optional[str] = None, profile_name: str = "default"
+) -> Tuple[bool, Optional[RecoverableError]]:
+    """Resume a paused session (§14.8 Phase D)."""
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.transport.v11 import resume_session as _transport_resume
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return False, RecoverableError(
+            what_happened="Database file not found.",
+            impact="Cannot resume session.",
+            preserved="Local state unchanged.",
+            next_action="Initialize profile first.",
+        )
+
+    _, local_username, _ = get_local_identity_info(profile_name, profile_dir)
+    owner_user = local_username or "owner"
+    now_dt = datetime.now(timezone.utc)
+    vault_key = get_or_create_vault_key(profile_name)
+
+    conn = ensure_profile_db(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
+        row = cur.fetchone()
+        if row is None:
+            return False, RecoverableError(
+                what_happened=f"Session '{session_id}' not found.",
+                impact="Resume action rejected.",
+                preserved="Database intact.",
+                next_action="Verify session ID.",
+            )
+        status = row[0]
+        if status in ("completed", "cancelled", "failed", "rejected"):
+            return False, RecoverableError(
+                what_happened=f"Session '{session_id}' is already in terminal state '{status}'.",
+                impact="Resume action rejected.",
+                preserved="Terminal session state retained.",
+                next_action="No further state changes possible.",
+            )
+
+        _transport_resume(
+            conn,
+            vault_key,
+            owner_identity_key=None,
+            sender_x25519_privkey=None,
+            owner_username=owner_user,
+            session_id=session_id,
+            reason=reason or "Resumed by owner via TUI Arena",
+            now=now_dt,
+        )
+        return True, None
+    except Exception as exc:
+        return False, RecoverableError(
+            what_happened=f"Failed to resume session: {exc}",
+            impact="Session state transition failed.",
+            preserved="Local database intact.",
+            next_action="Retry resume operation.",
+        )
+    finally:
+        conn.close()
+
+
+def cancel_session_command(
+    profile_dir: Path, session_id: str, reason: Optional[str] = None, profile_name: str = "default"
+) -> Tuple[bool, Optional[RecoverableError]]:
+    """Cancel an active or paused session (§14.8 Phase D)."""
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.transport.v11 import cancel_session as _transport_cancel
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return False, RecoverableError(
+            what_happened="Database file not found.",
+            impact="Cannot cancel session.",
+            preserved="Local state unchanged.",
+            next_action="Initialize profile first.",
+        )
+
+    _, local_username, _ = get_local_identity_info(profile_name, profile_dir)
+    owner_user = local_username or "owner"
+    now_dt = datetime.now(timezone.utc)
+    vault_key = get_or_create_vault_key(profile_name)
+
+    conn = ensure_profile_db(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
+        row = cur.fetchone()
+        if row is None:
+            return False, RecoverableError(
+                what_happened=f"Session '{session_id}' not found.",
+                impact="Cancel action rejected.",
+                preserved="Database intact.",
+                next_action="Verify session ID.",
+            )
+        status = row[0]
+        if status in ("completed", "cancelled", "failed", "rejected"):
+            return False, RecoverableError(
+                what_happened=f"Session '{session_id}' is already in terminal state '{status}'.",
+                impact="Cancel action rejected.",
+                preserved="Terminal session state retained.",
+                next_action="No further state changes possible.",
+            )
+
+        _transport_cancel(
+            conn,
+            vault_key,
+            owner_identity_key=None,
+            sender_x25519_privkey=None,
+            owner_username=owner_user,
+            session_id=session_id,
+            reason=reason or "Cancelled by owner via TUI Arena",
+            now=now_dt,
+        )
+        return True, None
+    except Exception as exc:
+        return False, RecoverableError(
+            what_happened=f"Failed to cancel session: {exc}",
+            impact="Session state transition failed.",
+            preserved="Local database intact.",
+            next_action="Retry cancel operation.",
+        )
+    finally:
+        conn.close()
+
+
 def dispatch_new_session(
     profile_dir: Path,
     profile_name: str = "default",

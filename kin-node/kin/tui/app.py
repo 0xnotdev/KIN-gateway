@@ -329,6 +329,25 @@ class KinApp(App[None]):
     def action_action_jump_tab_3(self) -> None: self.jump_tab(3)
     def action_action_jump_tab_4(self) -> None: self.jump_tab(4)
     def action_action_jump_tab_5(self) -> None: self.jump_tab(5)
+    def action_action_jump_tab_6(self) -> None: self.jump_tab(6)
+    def action_action_jump_tab_7(self) -> None: self.jump_tab(7)
+    def action_action_jump_tab_8(self) -> None: self.jump_tab(8)
+    def action_action_jump_tab_9(self) -> None: self.jump_tab(9)
+
+    def action_focus_prev(self) -> None: self.action_focus_previous()
+    def action_action_focus_prev(self) -> None: self.action_focus_previous()
+
+    def action_action_replay_item(self) -> None:
+        self.status_bar.status_message = "Replay not yet available."
+        self.status_bar.refresh()
+
+    def action_action_fork_item(self) -> None:
+        self.status_bar.status_message = "Fork not yet available."
+        self.status_bar.refresh()
+
+    def action_action_open_actions(self) -> None:
+        self.status_bar.status_message = "Actions menu not yet available."
+        self.status_bar.refresh()
 
     def action_action_smart_quit(self) -> None:
         """Smart Quit (§5.1): Quit only from Home; otherwise return Home cleanly."""
@@ -343,6 +362,67 @@ class KinApp(App[None]):
                 self.sync_tab_bar()
                 self.status_bar.status_message = "Returned to Home workspace."
                 self.status_bar.refresh()
+
+    # ═══════════════════════════════════════════════════════════════════
+    # Arena Keybinding Action Handlers (§5.3, §14.8 Phase D)
+    # ═══════════════════════════════════════════════════════════════════
+    def _get_active_arena_widget(self):
+        try:
+            return self.query_one("SessionArenaWidget")
+        except Exception:
+            return None
+
+    def action_action_lane_focus(self) -> None:
+        arena = self._get_active_arena_widget()
+        if arena:
+            arena.toggle_focus_mode()
+        else:
+            self.status_bar.status_message = "Focus mode requires an active Session Arena tab."
+            self.status_bar.refresh()
+
+    def action_action_lane_transcript(self) -> None:
+        arena = self._get_active_arena_widget()
+        if arena:
+            arena.switch_lane("transcript")
+        else:
+            self.status_bar.status_message = "Transcript lane requires an active Session Arena tab."
+            self.status_bar.refresh()
+
+    def action_action_lane_activity(self) -> None:
+        arena = self._get_active_arena_widget()
+        if arena:
+            arena.switch_lane("activity")
+        else:
+            self.status_bar.status_message = "Activity lane requires an active Session Arena tab."
+            self.status_bar.refresh()
+
+    def action_action_lane_decisions(self) -> None:
+        arena = self._get_active_arena_widget()
+        if arena:
+            arena.switch_lane("decisions")
+        else:
+            self.status_bar.status_message = "Decisions lane requires an active Session Arena tab."
+            self.status_bar.refresh()
+
+    def action_action_lane_needs_you(self) -> None:
+        arena = self._get_active_arena_widget()
+        if arena:
+            arena.open_needs_you_lane()
+        else:
+            self.status_bar.status_message = "Needs-you lane requires an active Session Arena tab."
+            self.status_bar.refresh()
+
+    def action_action_compose_message(self) -> None:
+        self.status_bar.status_message = "Compose message not yet available (Phase D2)."
+        self.status_bar.refresh()
+
+    def action_action_session_state_menu(self) -> None:
+        arena = self._get_active_arena_widget()
+        if arena:
+            arena.open_session_state_menu()
+        else:
+            self.status_bar.status_message = "Session state menu requires an active Session Arena tab."
+            self.status_bar.refresh()
 
     # ═══════════════════════════════════════════════════════════════════
     # Sidebar Tree Interaction (§4.3)

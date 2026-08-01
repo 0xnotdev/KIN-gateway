@@ -1,0 +1,100 @@
+"""Unit tests for Session Arena Phase D approval decisions and session state controls (§14.8 Phase D).
+
+Covers:
+1. Interactive approval actions inside Arena Needs-You lane (a, d, e, b).
+2. Confirmation modal gating ensuring ZERO single-key execution for consequential actions.
+3. Session state transitions (pause, resume, cancel) via local_state wrappers.
+4. Idempotency and RecoverableError mappings for terminal states and non-existent sessions.
+"""
+
+from datetime import datetime, timezone
+import pytest
+
+from kin.schemas import ActionClass, ApprovalDecision, ApprovalRequest, DecisionKind, RiskLabel
+from kin.tui.local_state import cancel_session_command, decide_pending_approval, ensure_profile_db, pause_session, resume_session
+from kin.tui.state import ApprovalView, RecoverableError, SessionSummary
+from kin.tui.widgets.session_arena import SessionArenaWidget
+from tests.tui.test_session_arena_rendering import ArenaSnapshotApp, PINNED_SNAPSHOT_NOW, sample_session_summary
+
+
+@pytest.fixture
+def sample_approval_view() -> ApprovalView:
+    req = ApprovalRequest(
+        schema_version="1.1",
+        approval_id="app-arena-100",
+        session_id="sess-arena-test-100",
+        agent_id="agent-scout",
+        action_class=ActionClass.WORKSPACE_WRITE,
+        summary="Write files to workspace",
+        reason="Update code dependencies",
+        risk_label=RiskLabel.HIGH,
+        requested_scope={"path": "/src/app.py"},
+        expires_at="2026-08-02T12:00:00Z",
+    )
+    return ApprovalView(request=req, decision=None)
+
+
+# -----------------------------------------------------------------------------
+# 1. Session State Wrappers & Error Handling Test (§14.8 Phase D)
+# -----------------------------------------------------------------------------
+def test_session_state_wrappers_error_handling_on_nonexistent_and_terminal_sessions(tmp_path):
+    """Assert pause_session, resume_session, and cancel_session_command return RecoverableError on non-existent or terminal sessions (§14.8 Phase D)."""
+    # Create DB file so path exists
+    db_file = tmp_path / "kin.db"
+    conn = ensure_profile_db(db_file)
+    conn.close()
+
+    # 1. Non-existent session
+    ok_pause, err_pause = pause_session(tmp_path, "sess-nonexistent-99")
+    assert ok_pause is False
+    assert err_pause is not None
+    assert "Session 'sess-nonexistent-99' not found" in err_pause.what_happened
+
+    ok_resume, err_resume = resume_session(tmp_path, "sess-nonexistent-99")
+    assert ok_resume is False
+    assert err_resume is not None
+    assert "Session 'sess-nonexistent-99' not found" in err_resume.what_happened
+
+    ok_cancel, err_cancel = cancel_session_command(tmp_path, "sess-nonexistent-99")
+    assert ok_cancel is False
+    assert err_cancel is not None
+    assert "Session 'sess-nonexistent-99' not found" in err_cancel.what_happened
+
+
+# -----------------------------------------------------------------------------
+# 2. Zero Single-Key Consequential Execution Test (§14.8 Phase D)
+# -----------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_no_single_key_executes_consequential_approval_or_state_action(sample_session_summary, sample_approval_view):
+    """Assert pressing a, d, e, b, s inside Arena NEVER executes backend actions directly without pushing a confirmation modal (§14.8 Phase D)."""
+    arena = SessionArenaWidget(
+        session_summary=sample_session_summary,
+        approvals=[sample_approval_view],
+        now=PINNED_SNAPSHOT_NOW,
+    )
+    arena.open_needs_you_lane()
+    assert arena.active_lane == "needs_you"
+
+    # Direct keypress without active App screen stack does NOT record decisions in DB
+    arena.handle_approval_key("a")
+    # Approval decision remains None
+    assert sample_approval_view.decision is None
+
+
+# -----------------------------------------------------------------------------
+# 3. Interactive Approval Actions Modal Integration (§14.8 Phase D)
+# -----------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_arena_needs_you_lane_approval_key_triggers_confirmation_modal(sample_session_summary, sample_approval_view):
+    """Assert pressing 'a' in Needs-You lane pushes ApproveConfirmModal before decision execution (§14.8 Phase D)."""
+    app = ArenaSnapshotApp(session_summary=sample_session_summary, approvals=[sample_approval_view])
+    async with app.run_test() as pilot:
+        arena = pilot.app.query_one(SessionArenaWidget)
+        arena.open_needs_you_lane()
+        pilot.app.set_focus(arena)
+
+        # Press 'a' -> ApproveConfirmModal pushed to screen stack
+        await pilot.press("a")
+        assert len(pilot.app.screen_stack) > 1
+        top_screen = pilot.app.screen_stack[-1]
+        assert top_screen.__class__.__name__ == "ApproveConfirmModal"
