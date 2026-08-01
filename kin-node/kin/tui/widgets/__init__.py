@@ -26,6 +26,7 @@ from kin.tui.widgets.panel import PanelWidget
 from kin.tui.widgets.progress_bar import ProgressBarWidget
 from kin.tui.widgets.quick_switcher import QuickSwitcherModal, QuickSwitcherWidget
 from kin.tui.widgets.search_field import SearchFieldWidget
+from kin.tui.widgets.session_arena import SessionArenaWidget
 from kin.tui.widgets.session_map import SessionMapWidget
 from kin.tui.widgets.sidebar_tree import SidebarNode, SidebarTreeWidget
 from kin.tui.widgets.spinner import SpinnerWidget
@@ -74,4 +75,5 @@ __all__ = [
     "ApprovalCardWidget",
     "OutcomeCardWidget",
     "TrustStripWidget",
+    "SessionArenaWidget",
 ]

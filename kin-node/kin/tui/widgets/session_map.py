@@ -1,6 +1,6 @@
 """SessionMap domain widget for KIN V1.1 TUI.
 
-Spec authority: KIN-V1.1-TUI-SYSTEM.md §14.5
+Spec authority: KIN-V1.1-TUI-SYSTEM.md §14.5, §14.8 Step 2
 """
 
 from datetime import datetime
@@ -9,13 +9,14 @@ from typing import List, Optional, Union
 from textual.events import Key
 from textual.widgets import Static
 
+from kin.tui.redaction import redact_ui_text
 from kin.tui.state import SessionSummary
 from kin.tui.tokens import get_glyph
 from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
 
 
 class SessionMapWidget(LifecycleWidgetMixin, Static):
-    """SessionMap domain widget for active session overview and turn progress (§14.5)."""
+    """SessionMap domain widget for active session overview, roles, and lifecycle state (§14.5, §14.8)."""
 
     can_focus = True
 
@@ -88,24 +89,27 @@ class SessionMapWidget(LifecycleWidgetMixin, Static):
             glyph = get_glyph("!")
             return f"[bold red]{glyph} SessionMap Error: Session index unreadable. Press [Retry].[/bold red]"
 
-        lines = ["[bold]Session Map Overview:[/bold]"]
+        lines = ["[bold green]Session Map Overview:[/bold green]"]
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
 
         for idx, sess in enumerate(self.sessions):
             is_active = (sess.session_id == self.active_session_id or idx == self.selected_index)
             prefix = "▶ " if is_active else "  "
-            roster = ", ".join(sess.participant_display_names)
-            turn_str = f"[Turn {sess.current_turn}/{sess.max_turns}]"
+            
+            init_user = redact_ui_text(sess.initiator_username or "local")
+            rec_user = redact_ui_text(sess.receiver_username or "peer")
+            obj_clean = redact_ui_text(sess.objective or "No objective")
+
+            status_color = "green" if sess.status == "active" else ("blue" if sess.status == "completed" else "red")
+            state_badge = f"[{status_color}][{sess.status.upper()}][/{status_color}]"
 
             if state == WidgetLifecycleState.NARROW:
-                line = f"{prefix}{sess.session_id[:8]} {turn_str}"
+                lines.append(f"{prefix}● [bold]{sess.session_id[:8]}[/bold] @{init_user}→@{rec_user} {state_badge}")
             else:
-                line = f"{prefix}[bold]{sess.session_id[:12]}[/bold] {turn_str} status={sess.status} roster=[dim]{roster}[/dim]"
+                lines.append(
+                    f"{prefix}● [bold]{sess.session_id}[/bold] ({sess.type}) {state_badge}\n"
+                    f"   Roles: [bold]@{init_user}[/bold] (initiator) ↔ [bold]@{rec_user}[/bold] (receiver)\n"
+                    f"   Objective: [dim]{obj_clean}[/dim]"
+                )
 
-            if is_active:
-                lines.append(f"[bold cyan]{line}[/bold cyan]")
-            else:
-                lines.append(line)
-
-        lines[0] += focus_mark
-        return "\n".join(lines)
+        return "\n".join(lines) + focus_mark
