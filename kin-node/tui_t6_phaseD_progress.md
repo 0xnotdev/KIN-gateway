@@ -37,10 +37,10 @@ Textual dispatches keybindings by mapping action name `foo` to `action_foo` or `
   - `c`: ExchangeTimelineWidget filtered to `{"checkpoint"}`.
   - `u`: Needs-You queue rendering pending approval views with `[a]pprove`, `[d]eny`, `[e]dit`, `[b]ounded` key actions.
 
-### 2.3 Security Event Data Flow Analysis
-A raw `security`-class event stored in `session_events` (e.g. signature rejection or identity mismatch) behaves as follows:
-1. **Global Sidebar / Home Needs-You (`get_needs_you_items`)**: Queries `sessions` for `status IN ('peer_review', 'needs_clarification', 'awaiting_owner_approval')`. Does not query raw `session_events` directly.
-2. **Arena Needs-You Lane (`u`)**: Queries `approvals` table via `get_approvals_for_session`.
+### 2.3 Security Event Data Flow Analysis (§10.1 Compliance)
+A raw `security`-class event stored in `session_events` (e.g. signature rejection or identity mismatch) with no approval record and active session status behaves as follows:
+1. **Global Sidebar / Home / Inbox Needs-You (`get_needs_you_items`)**: Queries `session_events` for `kind LIKE '%security%' OR kind LIKE '%reject%' OR kind LIKE '%invalid%' OR kind LIKE '%unauthorized%'` and appends high-urgency `NeedsYouItem` entries with label `SECURITY ALERT`.
+2. **Arena Needs-You Lane (`u`)**: `_render_needs_you_queue()` queries both pending approval cards AND `presentation_class == 'security'` events from `self.events`, rendering `🚨 SECURITY REJECTION CARD` persistent red alert cards with status `Validation Failed — Persistent Alert (No auto-dismiss)`.
 3. **Arena Activity Lane (`e`)**: Renders all events via `ActivityFeedWidget`, displaying security rejections with persistent red styling.
 4. **Arena Inspector Panel**: Selecting a security event displays full payload and security violation detail.
 

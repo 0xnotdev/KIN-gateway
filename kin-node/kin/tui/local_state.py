@@ -367,6 +367,32 @@ def get_needs_you_items(profile_dir: Path, profile_name: str = "default") -> Lis
                         created_at=created_at,
                     )
                 )
+
+        # 2. Query session_events for security-class events (§10.1 persistent red card + Needs-you)
+        try:
+            cur.execute(
+                """
+                SELECT event_id, session_id, kind, created_at, actor_username
+                FROM session_events
+                WHERE kind LIKE '%security%' OR kind LIKE '%reject%' OR kind LIKE '%invalid%' OR kind LIKE '%unauthorized%'
+                ORDER BY created_at DESC
+                """
+            )
+            for row in cur.fetchall():
+                e_id, s_id, e_kind, created_at, actor = row
+                items.append(
+                    NeedsYouItem(
+                        item_id=f"sec-{e_id[:8]}",
+                        session_id=s_id or "",
+                        kind="security",
+                        human_readable_reason=f"SECURITY ALERT [{e_kind}]: Security violation recorded for actor @{actor or 'unknown'}",
+                        urgency="high",
+                        created_at=created_at or "",
+                    )
+                )
+        except Exception:
+            pass
+
         return items
     finally:
         conn.close()

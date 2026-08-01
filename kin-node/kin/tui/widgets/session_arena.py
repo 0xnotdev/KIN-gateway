@@ -505,16 +505,29 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
 
     def _render_needs_you_queue(self) -> str:
         lines = ["[bold yellow]─── NEEDS-YOU QUEUE (Pending Approvals & Security Items) ───[/bold yellow]"]
-        if not self.approvals:
+        sec_events = [e for e in (self.events or []) if e.presentation_class == "security" or "security" in str(e.kind).lower()]
+
+        if not self.approvals and not sec_events:
             lines.append("[dim]No pending approvals or security decisions required for this session.[/dim]")
             return "\n\n".join(lines)
 
-        lines.append(f"Pending Items ({len(self.approvals)}): Press [a]pprove, [d]eny, [e]dit, [b]ounded\n")
-        for idx, app_view in enumerate(self.approvals):
-            is_selected = (idx == self.selected_approval_index)
-            prefix = "▶ " if is_selected else "  "
-            card_widget = ApprovalCardWidget(approval_view=app_view)
-            lines.append(f"{prefix}{card_widget.render()}")
+        if sec_events:
+            lines.append(f"[bold red]▲ SECURITY REJECTION CARDS ({len(sec_events)}) — PERSISTENT ALERT[/bold red]")
+            for sec_evt in sec_events:
+                actor = sec_evt.actor_username or "unknown"
+                lines.append(
+                    f"  [bold red]🚨 SECURITY REJECTION CARD [{sec_evt.event_id[:8]}][/bold red]\n"
+                    f"     [red]Kind: {sec_evt.kind} | Actor: @{actor} | Timestamp: {sec_evt.created_at}[/red]\n"
+                    f"     [red]Status: Validation Failed — Persistent Alert (No auto-dismiss)[/red]"
+                )
+
+        if self.approvals:
+            lines.append(f"\nPending Approvals ({len(self.approvals)}): Press [a]pprove, [d]eny, [e]dit, [b]ounded\n")
+            for idx, app_view in enumerate(self.approvals):
+                is_selected = (idx == self.selected_approval_index)
+                prefix = "▶ " if is_selected else "  "
+                card_widget = ApprovalCardWidget(approval_view=app_view)
+                lines.append(f"{prefix}{card_widget.render()}")
 
         return "\n\n".join(lines)
 

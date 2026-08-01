@@ -148,10 +148,58 @@ async def test_lane_switching_renders_correct_widgets(sample_session_summary, ev
 
 
 # -----------------------------------------------------------------------------
-# 5. Security Event Queue Visibility Test (§14.8 Phase D)
+# 5. Security Event Queue Visibility Test (§10.1, §14.8 Phase D)
 # -----------------------------------------------------------------------------
-def test_security_events_surface_in_needs_you_queue(tmp_path):
-    """Assert security-class events surface in get_needs_you_items independent of active lane (§14.8 Phase D)."""
+def test_security_events_surface_in_needs_you_queue(tmp_path, sample_session_summary):
+    """Assert security-class session events (with no approval record and active session status) surface in global get_needs_you_items and Arena u lane (§10.1, §14.8)."""
+    import io
+    from rich.console import Console
+    from kin.tui.local_state import ensure_profile_db
+
+    db_path = tmp_path / "kin.db"
+    conn = ensure_profile_db(db_path)
+    cur = conn.cursor()
+
+    # Insert active session with NO session status change
+    cur.execute(
+        """
+        INSERT INTO sessions (session_id, initiator_username, receiver_username, status, type, created_at, updated_at)
+        VALUES ('sess-sec-100', 'alice', 'bob', 'active', 'research', '2026-08-01T12:00:00Z', '2026-08-01T12:00:00Z')
+        """
+    )
+    # Insert security rejection event with NO approval record
+    cur.execute(
+        """
+        INSERT INTO session_events (event_id, session_id, event_order, actor_username, kind, visibility, created_at)
+        VALUES ('evt-sec-999', 'sess-sec-100', 1, 'eve', 'security_rejection', 'peer_visible', '2026-08-01T12:00:05Z')
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    # 1. Global sidebar / Inbox Needs-You queue verification
     items = get_needs_you_items(tmp_path)
-    # Returns clean list without crashing even when DB empty
-    assert isinstance(items, list)
+    assert len(items) == 1
+    sec_item = items[0]
+    assert sec_item.kind == "security"
+    assert sec_item.urgency == "high"
+    assert "SECURITY ALERT [security_rejection]" in sec_item.human_readable_reason
+    assert "eve" in sec_item.human_readable_reason
+
+    # 2. Session Arena 'u' (Needs-You) lane rendering verification
+    sec_event = UiEvent("evt-sec-999", "sess-sec-100", "security_rejection", "2026-08-01T12:00:05Z", "eve", "security")
+    arena = SessionArenaWidget(
+        session_summary=sample_session_summary,
+        events=[sec_event],
+        now=PINNED_SNAPSHOT_NOW,
+    )
+    arena.switch_lane("needs_you")
+
+    buf = io.StringIO()
+    c = Console(file=buf, width=160, height=44)
+    c.print(arena.render())
+    rendered_u_lane = buf.getvalue()
+
+    assert "SECURITY REJECTION CARDS" in rendered_u_lane
+    assert "🚨 SECURITY REJECTION CARD" in rendered_u_lane
+    assert "Persistent Alert (No auto-dismiss)" in rendered_u_lane
