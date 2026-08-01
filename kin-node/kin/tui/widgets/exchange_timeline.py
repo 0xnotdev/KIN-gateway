@@ -403,8 +403,9 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
 
         # 7. SECURITY: persistent RED card (zero action affordances)
         elif p_class == "security":
+            glyph_x = get_glyph("✖")
             return (
-                f"{prefix}[bold red]✖ SECURITY REJECTION CARD[/bold red] [dim]at {ts}[/dim]{select_tag}{pulse_badge}\n"
+                f"{prefix}[bold red]{glyph_x} SECURITY REJECTION CARD[/bold red] [dim]at {ts}[/dim]{select_tag}{pulse_badge}\n"
                 f"   [red]Category: {kind_clean}[/red]\n"
                 f"   [red]Actor: @{actor} | ID: {evt.event_id}[/red]\n"
                 f"   [bold red]CRITICAL: Security boundary rejection logged. No actions available.[/bold red]"
