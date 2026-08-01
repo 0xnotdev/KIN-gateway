@@ -9,7 +9,7 @@ import logging
 import os
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -1026,15 +1026,19 @@ def get_session_detail(
 
 
 def get_session_events(
-    profile_dir: Path, session_id: str, profile_name: str = "default"
+    profile_dir: Path,
+    session_id: str,
+    profile_name: str = "default",
+    seen_event_ids: Optional[Set[str]] = None,
 ) -> List[UiEvent]:
-    """Merge session_events and audit_events into chronologically ordered UiEvent list (§14.8 Phase A)."""
+    """Fetch session_events and audit_events into chronologically ordered UiEvent list with incremental seen_event_ids filter (§14.8 Phase A, C2 Round 2)."""
     db_path = profile_dir / "kin.db"
     if not db_path.exists():
         return []
 
     conn = ensure_profile_db(db_path)
     events: List[UiEvent] = []
+    seen = seen_event_ids or set()
     try:
         cur = conn.cursor()
 
@@ -1049,6 +1053,8 @@ def get_session_events(
         )
         for row in cur.fetchall():
             e_id, s_id, kind_str, c_at, actor = row
+            if e_id in seen:
+                continue
             try:
                 p_class = map_event_kind_to_presentation_class(kind_str)
             except ValueError:
@@ -1079,6 +1085,8 @@ def get_session_events(
             a_id, s_id, cat, c_at, actor, summ = row
             if cat.startswith("session_event_"):
                 # Skip mirror rows to prevent double-counting session_events
+                continue
+            if a_id in seen:
                 continue
 
             try:

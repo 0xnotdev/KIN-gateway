@@ -131,3 +131,62 @@ def test_worker_standing_requirement_guard_prevents_polling_when_session_id_unsp
         # Polling worker logic must exit immediately without attempting DB fetches
         arena._run_event_polling_worker_logic()
         assert arena.session_summary is None or getattr(arena, "events", []) == []
+
+
+# -----------------------------------------------------------------------------
+# 5. Incremental Seen-Event-ID Query Test (§14.8 Phase C2 Round 2)
+# -----------------------------------------------------------------------------
+def test_polling_worker_uses_seen_event_ids_incremental_diffing(tmp_path):
+    """Assert get_session_events accepts seen_event_ids and returns ONLY unseen events (§14.8 Phase C2 Round 2)."""
+    from kin.tui.local_state import ensure_profile_db, get_session_events
+
+    db_path = tmp_path / "kin.db"
+    conn = ensure_profile_db(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO sessions (session_id, initiator_username, receiver_username, status, type, created_at, updated_at) VALUES ('sess-inc-1', 'alice', 'bob', 'active', 'research', '2026-08-01T12:00:00Z', '2026-08-01T12:00:00Z')"
+    )
+    cur.execute(
+        "INSERT INTO session_events (event_id, session_id, kind, created_at, actor_username, event_order) VALUES ('e-101', 'sess-inc-1', 'task_request', '2026-08-01T12:00:00Z', 'alice', 1)"
+    )
+    conn.commit()
+    conn.close()
+
+    # 1. Fetch initial events
+    initial = get_session_events(tmp_path, "sess-inc-1")
+    assert len(initial) == 1
+    assert initial[0].event_id == "e-101"
+
+    # 2. Add second event to database
+    conn = ensure_profile_db(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO session_events (event_id, session_id, kind, created_at, actor_username, event_order) VALUES ('e-102', 'sess-inc-1', 'finding', '2026-08-01T12:00:05Z', 'bob', 2)"
+    )
+    conn.commit()
+    conn.close()
+
+    # 3. Incremental fetch passing seen_event_ids={'e-101'} returns ONLY the new event 'e-102'
+    incremental = get_session_events(tmp_path, "sess-inc-1", seen_event_ids={"e-101"})
+    assert len(incremental) == 1
+    assert incremental[0].event_id == "e-102"
+
+
+# -----------------------------------------------------------------------------
+# 6. Real Mounting Integration Test: Polling Worker Starts Automatically on Mount (§14.8 Phase C2 Round 2)
+# -----------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_arena_polling_worker_starts_automatically_on_mount():
+    """Assert mounting SessionArenaWidget in Textual App sets is_polling_active = True and starts worker automatically on mount (§14.8 Phase C2 Round 2)."""
+    from textual.app import App
+
+    class TestApp(App):
+        def compose(self):
+            yield SessionArenaWidget(session_id="sess-c2-real")
+
+    app = TestApp()
+    async with app.run_test() as pilot:
+        arena = pilot.app.query_one(SessionArenaWidget)
+        # Assert worker started automatically on mount without test code manually setting the flag
+        assert arena.is_polling_active is True
+

@@ -102,6 +102,9 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self.reduced_motion = reduced_motion
         self.selected_event: Optional[UiEvent] = None
         self.session_summary: Optional[SessionSummary] = None
+        self.events: List[UiEvent] = events or []
+        self.artifacts: List[ArtifactView] = artifacts or []
+        self.approvals: List[ApprovalView] = approvals or []
         self.last_arena_error: Optional[RecoverableError] = None
         self.last_trust_error: Optional[str] = None
         self.breakpoint: Breakpoint = "wide"
@@ -576,30 +579,45 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self.selected_event = self.exchange_timeline_widget.get_selected_event()
         self.inspector_widget.selected_event = self.selected_event
 
+    def on_mount(self) -> None:
+        """Lifecycle hook when widget is mounted to app (§14.8 Phase C2 Round 2)."""
+        self.is_polling_active = True
+        if self.session_id:
+            self.run_event_polling_worker()
+
+    def on_unmount(self) -> None:
+        """Lifecycle hook when widget is unmounted from app (§14.8 Phase C2 Round 2)."""
+        self.is_polling_active = False
+
     def _run_event_polling_worker_logic(self) -> None:
-        """Core polling worker logic (§14.8 Phase C2)."""
+        """Core polling worker logic with seen-event-id tracking (§14.8 Phase C2 Round 2)."""
         import time
 
         # Standing requirement guard: NEVER poll when session_id is empty or None
         if not self.session_id:
             return
 
-        last_count = len(self.events)
+        seen_ids: Set[str] = {e.event_id for e in (self.events or []) if getattr(e, "event_id", None)}
         while getattr(self, "is_polling_active", False):
             time.sleep(getattr(self, "polling_interval_sec", 0.5))
             try:
-                fetched = get_session_events(self.profile_dir, self.session_id, self.profile_name) or []
-                if len(fetched) > last_count:
-                    new_evts = fetched[last_count:]
-                    last_count = len(fetched)
-                    if hasattr(self, "is_mounted") and self.is_mounted and hasattr(self, "app") and self.app:
-                        self.app.call_from_thread(self.append_events, new_evts)
-            except Exception:
-                pass
+                fetched = get_session_events(
+                    self.profile_dir, self.session_id, self.profile_name, seen_event_ids=seen_ids
+                ) or []
+                if fetched:
+                    new_evts = [e for e in fetched if e.event_id not in seen_ids]
+                    if new_evts:
+                        for e in new_evts:
+                            seen_ids.add(e.event_id)
+                        if hasattr(self, "is_mounted") and self.is_mounted and hasattr(self, "app") and self.app:
+                            self.app.call_from_thread(self.append_events, new_evts)
+            except Exception as exc:
+                from kin.tui.errors import convert_exception_to_recoverable_error
+                convert_exception_to_recoverable_error(exc, self.profile_dir)
 
     @work(thread=True, exclusive=True, name="arena_event_poller")
     def run_event_polling_worker(self) -> None:
-        """Background polling worker fetching new session events off main thread (§14.8 Phase C2)."""
+        """Background polling worker fetching new session events off main thread (§14.8 Phase C2 Round 2)."""
         self._run_event_polling_worker_logic()
 
     def _render_needs_you_queue(self) -> str:
