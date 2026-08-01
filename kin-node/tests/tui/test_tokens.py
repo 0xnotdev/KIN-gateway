@@ -100,6 +100,8 @@ def test_glyph_registry_ascii_fallbacks():
         "→": "->",
         "○": "o",
         "◌": ".",
+        "✖": "X",
+        "▲": "^",
     }
     for symbol, expected_ascii in expected_glyphs.items():
         assert symbol in GLYPH_REGISTRY
@@ -108,7 +110,7 @@ def test_glyph_registry_ascii_fallbacks():
 
     # Unregistered glyph raises KeyError
     with pytest.raises(KeyError, match="not registered"):
-        get_glyph("▲")
+        get_glyph("█")
 
 
 def test_theme_glyph_semantic_snapshots_kin_graphite_and_ascii_fallback():
@@ -117,13 +119,13 @@ def test_theme_glyph_semantic_snapshots_kin_graphite_and_ascii_fallback():
     Verifies status, approval, and security indicator glyphs resolve cleanly
     in both default kin-graphite unicode mode and ASCII-fallback mode.
     """
-    indicator_symbols = ["●", "✓", "!", "→", "○", "◌"]
+    indicator_symbols = ["●", "✓", "!", "→", "○", "◌", "✖", "▲"]
 
     unicode_rendered = [get_glyph(s, ascii_fallback=False) for s in indicator_symbols]
     ascii_rendered = [get_glyph(s, ascii_fallback=True) for s in indicator_symbols]
 
-    assert unicode_rendered == ["●", "✓", "!", "→", "○", "◌"]
-    assert ascii_rendered == ["*", "OK", "!", "->", "o", "."]
+    assert unicode_rendered == ["●", "✓", "!", "→", "○", "◌", "✖", "▲"]
+    assert ascii_rendered == ["*", "OK", "!", "->", "o", ".", "X", "^"]
 
     # Verify fallback behavior for deferred theme names (high-contrast, monochrome, etc.)
     res = resolve_theme("high-contrast")
