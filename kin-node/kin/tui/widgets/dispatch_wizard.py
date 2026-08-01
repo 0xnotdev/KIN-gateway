@@ -227,9 +227,16 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
         modal = ContactPickerModal(contacts=contacts, on_select=self._on_peer_selected)
         try:
             self.app.push_screen(modal, callback=self._on_peer_selected)
-        except Exception:
+        except (RuntimeError, LookupError):
             if contacts:
                 self._on_peer_selected(contacts[0])
+        except Exception as exc:
+            self.last_dispatch_error = RecoverableError(
+                headline="Modal Launch Error",
+                technical_detail=str(exc),
+            )
+            self.lifecycle_state = WidgetLifecycleState.RECOVERABLE_ERROR
+            self.refresh()
 
     def _on_peer_selected(self, contact: Optional[ContactSummary]) -> None:
         if contact:
@@ -241,9 +248,16 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
         modal = AgentPickerWidget(agents=local_agents, prompt="Select Your Agent", on_select=self._on_sender_selected)
         try:
             self.app.push_screen(modal, callback=self._on_sender_selected)
-        except Exception:
+        except (RuntimeError, LookupError):
             if local_agents:
                 self._on_sender_selected(local_agents[0])
+        except Exception as exc:
+            self.last_dispatch_error = RecoverableError(
+                headline="Modal Launch Error",
+                technical_detail=str(exc),
+            )
+            self.lifecycle_state = WidgetLifecycleState.RECOVERABLE_ERROR
+            self.refresh()
 
     def _on_sender_selected(self, agent: Optional[AgentCardView]) -> None:
         if agent:
@@ -253,27 +267,22 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
     def open_receiver_agent_picker(self) -> None:
         peer_user = self.controller.draft.peer_username or "alice"
         local_agents, all_peer_agents = get_all_agent_summaries(self.profile_dir)
-        peer_agents = [a for a in all_peer_agents if getattr(a, "peer_username", None) == peer_user or peer_user in a.name.lower() or a.is_peer]
+        peer_agents = [a for a in all_peer_agents if a.peer_username == peer_user]
 
-        if not peer_agents:
-            # Fallback peer agent view if un-synced
-            peer_agents = [
-                AgentCardView(
-                    agent_id=f"{peer_user}_agent",
-                    name=f"{peer_user.title()} Agent",
-                    description=f"Default agent for @{peer_user}",
-                    availability=AgentAvailability.READY,
-                    readiness_reason="Ready for collaboration",
-                    is_peer=True,
-                )
-            ]
-
-        modal = AgentPickerWidget(agents=peer_agents, prompt=f"Select Peer Agent for @{peer_user}", on_select=self._on_receiver_selected)
+        prompt_msg = f"Select Peer Agent for @{peer_user}" if peer_agents else f"No Synced Cards for @{peer_user} (Sync Peer Cards First)"
+        modal = AgentPickerWidget(agents=peer_agents, prompt=prompt_msg, on_select=self._on_receiver_selected)
         try:
             self.app.push_screen(modal, callback=self._on_receiver_selected)
-        except Exception:
+        except (RuntimeError, LookupError):
             if peer_agents:
                 self._on_receiver_selected(peer_agents[0])
+        except Exception as exc:
+            self.last_dispatch_error = RecoverableError(
+                headline="Modal Launch Error",
+                technical_detail=str(exc),
+            )
+            self.lifecycle_state = WidgetLifecycleState.RECOVERABLE_ERROR
+            self.refresh()
 
     def _on_receiver_selected(self, agent: Optional[AgentCardView]) -> None:
         if agent:

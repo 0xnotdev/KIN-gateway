@@ -279,6 +279,7 @@ class AgentCardView:
     accepts: List[str] = field(default_factory=list)
     produces: List[str] = field(default_factory=list)
     boundary_summary: Optional[str] = None
+    peer_username: Optional[str] = None
 
     @classmethod
     def from_local_card(
@@ -303,7 +304,9 @@ class AgentCardView:
         )
 
     @classmethod
-    def from_published_card(cls, card: PublishedAgentCard, readiness_reason: str) -> "AgentCardView":
+    def from_published_card(
+        cls, card: PublishedAgentCard, readiness_reason: str, peer_username: Optional[str] = None
+    ) -> "AgentCardView":
         accepts_list = list(card.capabilities.accepts) if (card.capabilities and card.capabilities.accepts) else []
         produces_list = list(card.capabilities.produces) if (card.capabilities and card.capabilities.produces) else []
         return cls(
@@ -318,6 +321,7 @@ class AgentCardView:
             accepts=accepts_list,
             produces=produces_list,
             boundary_summary="Owner-controlled; reviewed on acceptance",
+            peer_username=peer_username,
         )
 
 

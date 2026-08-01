@@ -5,7 +5,7 @@ Covers:
 2. Context Pantry item addition, removal, and M7 local reference restriction.
 3. Dirty tracking on draft modifications.
 4. Non-blocking off-main-thread worker execution.
-5. REAL KEYBOARD-ONLY (pilot.press) end-to-end interactive wizard test.
+5. REAL KEYBOARD-ONLY (pilot.press) end-to-end interactive wizard test with strict peer scoping.
 6. Invalid key press preservation on session type selection.
 """
 
@@ -13,11 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from kin.schemas import SessionType
+from kin.schemas import AgentAvailability, SessionType
 from kin.tui.app import KinApp
 from kin.tui.dispatch import DispatchController, DispatchStep
 from kin.tui.shell import MainCanvas
-from kin.tui.state import ContactSummary, ContextPantryItem
+from kin.tui.state import AgentCardView, ContactSummary, ContextPantryItem
+from kin.tui.widgets.agent_picker import AgentPickerWidget
 from kin.tui.widgets.dispatch_wizard import ContactPickerModal, DispatchWizardWidget
 
 
@@ -135,13 +136,24 @@ async def test_dispatch_wizard_non_blocking_worker_execution(tmp_path: Path):
 # -----------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_dispatch_wizard_keyboard_only_end_to_end_pilot_flow(mock_profile_dir, monkeypatch):
-    """5. End-to-end test driving all 6 selection-bearing steps exclusively via pilot.press() (§14.7 Phase C Rework)."""
+    """5. End-to-end test driving all 6 selection-bearing steps exclusively via pilot.press() with strict peer scoping (§14.7 Phase C Rework)."""
     # Seed mock contact summaries for peer selection modal
     contacts = [
         ContactSummary("alice", "Alice Cooper", "pk1", "x1", "http://alice"),
         ContactSummary("bob", "Bob Dylan", "pk2", "x2", "http://bob"),
     ]
     monkeypatch.setattr("kin.tui.widgets.dispatch_wizard.get_local_contacts_summaries", lambda d=None: contacts)
+
+    # Seed mock agents for both local user and peers "alice" and "bob"
+    local1 = AgentCardView(agent_id="my_local_scout", name="Local Scout", description="Local scanner", availability=AgentAvailability.READY, readiness_reason="Ready", is_peer=False)
+    local2 = AgentCardView(agent_id="my_local_builder", name="Local Builder", description="Local builder", availability=AgentAvailability.READY, readiness_reason="Ready", is_peer=False)
+
+    alice_agent = AgentCardView(agent_id="alice_scout", name="Alice Scout", description="Alice agent", availability=AgentAvailability.READY, readiness_reason="Ready", is_peer=True, peer_username="alice")
+    bob_agent1 = AgentCardView(agent_id="bob_analyst", name="Bob Analyst", description="Bob agent 1", availability=AgentAvailability.READY, readiness_reason="Ready", is_peer=True, peer_username="bob")
+    bob_agent2 = AgentCardView(agent_id="bob_evaluator", name="Bob Evaluator", description="Bob agent 2", availability=AgentAvailability.READY, readiness_reason="Ready", is_peer=True, peer_username="bob")
+
+    monkeypatch.setattr("kin.tui.widgets.dispatch_wizard.get_local_agents_summaries", lambda d=None: [local1, local2])
+    monkeypatch.setattr("kin.tui.widgets.dispatch_wizard.get_all_agent_summaries", lambda d=None: ([local1, local2], [alice_agent, bob_agent1, bob_agent2]))
 
     app = KinApp()
     async with app.run_test(size=(160, 44)) as pilot:
@@ -154,7 +166,7 @@ async def test_dispatch_wizard_keyboard_only_end_to_end_pilot_flow(mock_profile_
         wizard.focus()
         assert wizard.step_index == 0
 
-        # Step 0 (Peer Selection): Press Enter to open ContactPickerModal, press down/j, Enter
+        # Step 0 (Peer Selection): Press Enter to open ContactPickerModal, press down/j to select 'bob', Enter
         await pilot.press("enter")
         await pilot.pause()
         assert isinstance(pilot.app.screen, ContactPickerModal)
@@ -163,48 +175,57 @@ async def test_dispatch_wizard_keyboard_only_end_to_end_pilot_flow(mock_profile_
         await pilot.pause()
         assert wizard.controller.draft.peer_username == "bob"
 
-        # Advance to Step 1 (Sender Agent)
+        # Step 1 (Sender Agent): Open AgentPickerWidget, select non-default 'my_local_builder'
         await pilot.press("right")
         assert wizard.step_index == 1
-        await pilot.press("enter")  # open AgentPickerWidget
+        await pilot.press("enter")
         await pilot.pause()
-        if len(pilot.app.screen_stack) > 1:
-            await pilot.press("enter")
-            await pilot.pause()
+        assert isinstance(pilot.app.screen, AgentPickerWidget)
+        assert len(pilot.app.screen.agents) == 2
+        await pilot.press("j")  # select my_local_builder
+        await pilot.press("enter")
+        await pilot.pause()
+        assert wizard.controller.draft.sender_agent_id == "my_local_builder"
 
-        # Advance to Step 2 (Receiver Agent)
+        # Step 2 (Receiver Agent): Open AgentPickerWidget, verify STRICT peer scoping (only bob's agents, NOT alice's)
         await pilot.press("right")
         assert wizard.step_index == 2
-        await pilot.press("enter")  # open AgentPickerWidget for peer
+        await pilot.press("enter")
         await pilot.pause()
-        if len(pilot.app.screen_stack) > 1:
-            await pilot.press("enter")
-            await pilot.pause()
+        assert isinstance(pilot.app.screen, AgentPickerWidget)
+        picker_agents = pilot.app.screen.agents
+        assert len(picker_agents) == 2  # bob_analyst and bob_evaluator
+        assert all(a.peer_username == "bob" for a in picker_agents)
+        assert not any(a.peer_username == "alice" for a in picker_agents)
 
-        # Advance to Step 3 (Collaboration Mode): Press down to cycle from 'ask' to 'research'
+        # Select non-default 'bob_evaluator'
+        await pilot.press("j")  # select bob_evaluator
+        await pilot.press("enter")
+        await pilot.pause()
+        assert wizard.controller.draft.receiver_agent_id == "bob_evaluator"
+
+        # Step 3 (Collaboration Mode): Press down to cycle from 'ask' to 'research'
         await pilot.press("right")
         assert wizard.step_index == 3
         await pilot.press("down")
         assert wizard.controller.draft.session_type == SessionType.RESEARCH.value
 
-        # Advance to Step 4 (Goal Input): Type non-default goal text character-by-character
+        # Step 4 (Goal Input): Type non-default goal text character-by-character
         await pilot.press("right")
         assert wizard.step_index == 4
-        # Clear default prompt text using backspace loop
         for _ in range(len(wizard.prompt)):
             await pilot.press("backspace")
-        # Type custom goal string "Audit security flaws"
         for char in "Audit security flaws":
             await pilot.press(char)
         assert wizard.prompt == "Audit security flaws"
 
-        # Advance to Step 5 (Context Pantry): Press right arrow
+        # Step 5 (Context Pantry): Press 'a' to add a pantry item
         await pilot.press("right")
         assert wizard.step_index == 5
         await pilot.press("a")
         assert len(wizard.controller.draft.pantry_items) >= 1
 
-        # Advance to Step 6 (Review & Dispatch): Press Enter to confirm dispatch
+        # Step 6 (Review & Dispatch): Press Enter to confirm dispatch
         await pilot.press("right")
         assert wizard.step_index == 6
         await pilot.press("enter")
@@ -214,6 +235,8 @@ async def test_dispatch_wizard_keyboard_only_end_to_end_pilot_flow(mock_profile_
         assert wizard.is_submitted is True
         rendered_text = wizard.render()
         assert "@bob" in rendered_text
+        assert "my_local_builder" in rendered_text
+        assert "bob_evaluator" in rendered_text
         assert "RESEARCH" in rendered_text
         assert "Audit security flaws" in rendered_text
 

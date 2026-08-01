@@ -126,6 +126,7 @@ def get_all_agent_summaries(profile_dir: Path, profile_name: str = "default") ->
                             capabilities_tags=caps,
                             adapter_kind=f"Peer • {av_enum.value}",
                             boundary_summary="Owner-controlled; reviewed on acceptance",
+                            peer_username=p_user,
                         )
                     )
                 except Exception:
