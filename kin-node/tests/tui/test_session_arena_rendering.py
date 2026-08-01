@@ -152,6 +152,9 @@ def test_artifact_inspection_negative_test_has_no_import_or_apply_code_paths():
 
 def test_arena_redaction_verifies_scrubbing_across_all_views():
     """4. Redaction verification: confirm redact_ui_text() is invoked across all Arena rendering widgets (§14.8)."""
+    import io
+    from rich.console import Console
+
     secret_key = "KIN-SECRET-KEY-1234567890ABCDEF"
     secret_path = "C:/Users/deban/private_keys/secret_key.pem"
 
@@ -176,7 +179,10 @@ def test_arena_redaction_verifies_scrubbing_across_all_views():
         session_summary=dirty_summary,
         events=[dirty_event],
     )
-    rendered = arena.render()
+    buf = io.StringIO()
+    c = Console(file=buf, width=160, height=44)
+    c.print(arena.render())
+    rendered = buf.getvalue()
 
     # Assert secret string and sensitive path are scrubbed against exact redaction markers
     assert secret_key not in rendered
@@ -233,6 +239,54 @@ def test_arena_trust_check_failure_surfaces_error_and_does_not_reassure(sample_s
     assert arena.trust_strip_widget.is_trust_unknown is True
     rendered_trust = arena.trust_strip_widget.render()
     assert "TRUST STATUS UNKNOWN" in rendered_trust
+
+
+@pytest.mark.asyncio
+async def test_arena_breakpoint_specific_distinguishing_text_per_terminal_size(sample_session_summary, events_all_7_classes):
+    """Permanent regression test asserting exact breakpoint distinguishing headers per terminal size (§3.2, §7.1, §14.8)."""
+    import io
+    from rich.console import Console
+
+    def get_rendered_text(app_instance, width, height):
+        buf = io.StringIO()
+        c = Console(file=buf, width=width, height=height)
+        arena = app_instance.query_one(SessionArenaWidget)
+        c.print(arena.render())
+        return buf.getvalue()
+
+    # 1. 160x44 (wide / Cockpit 3-lane mode)
+    app_160 = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
+    async with app_160.run_test(size=(160, 44)) as pilot:
+        text = get_rendered_text(pilot.app, 160, 44)
+        assert "SESSION MAP" in text
+        assert "DETAIL INSPECTOR" in text
+        assert "EXCHANGE TIMELINE" in text
+        assert "DOCKED INSPECTOR" not in text
+
+    # 2. 120x36 (standard / Docked Inspector 2-lane mode)
+    app_120 = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
+    async with app_120.run_test(size=(120, 36)) as pilot:
+        text = get_rendered_text(pilot.app, 120, 36)
+        assert "DOCKED INSPECTOR" in text
+        assert "EXCHANGE TIMELINE" in text
+        assert "SESSION MAP" not in text
+        assert "DETAIL INSPECTOR" not in text
+
+    # 3. 90x28 (compact / Stacked mode)
+    app_90 = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
+    async with app_90.run_test(size=(90, 28)) as pilot:
+        text = get_rendered_text(pilot.app, 90, 28)
+        assert "SESSION MAP" not in text
+        assert "DOCKED INSPECTOR" not in text
+        assert "DETAIL INSPECTOR" not in text
+
+    # 4. 80x24 (minimal / Stacked mode)
+    app_80 = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
+    async with app_80.run_test(size=(80, 24)) as pilot:
+        text = get_rendered_text(pilot.app, 80, 24)
+        assert "SESSION MAP" not in text
+        assert "DOCKED INSPECTOR" not in text
+        assert "DETAIL INSPECTOR" not in text
 
 
 # -----------------------------------------------------------------------------

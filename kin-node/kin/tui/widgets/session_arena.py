@@ -86,7 +86,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self.session_summary: Optional[SessionSummary] = None
         self.last_arena_error: Optional[RecoverableError] = None
         self.last_trust_error: Optional[str] = None
-        self.breakpoint: Breakpoint = "full"
+        self.breakpoint: Breakpoint = "wide"
 
         # Child sub-widgets
         self.trust_strip_widget = TrustStripWidget()
@@ -240,11 +240,27 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
                 f"[dim]No synthetic data constructed. Select a valid session ID.[/dim]"
             )
 
-        # Classify terminal size breakpoint
-        size = self.size
-        width = size.width if size and size.width > 0 else 160
-        height = size.height if size and size.height > 0 else 44
+        # Classify terminal size breakpoint (§3.2, §14.8)
+        # Prioritize terminal screen size (app_size) over inner content size (self.size) to account for border/padding geometry
+        app_size = None
+        try:
+            if self.is_mounted and self.app and self.app.size:
+                app_size = self.app.size
+        except Exception:
+            app_size = None
+
+        if app_size and app_size.width > 0 and app_size.height > 0:
+            width, height = app_size.width, app_size.height
+        elif self.size and self.size.width > 0 and self.size.height > 0:
+            width, height = self.size.width, self.size.height
+        else:
+            width, height = 160, 44
+
         bp = classify_breakpoint(width, height)
+
+        # Temporary instrumentation log requested by Tech Lead Claude
+        import sys
+        print(f"[INSTRUMENTATION_LOG] render(): self.size={self.size}, app_size={app_size}, resolved_width={width}, resolved_height={height}, bp='{bp}'", file=sys.stderr)
 
         header_str = self.trust_strip_widget.render()
         timeline_str = self.exchange_timeline_widget.render()
@@ -253,8 +269,8 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
 
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
 
-        # 1. COCKPIT MODE (full breakpoint: >=140x30) -> Genuine side-by-side Rich Table grid (§7.1, §14.8 Round 2)
-        if bp == "full":
+        # 1. COCKPIT MODE (wide breakpoint: >=160x44) -> 3-lane side-by-side Rich Table grid (§7.1, §14.8 Round 2)
+        if bp == "wide":
             grid = Table.grid(expand=True)
             grid.add_column("map", ratio=1)
             grid.add_column("timeline", ratio=2)
@@ -270,12 +286,19 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
                 grid,
             )
 
-        # 2. DOCKED INSPECTOR MODE (standard breakpoint: 90x28 - 140x30) -> 2-lane layout
+        # 2. DOCKED INSPECTOR MODE (standard breakpoint: 120x36 - 159x43) -> 2-lane side-by-side Rich Table grid (§7.1, §14.8)
         elif bp == "standard":
-            return (
-                f"{header_str}{focus_mark}\n\n"
-                f"[bold green]─── EXCHANGE TIMELINE ───[/bold green]\n{timeline_str}\n\n"
-                f"[bold magenta]─── DOCKED INSPECTOR ───[/bold magenta]\n{inspector_str}"
+            grid = Table.grid(expand=True)
+            grid.add_column("timeline", ratio=2)
+            grid.add_column("inspector", ratio=1)
+
+            panel_timeline = Panel(timeline_str, title="[bold green]EXCHANGE TIMELINE[/bold green]", border_style="green")
+            panel_inspector = Panel(inspector_str, title="[bold magenta]DOCKED INSPECTOR[/bold magenta]", border_style="magenta")
+
+            grid.add_row(panel_timeline, panel_inspector)
+            return Group(
+                header_str + focus_mark,
+                grid,
             )
 
         # 3. STACKED COMPACT MODE (compact/minimal breakpoint: <=90x24) -> vertically stacked compact lanes
