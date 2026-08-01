@@ -1,6 +1,6 @@
 """ExchangeTimeline domain widget for KIN V1.1 TUI.
 
-Spec authority: KIN-V1.1-TUI-SYSTEM.md §7.2, §7.3, §14.8 build step 3 (Phase C1)
+Spec authority: KIN-V1.1-TUI-SYSTEM.md §7.2, §7.3, §14.8 build steps 3-4 (Phase C1 + Phase C2)
 """
 
 from dataclasses import dataclass
@@ -45,18 +45,20 @@ def _parse_now(now: Optional[Union[datetime, str, float]]) -> datetime:
 
 
 class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
-    """ExchangeTimeline domain widget rendering session events across presentation classes (§14.8 Step 3, Phase C1).
+    """ExchangeTimeline domain widget rendering session events across presentation classes (§14.8 Steps 3-4, Phase C2).
 
-    Features (Phase C1 Round 2):
+    Features (Phase C2):
     1. Tail-follow: auto-follows new events when reader is at tail.
     2. Off-tail retention: retains reader cursor position when off-tail and surfaces fixed '↓ N new events' control.
     3. Jump-to-tail: 'G' / 'End' keys jump cursor to newest event and clear counter.
     4. Live-Only 120ms Tail Pulse: pulse badge renders ONLY for genuinely live-appended events within 120ms of arrival.
-       Historical events provided at construction NEVER pulse on first render.
     5. Reduced motion: `reduced_motion=True` suppresses tail pulse animations completely.
-    6. Activity Coalescing & Memoization: consecutive repeated `activity` events collapse into single cards;
-       coalesced groups are memoized to avoid redundant O(n) recomputations on cursor moves.
-       Approval, Security, and State_Transition events are NEVER coalesced.
+    6. Activity Coalescing & Memoization: consecutive repeated `activity` events collapse into single cards.
+    7. FPS-Batched Visual Commits: throttles visual refresh calls at 30 FPS (33ms interval), degrading gracefully
+       to 10 FPS (100ms interval) under pressure (>30 events/sec arrival rate). Structured data is 100% retained immediately.
+    8. Keystroke Non-Interference: user input (up/down/jump_to_tail) triggers immediate visual refresh without timer delay.
+    9. Transport Reconnect & Dedup: handles disconnect/reconnect by inserting exactly 1 state_transition marker
+       and deduplicating replayed events by event_id.
     """
 
     can_focus = True
@@ -98,14 +100,22 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         self.on_event_selected = on_event_selected
         self.reduced_motion: bool = reduced_motion
 
-        # Streaming state & pulse tracking (§7.2, §14.8 Phase C1 Round 2)
+        # Streaming state & pulse tracking (§7.2, §14.8 Phase C1/C2)
         self.new_events_off_tail_count: int = 0
-        # Tracks arrival timestamp ONLY for events added live via append_events()/append_event()
         self.live_appended_at_map: Dict[str, datetime] = {}
 
         # Performance memoization cache
         self._coalesced_groups_cache: Optional[List[CoalescedTimelineGroup]] = None
         self._get_coalesced_groups_call_count: int = 0
+
+        # FPS & Throttling state (§14.8 Phase C2)
+        self._last_visual_commit_at: Optional[datetime] = None
+        self._pending_visual_refresh: bool = False
+        self._refresh_call_count: int = 0
+        self._recent_arrival_timestamps: List[datetime] = []
+        self.target_fps_normal: float = 30.0       # ~33ms min interval
+        self.target_fps_degraded: float = 10.0     # ~100ms min interval under pressure
+        self.pressure_threshold_ev_per_sec: float = 30.0
 
         groups = self.get_coalesced_groups()
         if selected_event_id and groups:
@@ -117,11 +127,47 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
     def _invalidate_cache(self) -> None:
         self._coalesced_groups_cache = None
 
+    def is_under_pressure(self, now_dt: datetime) -> bool:
+        """Determine if incoming event arrival rate exceeds 30 events/sec over rolling 1.0s window (§14.8 Phase C2)."""
+        cutoff = now_dt.timestamp() - 1.0
+        self._recent_arrival_timestamps = [t for t in self._recent_arrival_timestamps if t.timestamp() >= cutoff]
+        return len(self._recent_arrival_timestamps) > self.pressure_threshold_ev_per_sec
+
+    def perform_visual_commit(self, now_dt: datetime) -> None:
+        """Execute visual commit: update commit timestamp and trigger local widget refresh (§14.8 Phase C2)."""
+        self._last_visual_commit_at = now_dt
+        self._pending_visual_refresh = False
+        self._refresh_call_count += 1
+        super().refresh()
+
+    def request_visual_refresh(self, now: Optional[Union[datetime, str, float]] = None) -> None:
+        """Throttle visual commits at 30 FPS (33ms), degrading to 10 FPS (100ms) under pressure (§14.8 Phase C2)."""
+        now_dt = _parse_now(now)
+        min_interval = 0.100 if self.is_under_pressure(now_dt) else 0.033
+
+        if self._last_visual_commit_at is None:
+            self.perform_visual_commit(now_dt)
+        else:
+            elapsed = (now_dt - self._last_visual_commit_at).total_seconds()
+            if elapsed >= min_interval:
+                self.perform_visual_commit(now_dt)
+            else:
+                self._pending_visual_refresh = True
+                try:
+                    if self.is_mounted and hasattr(self, "set_timer"):
+                        self.set_timer(min_interval - elapsed, lambda: self.flush_pending_visual_commit(now=now))
+                except Exception:
+                    pass
+
+    def flush_pending_visual_commit(self, now: Optional[Union[datetime, str, float]] = None) -> None:
+        if self._pending_visual_refresh:
+            self.perform_visual_commit(_parse_now(now))
+
     def get_filtered_events(self) -> List[UiEvent]:
         return [e for e in self.events if e.presentation_class in self.allowed_presentation_classes]
 
     def get_coalesced_groups(self) -> List[CoalescedTimelineGroup]:
-        """Group consecutive events with memoization cache (§14.8 Phase C1 Round 2)."""
+        """Group consecutive events with memoization cache (§14.8 Phase C1/C2)."""
         if self._coalesced_groups_cache is not None:
             return self._coalesced_groups_cache
 
@@ -169,14 +215,14 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         return None
 
     def append_events(self, new_events: List[UiEvent], now: Optional[Union[datetime, str, float]] = None) -> None:
-        """Append new live events into stream: follow tail if at tail; retain position & count if off-tail (§14.8 Phase C1)."""
+        """Append new live events into stream: 100% data retention immediately, throttled visual commits (§14.8 Phase C2)."""
         if not new_events:
             return
 
         now_dt = _parse_now(now)
         for evt in new_events:
-            # Register live arrival timestamp ONLY for newly appended events
             self.live_appended_at_map[evt.event_id] = now_dt
+            self._recent_arrival_timestamps.append(now_dt)
 
         was_at_tail = self.is_at_tail()
         old_groups = self.get_coalesced_groups()
@@ -200,13 +246,35 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         if selected and self.on_event_selected and was_at_tail:
             self.on_event_selected(selected)
 
-        self.refresh()
+        # Trigger FPS-batched visual commit (Data is 100% retained)
+        self.request_visual_refresh(now=now_dt)
 
     def append_event(self, evt: UiEvent, now: Optional[Union[datetime, str, float]] = None) -> None:
         self.append_events([evt], now=now)
 
+    def handle_reconnect(
+        self,
+        replayed_events: List[UiEvent],
+        now: Optional[Union[datetime, str, float]] = None,
+    ) -> None:
+        """Handle transport reconnect: insert exactly one state_transition marker and deduplicate replayed events (§14.8 C2)."""
+        now_dt = _parse_now(now)
+        existing_ids = {e.event_id for e in self.events}
+        deduped = [e for e in replayed_events if e.event_id not in existing_ids]
+
+        reconnect_evt = UiEvent(
+            event_id=f"reconnect-{now_dt.timestamp()}",
+            session_id=self.events[0].session_id if self.events else "sess-reconnect",
+            kind="reconnect",
+            created_at=now_dt.isoformat(),
+            actor_username="system",
+            presentation_class="state_transition",
+        )
+
+        self.append_events([reconnect_evt] + deduped, now=now_dt)
+
     def jump_to_tail(self) -> None:
-        """Jump reader selection cursor directly to the newest event at the tail (§14.8 Phase C1)."""
+        """Jump reader selection cursor directly to the newest event at the tail (§14.8 Phase C1/C2)."""
         groups = self.get_coalesced_groups()
         if groups:
             self.selected_index = len(groups) - 1
@@ -215,7 +283,9 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         selected = self.get_selected_event()
         if selected and self.on_event_selected:
             self.on_event_selected(selected)
-        self.refresh()
+
+        # Keystroke navigation: immediate visual commit
+        self.perform_visual_commit(datetime.now(timezone.utc))
 
     def cursor_down(self) -> None:
         groups = self.get_coalesced_groups()
@@ -226,7 +296,7 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
             selected = self.get_selected_event()
             if selected and self.on_event_selected:
                 self.on_event_selected(selected)
-            self.refresh()
+            self.perform_visual_commit(datetime.now(timezone.utc))
 
     def cursor_up(self) -> None:
         groups = self.get_coalesced_groups()
@@ -235,7 +305,7 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
             selected = self.get_selected_event()
             if selected and self.on_event_selected:
                 self.on_event_selected(selected)
-            self.refresh()
+            self.perform_visual_commit(datetime.now(timezone.utc))
 
     def on_key(self, event: Key) -> None:
         if self.lifecycle_state == WidgetLifecycleState.DISABLED:
@@ -248,15 +318,13 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
             self.cursor_up()
             event.stop()
         elif event.key == "g":
-            # Vim top (move cursor to first event; moves off-tail if multiple events exist)
             self.selected_index = 0
             selected = self.get_selected_event()
             if selected and self.on_event_selected:
                 self.on_event_selected(selected)
-            self.refresh()
+            self.perform_visual_commit(datetime.now(timezone.utc))
             event.stop()
         elif event.key in ("G", "end"):
-            # Jump to tail
             self.jump_to_tail()
             event.stop()
         elif event.key == "enter":
@@ -274,8 +342,7 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         prefix = "▶ " if is_selected else "  "
         select_tag = " [bold yellow][INSPECTED][/bold yellow]" if is_selected else ""
 
-        # Live-Only Tail Pulse Tracking (§7.2, §14.8 Phase C1 Round 2)
-        # Pulse badge is rendered ONLY for events explicitly registered via live append
+        # Live-Only Tail Pulse Tracking (§7.2, §14.8 Phase C1/C2)
         is_pulsing = False
         if evt.event_id in self.live_appended_at_map:
             elapsed_sec = (now_dt - self.live_appended_at_map[evt.event_id]).total_seconds()
@@ -369,7 +436,7 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         now_dt = _parse_now(now)
         lines = [f"[bold green]Exchange Timeline ({len(groups)} cards / {len(self.get_filtered_events())} events):[/bold green]"]
 
-        # Surface fixed off-tail control when reader is off tail (§7.2, §14.8 Phase C1)
+        # Surface fixed off-tail control when reader is off tail (§7.2, §14.8 Phase C1/C2)
         if self.new_events_off_tail_count > 0 and not self.is_at_tail():
             lines.append(f"[bold cyan]↓ {self.new_events_off_tail_count} new events (press 'G' or 'End' to jump to tail)[/bold cyan]")
 

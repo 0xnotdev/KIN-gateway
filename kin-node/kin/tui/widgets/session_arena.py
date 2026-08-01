@@ -10,6 +10,7 @@ from typing import List, Optional, Union
 from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
+from textual import work
 from textual.events import Key, Resize
 from textual.widgets import Static
 
@@ -218,6 +219,54 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             self.inspector_widget.selected_event = self.selected_event
             self.refresh()
             event.stop()
+
+    def append_events(self, new_events: List[UiEvent], now: Optional[Union[datetime, str, float]] = None) -> None:
+        """Forward new events to ExchangeTimelineWidget and update selected inspector item (§14.8 Phase C2)."""
+        self.exchange_timeline_widget.append_events(new_events, now=now)
+        self.events = self.exchange_timeline_widget.events
+        self.selected_event = self.exchange_timeline_widget.get_selected_event()
+        self.inspector_widget.selected_event = self.selected_event
+
+    def append_event(self, evt: UiEvent, now: Optional[Union[datetime, str, float]] = None) -> None:
+        self.append_events([evt], now=now)
+
+    def handle_reconnect(self, replayed_events: List[UiEvent], now: Optional[Union[datetime, str, float]] = None) -> None:
+        """Forward transport reconnect replayed events (§14.8 Phase C2)."""
+        self.exchange_timeline_widget.handle_reconnect(replayed_events, now=now)
+        self.events = self.exchange_timeline_widget.events
+        self.selected_event = self.exchange_timeline_widget.get_selected_event()
+        self.inspector_widget.selected_event = self.selected_event
+
+    def jump_to_tail(self) -> None:
+        self.exchange_timeline_widget.jump_to_tail()
+        self.selected_event = self.exchange_timeline_widget.get_selected_event()
+        self.inspector_widget.selected_event = self.selected_event
+
+    def _run_event_polling_worker_logic(self) -> None:
+        """Core polling worker logic (§14.8 Phase C2)."""
+        import time
+
+        # Standing requirement guard: NEVER poll for placeholder or empty session_id
+        if not self.session_id or self.session_id in ("sess-arena-default", "alice", "peer_agent", "placeholder"):
+            return
+
+        last_count = len(self.events)
+        while getattr(self, "is_polling_active", False):
+            time.sleep(getattr(self, "polling_interval_sec", 0.5))
+            try:
+                fetched = get_session_events(self.profile_dir, self.session_id, self.profile_name) or []
+                if len(fetched) > last_count:
+                    new_evts = fetched[last_count:]
+                    last_count = len(fetched)
+                    if hasattr(self, "is_mounted") and self.is_mounted and hasattr(self, "app") and self.app:
+                        self.app.call_from_thread(self.append_events, new_evts)
+            except Exception:
+                pass
+
+    @work(thread=True, exclusive=True, name="arena_event_poller")
+    def run_event_polling_worker(self) -> None:
+        """Background polling worker fetching new session events off main thread (§14.8 Phase C2)."""
+        self._run_event_polling_worker_logic()
 
     def render(self) -> Union[str, Group]:
         state = self.lifecycle_state
