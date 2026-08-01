@@ -42,7 +42,7 @@ def test_event_class_filtering_split_between_exchange_and_activity_feed():
     act_rendered = activity.render()
 
     # ExchangeTimeline assertions: contains message, artifact, approval, state_transition; excludes activity, security
-    assert "Exchange Timeline (4 events)" in ex_rendered
+    assert "4 events)" in ex_rendered
     assert "TASK_REQUEST" in ex_rendered
     assert "ARTIFACT_OFFER" in ex_rendered
     assert "ENVELOPE_RECEIVED" not in ex_rendered

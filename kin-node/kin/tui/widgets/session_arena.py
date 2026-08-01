@@ -66,6 +66,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         artifacts: Optional[List[ArtifactView]] = None,
         approvals: Optional[List[ApprovalView]] = None,
         selected_event_id: Optional[str] = None,
+        reduced_motion: bool = False,
         now: Optional[Union[datetime, str, float]] = None,
         **kwargs,
     ) -> None:
@@ -80,6 +81,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self._approvals_override = approvals
 
         self.selected_event_id = selected_event_id
+        self.reduced_motion = reduced_motion
         self.selected_event: Optional[UiEvent] = None
         self.session_summary: Optional[SessionSummary] = None
         self.last_arena_error: Optional[RecoverableError] = None
@@ -168,6 +170,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             selected_event_id=self.selected_event_id,
             allowed_presentation_classes=ExchangeTimelineWidget.ALL_7_CLASSES,
             on_event_selected=self._on_event_selected,
+            reduced_motion=self.reduced_motion,
         )
 
         # Initial selected event for inspector
@@ -199,6 +202,18 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             event.stop()
         elif event.key in ("up", "k"):
             self.exchange_timeline_widget.cursor_up()
+            self.selected_event = self.exchange_timeline_widget.get_selected_event()
+            self.inspector_widget.selected_event = self.selected_event
+            self.refresh()
+            event.stop()
+        elif event.key == "g":
+            self.exchange_timeline_widget.selected_index = 0
+            self.selected_event = self.exchange_timeline_widget.get_selected_event()
+            self.inspector_widget.selected_event = self.selected_event
+            self.refresh()
+            event.stop()
+        elif event.key in ("G", "end"):
+            self.exchange_timeline_widget.jump_to_tail()
             self.selected_event = self.exchange_timeline_widget.get_selected_event()
             self.inspector_widget.selected_event = self.selected_event
             self.refresh()
