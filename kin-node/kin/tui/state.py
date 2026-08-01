@@ -94,6 +94,38 @@ def map_event_kind_to_presentation_class(
     return EVENT_KIND_MAPPING[enum_val]
 
 
+# Explicit mapping of audit_events table categories to UI presentation classes (§14.8)
+AUDIT_CATEGORY_MAPPING: Dict[str, PresentationClass] = {
+    "security_rejection": "security",       # Cryptographic signature failures, sequence mismatches, access violations
+    "session_status_rejected": "security",  # Peer/transport rejection of session authentication/payload
+    "adapter_error": "security",            # Adapter/process execution error (matches ADAPTER_ERROR)
+    "duplicate_delivery": "activity",       # Replay prevention activity log (duplicate message suppressed)
+    "session_status_updated": "state_transition", # Session lifecycle state transition
+    "budget_exhausted": "state_transition", # Resource or turn limit ceiling reached
+    "approval_request": "approval",         # Policy approval requested
+    "approval_decision": "approval",        # Policy approval decided
+    "relay_poll_error": "activity",         # Transient network/relay polling error
+    "state_transition": "state_transition", # Generic system state transition
+    "ColonCommand": "activity",             # Internal command palette action audit log
+}
+
+
+def map_audit_category_to_presentation_class(category: str) -> PresentationClass:
+    """Map audit_events category to UI presentation class.
+
+    Switches strictly on explicit AUDIT_CATEGORY_MAPPING or session_event_<kind> prefix.
+    Raises ValueError for unrecognized categories so unexpected audit categories break loudly.
+    """
+    if category in AUDIT_CATEGORY_MAPPING:
+        return AUDIT_CATEGORY_MAPPING[category]
+    if category.startswith("session_event_"):
+        kind = category[len("session_event_"):]
+        return map_event_kind_to_presentation_class(kind)
+    raise ValueError(
+        f"Unrecognized audit category '{category}'. Must be in AUDIT_CATEGORY_MAPPING or start with 'session_event_'."
+    )
+
+
 @dataclass
 class HealthSnapshot:
     """Health status snapshot mirroring kin doctor report."""
@@ -140,15 +172,35 @@ class SessionSummary:
 
     session_id: str
     status: str
-    participant_display_names: List[str]
-    current_turn: int
-    max_turns: int
-    last_activity_at: str
+    type: str = "ask"
+    initiator_username: str = ""
+    receiver_username: str = ""
+    objective: str = ""
+    turn_limit: int = 12
+    created_at: str = ""
+    updated_at: str = ""
+    participant_display_names: List[str] = field(default_factory=list)
+    current_turn: int = 1
+    max_turns: int = 12
+    last_activity_at: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.participant_display_names and (self.initiator_username or self.receiver_username):
+            names = []
+            if self.initiator_username:
+                names.append(self.initiator_username)
+            if self.receiver_username:
+                names.append(self.receiver_username)
+            self.participant_display_names = names
+        if not self.last_activity_at and self.updated_at:
+            self.last_activity_at = self.updated_at
+        if self.max_turns == 12 and self.turn_limit != 12:
+            self.max_turns = self.turn_limit
 
 
 @dataclass
 class UiEvent:
-    """Presentation wrapper around kin.schemas.SessionEvent."""
+    """Presentation wrapper around kin.schemas.SessionEvent or kin audit_events."""
 
     event_id: str
     session_id: str
@@ -166,6 +218,26 @@ class UiEvent:
             kind=str(event.kind),
             created_at=event.created_at,
             actor_username=event.actor_username,
+            presentation_class=p_class,
+        )
+
+    @classmethod
+    def from_audit_event(
+        cls,
+        audit_id: str,
+        session_id: str,
+        category: str,
+        created_at: str,
+        actor_username: Optional[str] = None,
+        summary: str = "",
+    ) -> "UiEvent":
+        p_class = map_audit_category_to_presentation_class(category)
+        return cls(
+            event_id=audit_id,
+            session_id=session_id or "",
+            kind=category,
+            created_at=created_at,
+            actor_username=actor_username,
             presentation_class=p_class,
         )
 

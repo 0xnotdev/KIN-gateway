@@ -19,7 +19,18 @@ from kin.identity.fingerprint import compute_fingerprint
 from kin.identity.storage import load_private_key
 from kin.schemas import ActionClass, ApprovalRequest, RiskLabel
 from kin.storage.db import create_schema
-from kin.tui.state import AgentCardView, ApprovalView, ContactSummary, HealthSnapshot, NeedsYouItem, RecoverableError
+from kin.tui.state import (
+    AgentCardView,
+    ApprovalView,
+    ArtifactView,
+    ContactSummary,
+    HealthSnapshot,
+    NeedsYouItem,
+    RecoverableError,
+    SessionSummary,
+    UiEvent,
+    map_event_kind_to_presentation_class,
+)
 
 
 def ensure_profile_db(db_path: Path) -> sqlite3.Connection:
@@ -688,3 +699,291 @@ def query_health_snapshot(
         pending_inbox_count=total_pending,
         degraded_reason=degraded_reason,
     )
+
+
+# -----------------------------------------------------------------------------
+# Session Arena Data Layer Accessors (§14.8 Phase A)
+# -----------------------------------------------------------------------------
+
+def get_session_list(
+    profile_dir: Path, profile_name: str = "default"
+) -> List[SessionSummary]:
+    """Query all sessions from the sessions table (§14.8 Phase A)."""
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return []
+
+    conn = ensure_profile_db(db_path)
+    sessions: List[SessionSummary] = []
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT session_id, type, status, initiator_username, receiver_username,
+                   objective, turn_limit, created_at, updated_at
+            FROM sessions
+            ORDER BY updated_at DESC
+            """
+        )
+        for row in cur.fetchall():
+            s_id, s_type, s_stat, init_user, recv_user, obj, t_lim, c_at, u_at = row
+            sessions.append(
+                SessionSummary(
+                    session_id=s_id,
+                    status=s_stat,
+                    type=s_type,
+                    initiator_username=init_user or "",
+                    receiver_username=recv_user or "",
+                    objective=obj or "",
+                    turn_limit=t_lim or 12,
+                    created_at=c_at or "",
+                    updated_at=u_at or "",
+                )
+            )
+        return sessions
+    finally:
+        conn.close()
+
+
+def get_session_detail(
+    profile_dir: Path, session_id: str, profile_name: str = "default"
+) -> Optional[SessionSummary]:
+    """Query a single SessionSummary by session_id (§14.8 Phase A)."""
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return None
+
+    conn = ensure_profile_db(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT session_id, type, status, initiator_username, receiver_username,
+                   objective, turn_limit, created_at, updated_at
+            FROM sessions
+            WHERE session_id = ?
+            """,
+            (session_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        s_id, s_type, s_stat, init_user, recv_user, obj, t_lim, c_at, u_at = row
+        return SessionSummary(
+            session_id=s_id,
+            status=s_stat,
+            type=s_type,
+            initiator_username=init_user or "",
+            receiver_username=recv_user or "",
+            objective=obj or "",
+            turn_limit=t_lim or 12,
+            created_at=c_at or "",
+            updated_at=u_at or "",
+        )
+    finally:
+        conn.close()
+
+
+def get_session_events(
+    profile_dir: Path, session_id: str, profile_name: str = "default"
+) -> List[UiEvent]:
+    """Merge session_events and audit_events into chronologically ordered UiEvent list (§14.8 Phase A)."""
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return []
+
+    conn = ensure_profile_db(db_path)
+    events: List[UiEvent] = []
+    try:
+        cur = conn.cursor()
+
+        # 1. Query session_events table
+        cur.execute(
+            """
+            SELECT event_id, session_id, kind, created_at, actor_username
+            FROM session_events
+            WHERE session_id = ?
+            """,
+            (session_id,),
+        )
+        for row in cur.fetchall():
+            e_id, s_id, kind_str, c_at, actor = row
+            try:
+                p_class = map_event_kind_to_presentation_class(kind_str)
+                events.append(
+                    UiEvent(
+                        event_id=e_id,
+                        session_id=s_id,
+                        kind=kind_str,
+                        created_at=c_at,
+                        actor_username=actor,
+                        presentation_class=p_class,
+                    )
+                )
+            except ValueError:
+                pass
+
+        # 2. Query audit_events table for session_id
+        cur.execute(
+            """
+            SELECT audit_id, session_id, category, created_at, actor_username, summary
+            FROM audit_events
+            WHERE session_id = ?
+            """,
+            (session_id,),
+        )
+        for row in cur.fetchall():
+            a_id, s_id, cat, c_at, actor, summ = row
+            evt = UiEvent.from_audit_event(
+                audit_id=a_id,
+                session_id=s_id or session_id,
+                category=cat,
+                created_at=c_at,
+                actor_username=actor,
+                summary=summ or "",
+            )
+            events.append(evt)
+
+        # Sort combined events strictly by ISO created_at timestamp
+        events.sort(key=lambda e: e.created_at)
+        return events
+    finally:
+        conn.close()
+
+
+def get_artifacts_for_session(
+    profile_dir: Path, session_id: str, profile_name: str = "default"
+) -> List[ArtifactView]:
+    """Query artifacts table for a session and map to List[ArtifactView] (§14.8 Phase A)."""
+    from kin.artifacts.vault import ArtifactMetadata
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return []
+
+    conn = ensure_profile_db(db_path)
+    views: List[ArtifactView] = []
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT artifact_id, sha256, mime_type, metadata_json, offered_by, created_at, LENGTH(COALESCE(bytes_encrypted, ''))
+            FROM artifacts
+            WHERE session_id = ?
+            ORDER BY created_at ASC
+            """,
+            (session_id,),
+        )
+        for row in cur.fetchall():
+            art_id, sha, mime, meta_json, off_by, c_at, sz_bytes = row
+            meta_obj = None
+            if meta_json:
+                try:
+                    import json
+                    m_data = json.loads(meta_json)
+                    meta_obj = ArtifactMetadata(
+                        artifact_id=m_data.get("artifact_id", art_id),
+                        session_id=m_data.get("session_id", session_id),
+                        sha256=m_data.get("sha256", sha),
+                        mime_type=m_data.get("mime_type", mime),
+                        size_bytes=m_data.get("size_bytes", sz_bytes),
+                        offered_by=m_data.get("offered_by", off_by),
+                        preview_policy=m_data.get("preview_policy", "text"),
+                        created_at=m_data.get("created_at", c_at),
+                        source=m_data.get("source", "adapter_output"),
+                    )
+                except Exception:
+                    meta_obj = None
+
+            if not meta_obj:
+                meta_obj = ArtifactMetadata(
+                    artifact_id=art_id,
+                    session_id=session_id,
+                    sha256=sha,
+                    mime_type=mime,
+                    size_bytes=sz_bytes,
+                    offered_by=off_by,
+                    preview_policy="text",
+                    created_at=c_at,
+                    source="adapter_output",
+                )
+            views.append(ArtifactView.from_metadata(meta_obj))
+        return views
+    finally:
+        conn.close()
+
+
+def get_approvals_for_session(
+    profile_dir: Path, session_id: str, profile_name: str = "default"
+) -> List[ApprovalView]:
+    """Query approvals table for session history, INCLUDING decided approvals (§14.8 Phase A)."""
+    from kin.schemas import ActionClass, ApprovalDecision, ApprovalRequest, DecisionKind, RiskLabel
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return []
+
+    conn = ensure_profile_db(db_path)
+    views: List[ApprovalView] = []
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT approval_id, agent_id, action_class, request_json, expires_at, decision, decided_at
+            FROM approvals
+            WHERE session_id = ?
+            ORDER BY expires_at ASC
+            """,
+            (session_id,),
+        )
+        for row in cur.fetchall():
+            app_id, agent_id, act_class, req_json, exp_at, dec_str, dec_at = row
+            req_obj = None
+            if req_json:
+                try:
+                    req_obj = ApprovalRequest.model_validate_json(req_json)
+                except Exception:
+                    req_obj = None
+
+            if not req_obj:
+                try:
+                    try:
+                        act_enum = ActionClass(act_class) if act_class else ActionClass.WORKSPACE_WRITE
+                    except Exception:
+                        act_enum = ActionClass.WORKSPACE_WRITE
+
+                    req_obj = ApprovalRequest(
+                        schema_version="1.1",
+                        approval_id=app_id,
+                        session_id=session_id,
+                        agent_id=agent_id or "agent-unknown",
+                        action_class=act_enum,
+                        summary=f"Approval request {app_id[:8]}",
+                        reason=f"Approval request {app_id[:8]}",
+                        risk_label=RiskLabel.MEDIUM,
+                        requested_scope={},
+                        expires_at=exp_at if (exp_at and exp_at.endswith("Z")) else "2026-08-01T00:00:00Z",
+                    )
+                except Exception:
+                    continue
+
+            dec_obj: Optional[ApprovalDecision] = None
+            if dec_str:
+                try:
+                    d_kind = DecisionKind(dec_str)
+                except ValueError:
+                    d_kind = DecisionKind.DENY if "deny" in str(dec_str).lower() else DecisionKind.APPROVE_ONCE
+
+                dec_obj = ApprovalDecision(
+                    schema_version="1.1",
+                    approval_id=app_id,
+                    session_id=session_id,
+                    decision=d_kind,
+                    decided_at=dec_at if (dec_at and dec_at.endswith("Z")) else (exp_at if (exp_at and exp_at.endswith("Z")) else "2026-08-01T00:00:00Z"),
+                    decided_by="owner",
+                )
+
+            views.append(ApprovalView(request=req_obj, decision=dec_obj))
+        return views
+    finally:
+        conn.close()
