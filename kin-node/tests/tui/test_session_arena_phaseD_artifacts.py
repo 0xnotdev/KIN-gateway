@@ -35,8 +35,49 @@ class ArenaArtifactTestApp(App):
         yield self.arena_widget
 
 
-def _setup_test_db(tmp_path: Path, session_id: str, artifact_id: str, raw_content: str, relative_target: str, mime_type: str = "text/plain"):
-    """Helper creating a test profile DB, session, vault key, artifact, and vault file."""
+def _write_agent_card(tmp_path: Path, agent_id: str):
+    """Helper writing a valid AgentCard YAML file to profile agents directory."""
+    agents_dir = tmp_path / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    ws_dir = (tmp_path / "workspace").as_posix()
+    card_file = agents_dir / f"{agent_id}.yaml"
+    card_yaml = f"""\
+schema_version: "1.1"
+id: "{agent_id}"
+name: "Bob Helper Agent"
+description: "Test agent card"
+capabilities:
+  tags: ["research"]
+  accepts: ["text/plain", "text/x-diff"]
+  produces: ["text/plain", "text/x-diff"]
+adapter:
+  type: "local_command"
+  command: "echo"
+  working_directory: "{ws_dir}"
+boundaries:
+  filesystem: "workspace_read_write_with_approval"
+  max_runtime_seconds: 300
+  max_artifact_bytes: 1048576
+autonomy:
+  relay_information: "always_ask"
+  propose_actions: "always_ask"
+  execute_local_actions: "always_ask"
+"""
+    card_file.write_text(card_yaml, encoding="utf-8")
+
+
+def _setup_test_db(
+    tmp_path: Path,
+    session_id: str,
+    artifact_id: str,
+    raw_content: str,
+    relative_target: str,
+    mime_type: str = "text/plain",
+    offered_by_agent_id: str = "agent-bob-helper",
+    human_username: str = "bob_owner",
+):
+    """Helper creating a test profile DB, session, vault key, agent card file, artifact, and vault file."""
+    _write_agent_card(tmp_path, offered_by_agent_id)
     db_path = tmp_path / "kin.db"
     conn = ensure_profile_db(db_path)
     cur = conn.cursor()
@@ -44,9 +85,9 @@ def _setup_test_db(tmp_path: Path, session_id: str, artifact_id: str, raw_conten
     cur.execute(
         """
         INSERT INTO sessions (session_id, initiator_username, receiver_username, status, type, created_at, updated_at)
-        VALUES (?, 'alice', 'bob', 'active', 'research', '2026-08-01T12:00:00Z', '2026-08-01T12:00:00Z')
+        VALUES (?, 'alice_user', ?, 'active', 'research', '2026-08-01T12:00:00Z', '2026-08-01T12:00:00Z')
         """,
-        (session_id,),
+        (session_id, human_username),
     )
 
     vault_key = get_or_create_vault_key("default")
@@ -56,7 +97,7 @@ def _setup_test_db(tmp_path: Path, session_id: str, artifact_id: str, raw_conten
         session_id=session_id,
         raw_bytes=raw_content.encode("utf-8"),
         mime_type=mime_type,
-        offered_by="bob",
+        offered_by=offered_by_agent_id,
         preview_policy="text",
         max_bytes=1048576,
         artifact_id=artifact_id,
@@ -66,7 +107,7 @@ def _setup_test_db(tmp_path: Path, session_id: str, artifact_id: str, raw_conten
     conn.close()
 
 
-def _add_approval(tmp_path: Path, approval_id: str, session_id: str, decision: str = "approve_once"):
+def _add_approval(tmp_path: Path, approval_id: str, session_id: str, decision: str = "approve_once", agent_id: str = "agent-bob-helper"):
     """Helper adding a decided approval to approvals table."""
     db_path = tmp_path / "kin.db"
     conn = ensure_profile_db(db_path)
@@ -75,9 +116,9 @@ def _add_approval(tmp_path: Path, approval_id: str, session_id: str, decision: s
         INSERT INTO approvals (
             approval_id, session_id, agent_id, action_class,
             request_json, decision, decided_at, expires_at
-        ) VALUES (?, ?, 'bob', 'workspace_write', '{}', ?, '2026-08-01T12:05:00Z', '2026-12-31T23:59:59Z')
+        ) VALUES (?, ?, ?, 'workspace_write', '{}', ?, '2026-08-01T12:05:00Z', '2026-12-31T23:59:59Z')
         """,
-        (approval_id, session_id, decision),
+        (approval_id, session_id, agent_id, decision),
     )
     conn.commit()
     conn.close()
@@ -225,6 +266,93 @@ def test_artifact_session_boundary_ownership_mismatch_rejected(tmp_path):
     assert success is False
     assert rec_err is not None
     assert "Artifact ownership mismatch" in rec_err.what_happened
+
+
+# -----------------------------------------------------------------------------
+# 6. Adversarial Test: Human Username vs Agent ID Differentiation
+# -----------------------------------------------------------------------------
+def test_artifact_import_succeeds_when_human_username_differs_from_offered_by_agent_id(tmp_path):
+    """Adversarial test: receiver_username ('bob_human') differs from offered_by ('agent-bob-helper'). Confirm import succeeds using correct agent identity lookup (§14.8)."""
+    session_id = "sess-art-diff-id"
+    artifact_id = "art-diff-1"
+    rel_target = "docs/diff_identity.txt"
+    content = "Import with distinct human and agent identities."
+
+    _setup_test_db(
+        tmp_path,
+        session_id,
+        artifact_id,
+        content,
+        rel_target,
+        offered_by_agent_id="agent-bob-helper",
+        human_username="bob_human",
+    )
+    _add_approval(tmp_path, "app-diff-1", session_id, decision="approve_once", agent_id="agent-bob-helper")
+
+    ws_root = tmp_path / "workspace"
+    success, rec_err = import_artifact_action(
+        tmp_path,
+        session_id=session_id,
+        artifact_id=artifact_id,
+        relative_target_path=rel_target,
+        workspace_root=ws_root,
+    )
+
+    assert success is True
+    assert rec_err is None
+    written = ws_root / rel_target
+    assert written.exists()
+    assert written.read_text(encoding="utf-8") == content
+
+
+# -----------------------------------------------------------------------------
+# 7. Adversarial Test: Missing Agent Card On Disk Returns RecoverableError
+# -----------------------------------------------------------------------------
+def test_artifact_import_fails_when_agent_card_missing_on_disk(tmp_path):
+    """Adversarial test: approval exists for agent_id 'agent-missing-99' but NO agent card exists on disk. Confirm RecoverableError is returned and NO synthetic card is fabricated (§14.8)."""
+    session_id = "sess-art-missing-card"
+    artifact_id = "art-missing-1"
+    rel_target = "docs/missing_card.txt"
+    content = "Content requiring valid agent card."
+
+    db_path = tmp_path / "kin.db"
+    conn = ensure_profile_db(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO sessions (session_id, initiator_username, receiver_username, status, type, created_at, updated_at) VALUES (?, 'alice', 'bob', 'active', 'research', '2026-08-01T12:00:00Z', '2026-08-01T12:00:00Z')",
+        (session_id,),
+    )
+    vault_key = get_or_create_vault_key("default")
+    store_artifact(
+        conn,
+        vault_key,
+        session_id=session_id,
+        raw_bytes=content.encode("utf-8"),
+        mime_type="text/plain",
+        offered_by="agent-missing-99",
+        preview_policy="text",
+        max_bytes=1048576,
+        artifact_id=artifact_id,
+        relative_target_path=rel_target,
+    )
+    conn.commit()
+    conn.close()
+
+    _add_approval(tmp_path, "app-missing-1", session_id, decision="approve_once", agent_id="agent-missing-99")
+
+    ws_root = tmp_path / "workspace"
+    success, rec_err = import_artifact_action(
+        tmp_path,
+        session_id=session_id,
+        artifact_id=artifact_id,
+        relative_target_path=rel_target,
+        workspace_root=ws_root,
+    )
+
+    assert success is False
+    assert rec_err is not None
+    assert "Agent card not found for offering agent 'agent-missing-99'" in rec_err.what_happened
+    assert not (ws_root / rel_target).exists()
 
 
 # -----------------------------------------------------------------------------

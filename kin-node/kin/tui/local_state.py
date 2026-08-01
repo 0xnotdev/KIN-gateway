@@ -1290,7 +1290,7 @@ def import_artifact_action(
     conn = sqlite3.connect(db_path)
     try:
         cur = conn.cursor()
-        cur.execute("SELECT session_id FROM artifacts WHERE artifact_id = ?", (artifact_id,))
+        cur.execute("SELECT session_id, offered_by FROM artifacts WHERE artifact_id = ?", (artifact_id,))
         row = cur.fetchone()
         if not row or row[0] != session_id:
             return False, RecoverableError(
@@ -1300,22 +1300,14 @@ def import_artifact_action(
                 next_action="Select an artifact belonging to the active session.",
             )
 
-        cur.execute("SELECT receiver_username, initiator_username FROM sessions WHERE session_id = ?", (session_id,))
-        s_row = cur.fetchone()
-        agent_id = s_row[0] if s_row else "default_agent"
-
-        card = get_agent_card_by_id(profile_dir, agent_id, profile_name=profile_name)
+        offered_by_agent_id = row[1] or "unknown_agent"
+        card = get_agent_card_by_id(profile_dir, offered_by_agent_id, profile_name=profile_name)
         if not card:
-            from kin.schemas import AgentCard, LocalCommandAdapterConfig, AgentCapabilities, AgentBoundaries, AgentAutonomy
-            card = AgentCard(
-                schema_version="1.1",
-                id=agent_id,
-                name=agent_id,
-                description=f"Agent {agent_id}",
-                capabilities=AgentCapabilities(),
-                adapter=LocalCommandAdapterConfig(type="local_command", command="echo", working_directory=str(workspace_root or (profile_dir / "workspace"))),
-                boundaries=AgentBoundaries(max_runtime_seconds=300, max_artifact_bytes=1048576, filesystem="workspace_read_write_with_approval"),
-                autonomy=AgentAutonomy(),
+            return False, RecoverableError(
+                what_happened=f"Agent card not found for offering agent '{offered_by_agent_id}'.",
+                impact="Cannot confirm this action is authorized.",
+                preserved="No workspace files modified.",
+                next_action=f"Ensure the offering agent's card for '{offered_by_agent_id}' is registered in profile agents directory.",
             )
 
         vault_key = get_or_create_vault_key(profile_name)
@@ -1401,7 +1393,7 @@ def apply_patch_action(
     conn = sqlite3.connect(db_path)
     try:
         cur = conn.cursor()
-        cur.execute("SELECT session_id FROM artifacts WHERE artifact_id = ?", (artifact_id,))
+        cur.execute("SELECT session_id, offered_by FROM artifacts WHERE artifact_id = ?", (artifact_id,))
         row = cur.fetchone()
         if not row or row[0] != session_id:
             return False, RecoverableError(
@@ -1411,22 +1403,14 @@ def apply_patch_action(
                 next_action="Select an artifact belonging to the active session.",
             )
 
-        cur.execute("SELECT receiver_username, initiator_username FROM sessions WHERE session_id = ?", (session_id,))
-        s_row = cur.fetchone()
-        agent_id = s_row[0] if s_row else "default_agent"
-
-        card = get_agent_card_by_id(profile_dir, agent_id, profile_name=profile_name)
+        offered_by_agent_id = row[1] or "unknown_agent"
+        card = get_agent_card_by_id(profile_dir, offered_by_agent_id, profile_name=profile_name)
         if not card:
-            from kin.schemas import AgentCard, LocalCommandAdapterConfig, AgentCapabilities, AgentBoundaries, AgentAutonomy
-            card = AgentCard(
-                schema_version="1.1",
-                id=agent_id,
-                name=agent_id,
-                description=f"Agent {agent_id}",
-                capabilities=AgentCapabilities(),
-                adapter=LocalCommandAdapterConfig(type="local_command", command="echo", working_directory=str(workspace_root or (profile_dir / "workspace"))),
-                boundaries=AgentBoundaries(max_runtime_seconds=300, max_artifact_bytes=1048576, filesystem="workspace_read_write_with_approval"),
-                autonomy=AgentAutonomy(),
+            return False, RecoverableError(
+                what_happened=f"Agent card not found for offering agent '{offered_by_agent_id}'.",
+                impact="Cannot confirm this action is authorized.",
+                preserved="No workspace files modified.",
+                next_action=f"Ensure the offering agent's card for '{offered_by_agent_id}' is registered in profile agents directory.",
             )
 
         vault_key = get_or_create_vault_key(profile_name)
