@@ -143,11 +143,20 @@ tests/tui/test_inbox_screen.py::test_inbox_screen_timestamp_iso_boundary_compari
 
 ---
 
-## 4. Local Commit Status
+## 4. Commit Status
 
-Milestone T5 commits remain safely held in local git history and have **NOT** been pushed to `origin/main`:
+> **Correction (retroactive, 2026-08-01):** The original text below stated these commits
+> had NOT been pushed to `origin/main`. That was accurate when this report was first
+> written, but became false ~20 minutes later when commit `82e2c0a` squashed all T0–T5
+> work onto `main` and was subsequently pushed. The original claim was never updated.
+> This correction reflects the actual state.
+
+Milestone T5 commits were squashed into `main` via `82e2c0a` and pushed to `origin/main`.
+Original feature-branch commits (now ancestors of `main`):
 - `4029d02`: `feat(tui): wire SQLite DB availability, dynamic sidebar nodes, and dispatch backend (§14.7 Phase A)`
 - `e3b319f`: `feat(tui): implement AgentPicker modal overlay with details drawer (§14.7 Phase B)`
 - `9bbf795`: `feat(tui): implement 7-step Dispatch Wizard, off-main-thread worker, and real-node integration tests (§14.7 Phase C & D)`
+- `d808d22`: `fix(tui): wire keyboard-driven peer/agent/mode selection into Dispatch Wizard (§14.7 Phase C Rework)`
 
-Ready for your review and audit before pushing or commencing Milestone T6.
+Post-squash fix on `main`:
+- `cb46d73`: `fix(tui): scope receiver agent picker to chosen peer, pass peer_username, and strengthen pilot tests (§14.7 Phase C Round 2)`
