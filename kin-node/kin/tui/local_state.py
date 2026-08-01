@@ -5,10 +5,13 @@ and relay reachability. Used by First Flight and Home Screen (§14.6 Phase B).
 """
 
 from datetime import datetime, timezone
+import logging
 import os
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 import httpx
 
@@ -379,11 +382,11 @@ def get_needs_you_items(profile_dir: Path, profile_name: str = "default") -> Lis
             )
             for row in cur.fetchall():
                 e_id, s_id, e_kind, created_at, actor = row
-                p_class = None
                 try:
                     p_class = map_event_kind_to_presentation_class(e_kind)
-                except ValueError:
-                    p_class = "security" if ("security" in str(e_kind).lower() or "reject" in str(e_kind).lower()) else "activity"
+                except ValueError as exc:
+                    logger.warning("Unrecognized event kind '%s' during Needs-You classification: %s", e_kind, exc)
+                    continue
 
                 if p_class == "security":
                     items.append(
@@ -396,8 +399,8 @@ def get_needs_you_items(profile_dir: Path, profile_name: str = "default") -> Lis
                             created_at=created_at or "",
                         )
                     )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to query security events for Needs-You queue: %s", exc, exc_info=True)
 
         return items
     finally:

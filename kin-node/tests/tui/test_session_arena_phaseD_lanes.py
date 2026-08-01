@@ -203,3 +203,14 @@ def test_security_events_surface_in_needs_you_queue(tmp_path, sample_session_sum
     assert "SECURITY REJECTION CARDS" in rendered_u_lane
     assert "✖ SECURITY REJECTION CARD" in rendered_u_lane
     assert "Persistent Alert (No auto-dismiss)" in rendered_u_lane
+
+
+def test_all_known_event_kinds_and_audit_categories_classify_cleanly():
+    """Assert all MessageKind, InternalEventKind, and AUDIT_CATEGORY_MAPPING members classify cleanly without raising ValueError (§7.2, §10.1)."""
+    from kin.schemas import MessageKind, InternalEventKind
+    from kin.tui.state import map_event_kind_to_presentation_class, AUDIT_CATEGORY_MAPPING
+
+    all_kinds = list(MessageKind) + list(InternalEventKind) + list(AUDIT_CATEGORY_MAPPING.keys())
+    for kind in all_kinds:
+        p_class = map_event_kind_to_presentation_class(kind)
+        assert p_class in ("message", "activity", "checkpoint", "artifact", "approval", "state_transition", "security")
