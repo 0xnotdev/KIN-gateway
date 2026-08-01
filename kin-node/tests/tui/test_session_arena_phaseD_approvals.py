@@ -45,17 +45,17 @@ def test_session_state_wrappers_error_handling_on_nonexistent_and_terminal_sessi
     conn.close()
 
     # 1. Non-existent session
-    ok_pause, err_pause = pause_session(tmp_path, "sess-nonexistent-99")
+    ok_pause, err_pause = pause_session(tmp_path, session_id="sess-nonexistent-99")
     assert ok_pause is False
     assert err_pause is not None
     assert "Session 'sess-nonexistent-99' not found" in err_pause.what_happened
 
-    ok_resume, err_resume = resume_session(tmp_path, "sess-nonexistent-99")
+    ok_resume, err_resume = resume_session(tmp_path, session_id="sess-nonexistent-99")
     assert ok_resume is False
     assert err_resume is not None
     assert "Session 'sess-nonexistent-99' not found" in err_resume.what_happened
 
-    ok_cancel, err_cancel = cancel_session_command(tmp_path, "sess-nonexistent-99")
+    ok_cancel, err_cancel = cancel_session_command(tmp_path, session_id="sess-nonexistent-99")
     assert ok_cancel is False
     assert err_cancel is not None
     assert "Session 'sess-nonexistent-99' not found" in err_cancel.what_happened

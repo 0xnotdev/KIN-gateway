@@ -201,5 +201,5 @@ def test_security_events_surface_in_needs_you_queue(tmp_path, sample_session_sum
     rendered_u_lane = buf.getvalue()
 
     assert "SECURITY REJECTION CARDS" in rendered_u_lane
-    assert "🚨 SECURITY REJECTION CARD" in rendered_u_lane
+    assert "✖ SECURITY REJECTION CARD" in rendered_u_lane
     assert "Persistent Alert (No auto-dismiss)" in rendered_u_lane

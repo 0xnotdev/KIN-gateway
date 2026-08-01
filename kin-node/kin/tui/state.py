@@ -77,6 +77,8 @@ def map_event_kind_to_presentation_class(
     if isinstance(kind, (MessageKind, InternalEventKind)):
         enum_val = kind
     elif isinstance(kind, str):
+        if kind in AUDIT_CATEGORY_MAPPING:
+            return AUDIT_CATEGORY_MAPPING[kind]
         # Attempt conversion to MessageKind first, then InternalEventKind
         try:
             enum_val = MessageKind(kind)

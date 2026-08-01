@@ -39,8 +39,8 @@ Textual dispatches keybindings by mapping action name `foo` to `action_foo` or `
 
 ### 2.3 Security Event Data Flow Analysis (§10.1 Compliance)
 A raw `security`-class event stored in `session_events` (e.g. signature rejection or identity mismatch) with no approval record and active session status behaves as follows:
-1. **Global Sidebar / Home / Inbox Needs-You (`get_needs_you_items`)**: Queries `session_events` for `kind LIKE '%security%' OR kind LIKE '%reject%' OR kind LIKE '%invalid%' OR kind LIKE '%unauthorized%'` and appends high-urgency `NeedsYouItem` entries with label `SECURITY ALERT`.
-2. **Arena Needs-You Lane (`u`)**: `_render_needs_you_queue()` queries both pending approval cards AND `presentation_class == 'security'` events from `self.events`, rendering `🚨 SECURITY REJECTION CARD` persistent red alert cards with status `Validation Failed — Persistent Alert (No auto-dismiss)`.
+1. **Global Sidebar / Home / Inbox Needs-You (`get_needs_you_items`)**: Evaluates `map_event_kind_to_presentation_class(e_kind)` imported directly from `kin.tui.state`, reusing the canonical classifier to append high-urgency `NeedsYouItem` entries with label `SECURITY ALERT`.
+2. **Arena Needs-You Lane (`u`)**: `_render_needs_you_queue()` queries both pending approval cards AND `presentation_class == 'security'` events from `self.events`, rendering `✖ SECURITY REJECTION CARD` persistent red alert cards using `get_glyph("▲")` and `get_glyph("✖")` from `kin.tui.tokens`.
 3. **Arena Activity Lane (`e`)**: Renders all events via `ActivityFeedWidget`, displaying security rejections with persistent red styling.
 4. **Arena Inspector Panel**: Selecting a security event displays full payload and security violation detail.
 
@@ -57,6 +57,8 @@ A raw `security`-class event stored in `session_events` (e.g. signature rejectio
 | **Disabled Hand-back Option** | **PASSED** | Rendered disabled in `SessionStateMenuModal` with label `"[not yet available]"` |
 | **Shared Approval Modals** | **PASSED** | Extracted `approval_modals.py` shared by Inbox and Arena |
 | **Zero Single-Key Consequential Execution** | **PASSED** | All consequential actions push confirmation modals (`ApproveConfirmModal`, `DenyReasonModal`, `EditConstraintsModal`) |
+| **Signature Standardization** | **PASSED** | `pause_session`, `resume_session`, `cancel_session_command` match `decide_pending_approval` convention |
+| **Tokenized Glyph Routing** | **PASSED** | Routed through `get_glyph("▲")` and `get_glyph("✖")` in `kin.tui.tokens` |
 
 ---
 
@@ -77,31 +79,41 @@ class SessionStateMenuModal(ModalScreen[Optional[str]]):
 
 ### 4.3 `kin/tui/local_state.py`
 ```python
-def pause_session(profile_dir: Path, session_id: str, reason: Optional[str] = None, profile_name: str = "default") -> Tuple[bool, Optional[RecoverableError]]: ...
-def resume_session(profile_dir: Path, session_id: str, reason: Optional[str] = None, profile_name: str = "default") -> Tuple[bool, Optional[RecoverableError]]: ...
-def cancel_session_command(profile_dir: Path, session_id: str, reason: Optional[str] = None, profile_name: str = "default") -> Tuple[bool, Optional[RecoverableError]]: ...
+def pause_session(profile_dir: Path, profile_name: str = "default", *, session_id: str, reason: Optional[str] = None) -> Tuple[bool, Optional[RecoverableError]]: ...
+def resume_session(profile_dir: Path, profile_name: str = "default", *, session_id: str, reason: Optional[str] = None) -> Tuple[bool, Optional[RecoverableError]]: ...
+def cancel_session_command(profile_dir: Path, profile_name: str = "default", *, session_id: str, reason: Optional[str] = None) -> Tuple[bool, Optional[RecoverableError]]: ...
 ```
 
 ---
 
-## 5. Raw Pytest Output
+## 5. Raw Pytest Output (`test_session_arena_rendering.py`)
 
 ```
 ============================= test session starts =============================
-platform win32 -- Python 3.11.9, pytest-8.4.2, pluggy-1.6.0
+platform win32 -- Python 3.11.9, pytest-8.4.2, pluggy-1.6.0 -- C:\Users\deban\AppData\Local\Programs\Python\Python311\python.exe
+cachedir: .pytest_cache
 rootdir: D:\KIN\kin-node
 configfile: pyproject.toml
 plugins: anyio-4.14.0, langsmith-0.8.16, asyncio-1.4.0, cov-7.1.0, httpbin-2.1.0, textual-snapshot-1.1.0, syrupy-4.8.0
 asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collected 939 items
+collecting ... collected 12 items
 
-tests\tui\test_session_arena_phaseD_approvals.py ...                     [ 12%]
-tests\tui\test_session_arena_phaseD_lanes.py .....                       [ 12%]
-tests\tui\test_session_arena_rendering.py ............                   [ 13%]
+tests/tui/test_session_arena_rendering.py::test_arena_renders_all_7_presentation_classes PASSED [  8%]
+tests/tui/test_session_arena_rendering.py::test_security_event_guard_has_zero_action_affordances PASSED [ 16%]
+tests/tui/test_session_arena_rendering.py::test_artifact_inspection_negative_test_has_no_import_or_apply_code_paths PASSED [ 25%]
+tests/tui/test_session_arena_rendering.py::test_arena_redaction_verifies_scrubbing_across_all_views PASSED [ 33%]
+tests/tui/test_session_arena_rendering.py::test_arena_missing_peer_renders_cleanly_without_crashing PASSED [ 41%]
+tests/tui/test_session_arena_rendering.py::test_arena_nonexistent_session_id_produces_error_state_not_fabricated_data PASSED [ 50%]
+tests/tui/test_session_arena_rendering.py::test_arena_trust_check_failure_surfaces_error_and_does_not_reassure PASSED [ 58%]
+tests/tui/test_session_arena_rendering.py::test_arena_breakpoint_specific_distinguishing_text_per_terminal_size PASSED [ 66%]
+tests/tui/test_session_arena_rendering.py::test_arena_snapshot_cockpit_full_mode_160x44 PASSED [ 75%]
+tests/tui/test_session_arena_rendering.py::test_arena_snapshot_docked_standard_mode_120x36 PASSED [ 83%]
+tests/tui/test_session_arena_rendering.py::test_arena_snapshot_compact_mode_90x28 PASSED [ 91%]
+tests/tui/test_session_arena_rendering.py::test_arena_snapshot_minimal_mode_80x24 PASSED [100%]
 
 --------------------------- snapshot report summary ---------------------------
-14 snapshots passed.
-============================ 939 passed in 35.25s =============================
+4 snapshots passed.
+============================= 12 passed in 1.47s ==============================
 ```
 
 ---
@@ -110,7 +122,12 @@ tests\tui\test_session_arena_rendering.py ............                   [ 13%]
 
 ```
 On branch t6-phase-d-docs-cleanup
-Changes to be committed:
-	modified:   walkthrough.md
-	new file:   tui_t6_phaseD_progress.md
+Changes committed on branch:
+  kin/tui/tokens.py
+  kin/tui/state.py
+  kin/tui/local_state.py
+  kin/tui/widgets/session_arena.py
+  tests/tui/test_session_arena_phaseD_approvals.py
+  tests/tui/test_session_arena_phaseD_lanes.py
+  tui_t6_phaseD_progress.md
 ```

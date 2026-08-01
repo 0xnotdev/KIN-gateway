@@ -374,22 +374,28 @@ def get_needs_you_items(profile_dir: Path, profile_name: str = "default") -> Lis
                 """
                 SELECT event_id, session_id, kind, created_at, actor_username
                 FROM session_events
-                WHERE kind LIKE '%security%' OR kind LIKE '%reject%' OR kind LIKE '%invalid%' OR kind LIKE '%unauthorized%'
                 ORDER BY created_at DESC
                 """
             )
             for row in cur.fetchall():
                 e_id, s_id, e_kind, created_at, actor = row
-                items.append(
-                    NeedsYouItem(
-                        item_id=f"sec-{e_id[:8]}",
-                        session_id=s_id or "",
-                        kind="security",
-                        human_readable_reason=f"SECURITY ALERT [{e_kind}]: Security violation recorded for actor @{actor or 'unknown'}",
-                        urgency="high",
-                        created_at=created_at or "",
+                p_class = None
+                try:
+                    p_class = map_event_kind_to_presentation_class(e_kind)
+                except ValueError:
+                    p_class = "security" if ("security" in str(e_kind).lower() or "reject" in str(e_kind).lower()) else "activity"
+
+                if p_class == "security":
+                    items.append(
+                        NeedsYouItem(
+                            item_id=f"sec-{e_id[:8]}",
+                            session_id=s_id or "",
+                            kind="security",
+                            human_readable_reason=f"SECURITY ALERT [{e_kind}]: Security violation recorded for actor @{actor or 'unknown'}",
+                            urgency="high",
+                            created_at=created_at or "",
+                        )
                     )
-                )
         except Exception:
             pass
 
@@ -589,7 +595,11 @@ def decide_pending_approval(
 
 
 def pause_session(
-    profile_dir: Path, session_id: str, reason: Optional[str] = None, profile_name: str = "default"
+    profile_dir: Path,
+    profile_name: str = "default",
+    *,
+    session_id: str,
+    reason: Optional[str] = None,
 ) -> Tuple[bool, Optional[RecoverableError]]:
     """Pause an active session (§14.8 Phase D)."""
     from kin.identity.storage import get_or_create_vault_key
@@ -653,7 +663,11 @@ def pause_session(
 
 
 def resume_session(
-    profile_dir: Path, session_id: str, reason: Optional[str] = None, profile_name: str = "default"
+    profile_dir: Path,
+    profile_name: str = "default",
+    *,
+    session_id: str,
+    reason: Optional[str] = None,
 ) -> Tuple[bool, Optional[RecoverableError]]:
     """Resume a paused session (§14.8 Phase D)."""
     from kin.identity.storage import get_or_create_vault_key
@@ -717,7 +731,11 @@ def resume_session(
 
 
 def cancel_session_command(
-    profile_dir: Path, session_id: str, reason: Optional[str] = None, profile_name: str = "default"
+    profile_dir: Path,
+    profile_name: str = "default",
+    *,
+    session_id: str,
+    reason: Optional[str] = None,
 ) -> Tuple[bool, Optional[RecoverableError]]:
     """Cancel an active or paused session (§14.8 Phase D)."""
     from kin.identity.storage import get_or_create_vault_key

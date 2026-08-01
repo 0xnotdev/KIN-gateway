@@ -285,13 +285,13 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
 
     def _execute_session_state_change(self, action: str) -> None:
         if action == "pause":
-            ok, err = pause_session(self.profile_dir, self.session_id, profile_name=self.profile_name)
+            ok, err = pause_session(self.profile_dir, self.profile_name, session_id=self.session_id)
             msg = "Session paused."
         elif action == "resume":
-            ok, err = resume_session(self.profile_dir, self.session_id, profile_name=self.profile_name)
+            ok, err = resume_session(self.profile_dir, self.profile_name, session_id=self.session_id)
             msg = "Session resumed."
         elif action == "cancel":
-            ok, err = cancel_session_command(self.profile_dir, self.session_id, profile_name=self.profile_name)
+            ok, err = cancel_session_command(self.profile_dir, self.profile_name, session_id=self.session_id)
             msg = "Session cancelled."
         else:
             return
@@ -512,11 +512,13 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             return "\n\n".join(lines)
 
         if sec_events:
-            lines.append(f"[bold red]▲ SECURITY REJECTION CARDS ({len(sec_events)}) — PERSISTENT ALERT[/bold red]")
+            glyph_alert = get_glyph("▲")
+            glyph_x = get_glyph("✖")
+            lines.append(f"[bold red]{glyph_alert} SECURITY REJECTION CARDS ({len(sec_events)}) — PERSISTENT ALERT[/bold red]")
             for sec_evt in sec_events:
                 actor = sec_evt.actor_username or "unknown"
                 lines.append(
-                    f"  [bold red]🚨 SECURITY REJECTION CARD [{sec_evt.event_id[:8]}][/bold red]\n"
+                    f"  [bold red]{glyph_x} SECURITY REJECTION CARD [{sec_evt.event_id[:8]}][/bold red]\n"
                     f"     [red]Kind: {sec_evt.kind} | Actor: @{actor} | Timestamp: {sec_evt.created_at}[/red]\n"
                     f"     [red]Status: Validation Failed — Persistent Alert (No auto-dismiss)[/red]"
                 )
