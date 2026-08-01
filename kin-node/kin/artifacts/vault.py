@@ -53,6 +53,7 @@ class ArtifactMetadata:
     preview_policy: str
     created_at: str
     source: str = "adapter_output"
+    relative_target_path: str | None = None
 
 
 def store_artifact(
@@ -68,6 +69,7 @@ def store_artifact(
     source: str = "adapter_output",
     now: datetime.datetime | None = None,
     artifact_id: str | None = None,
+    relative_target_path: str | None = None,
 ) -> ArtifactMetadata:
     """Computes SHA-256 directly, enforces max_bytes, encrypts raw_bytes, and persists metadata and ciphertext."""
     if len(raw_bytes) > max_bytes:
@@ -102,6 +104,7 @@ def store_artifact(
         "size_bytes": len(raw_bytes),
         "preview_policy": preview_policy,
         "source": source,
+        "relative_target_path": relative_target_path,
     }
 
     conn.execute(
@@ -195,6 +198,7 @@ def get_artifact_metadata(
     size_bytes = 0
     preview_policy = "none"
     source = "adapter_output"
+    relative_target_path = None
 
     if meta_json:
         try:
@@ -202,6 +206,7 @@ def get_artifact_metadata(
             size_bytes = meta_dict.get("size_bytes", meta_dict.get("size", 0))
             preview_policy = meta_dict.get("preview_policy", "none")
             source = meta_dict.get("source", "adapter_output")
+            relative_target_path = meta_dict.get("relative_target_path")
         except json.JSONDecodeError:
             pass
 
@@ -215,4 +220,5 @@ def get_artifact_metadata(
         preview_policy=preview_policy,
         created_at=created_at,
         source=source,
+        relative_target_path=relative_target_path,
     )

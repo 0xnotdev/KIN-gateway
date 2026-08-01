@@ -192,3 +192,74 @@ class ApproveConfirmModal(ModalScreen[bool]):
         elif event.key in ("n", "escape"):
             self.dismiss(False)
             event.stop()
+
+
+class PatchApplyConfirmModal(ModalScreen[bool]):
+    """Confirmation modal for workspace patch application showing structured unified diff before confirming (§5.3, §14.8)."""
+
+    DEFAULT_CSS = """
+    PatchApplyConfirmModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.7);
+    }
+    #patch-container {
+        width: 80;
+        height: auto;
+        max-height: 28;
+        background: $surface-darken-1;
+        border: thick $warning;
+        padding: 1 2;
+    }
+    #diff-preview-box {
+        width: 100%;
+        height: 12;
+        border: solid $primary-darken-2;
+        padding: 0 1;
+        margin: 1 0;
+        overflow-y: scroll;
+    }
+    """
+
+    def __init__(self, artifact_id: str, relative_target_path: str, unified_diff: str, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.artifact_id = artifact_id
+        self.relative_target_path = relative_target_path
+        self.unified_diff = unified_diff
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="patch-container"):
+            yield Static(f"[bold yellow]CONFIRM WORKSPACE PATCH APPLY [{self.artifact_id[:8]}][/bold yellow]")
+            yield Static(f"Target File: [bold cyan]{self.relative_target_path}[/bold cyan]")
+            
+            # Format diff lines with syntax highlighting
+            diff_lines = []
+            for line in self.unified_diff.splitlines():
+                if line.startswith("+") and not line.startswith("+++"):
+                    diff_lines.append(f"[green]{line}[/green]")
+                elif line.startswith("-") and not line.startswith("---"):
+                    diff_lines.append(f"[red]{line}[/red]")
+                elif line.startswith("@"):
+                    diff_lines.append(f"[cyan]{line}[/cyan]")
+                else:
+                    diff_lines.append(f"[dim]{line}[/dim]")
+            
+            diff_text = "\n".join(diff_lines) if diff_lines else "[dim]No diff changes.[/dim]"
+            yield Static(diff_text, id="diff-preview-box")
+            yield Static("[bold]Apply this patch to the workspace target file on disk?[/bold]")
+            with Horizontal():
+                yield Button("Apply Patch (y)", id="btn-confirm", variant="warning")
+                yield Button("Cancel (n)", id="btn-cancel", variant="default")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-confirm":
+            self.dismiss(True)
+        else:
+            self.dismiss(False)
+
+    def on_key(self, event: Key) -> None:
+        if event.key == "y":
+            self.dismiss(True)
+            event.stop()
+        elif event.key in ("n", "escape"):
+            self.dismiss(False)
+            event.stop()

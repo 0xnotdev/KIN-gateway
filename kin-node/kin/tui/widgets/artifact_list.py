@@ -54,6 +54,12 @@ class ArtifactListWidget(LifecycleWidgetMixin, Static):
             self.selected_index = min(self.selected_index + 1, len(self.artifacts) - 1)
             self.refresh()
 
+    def get_selected_artifact(self) -> Optional[ArtifactView]:
+        """Return currently selected ArtifactView item in vault list (§14.5)."""
+        if self.artifacts and 0 <= self.selected_index < len(self.artifacts):
+            return self.artifacts[self.selected_index]
+        return None
+
     def cursor_up(self) -> None:
         if self.artifacts:
             self.selected_index = max(self.selected_index - 1, 0)

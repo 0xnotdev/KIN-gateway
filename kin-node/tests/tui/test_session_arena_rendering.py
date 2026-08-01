@@ -141,13 +141,16 @@ def test_artifact_inspection_negative_test_has_no_import_or_apply_code_paths():
     assert "INSPECT ARTIFACT" in rendered_inspector
     assert "Read-Only Artifact Preview" in rendered_inspector
 
-    # Negative assertions: zero import/apply action affordances or methods exist anywhere in Phase B static surfaces
+    # Negative assertions: zero import/apply action affordances or methods exist on pure viewing surface (InspectorWidget)
     assert "Import Artifact" not in rendered_inspector
     assert "Apply Patch" not in rendered_inspector
     assert not hasattr(inspector, "import_artifact")
     assert not hasattr(inspector, "apply_patch")
-    assert not hasattr(arena, "import_artifact")
-    assert not hasattr(arena, "apply_patch")
+
+    # Positive assertions: SessionArenaWidget has real gated artifact action handlers in Outputs lane
+    assert hasattr(arena, "handle_artifact_key")
+    assert hasattr(arena, "_execute_import_artifact")
+    assert hasattr(arena, "_execute_apply_patch")
 
 
 def test_arena_redaction_verifies_scrubbing_across_all_views():

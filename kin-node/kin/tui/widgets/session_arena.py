@@ -33,7 +33,7 @@ from kin.tui.state import ApprovalView, ArtifactView, RecoverableError, SessionS
 from kin.tui.tokens import get_glyph
 from kin.tui.widgets.activity_feed import ActivityFeedWidget
 from kin.tui.widgets.approval_card import ApprovalCardWidget
-from kin.tui.widgets.approval_modals import ApproveConfirmModal, DenyReasonModal, EditConstraintsModal
+from kin.tui.widgets.approval_modals import ApproveConfirmModal, DenyReasonModal, EditConstraintsModal, PatchApplyConfirmModal
 from kin.tui.widgets.artifact_list import ArtifactListWidget
 from kin.tui.widgets.exchange_timeline import ExchangeTimelineWidget
 from kin.tui.widgets.inspector import InspectorWidget
@@ -368,6 +368,95 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         elif err and self.is_mounted and hasattr(self, "app") and self.app:
             self.last_arena_error = err
             self.set_lifecycle_state(WidgetLifecycleState.RECOVERABLE_ERROR)
+
+    def handle_artifact_key(self, key: str) -> None:
+        """Handle interactive artifact import/patch actions in Outputs lane (§14.8 Phase D)."""
+        selected_art = self.artifact_list_widget.get_selected_artifact()
+        if not selected_art:
+            if self.is_mounted and hasattr(self, "app") and self.app and getattr(self.app, "status_bar", None):
+                self.app.status_bar.status_message = "No artifact selected in Outputs lane."
+                self.app.status_bar.refresh()
+            return
+
+        meta = selected_art.metadata
+        artifact_id = meta.artifact_id
+        session_id = self.session_id or ""
+        rel_target = meta.relative_target_path or f"imported_{artifact_id[:8]}.txt"
+
+        if key == "v":
+            # Import action
+            title = f"CONFIRM WORKSPACE ARTIFACT IMPORT [{artifact_id[:8]}]"
+            desc = (
+                f"Write raw artifact bytes directly to workspace target file?\n\n"
+                f"Target Relative Path: [bold cyan]{rel_target}[/bold cyan]"
+            )
+            modal = ApproveConfirmModal(title=title, description=desc)
+
+            def _on_import_confirm(confirmed: Optional[bool]) -> None:
+                if confirmed:
+                    self._execute_import_artifact(artifact_id, rel_target)
+
+            if self.is_mounted and hasattr(self, "app") and self.app:
+                self.app.push_screen(modal, _on_import_confirm)
+
+        elif key == "a":
+            # Apply Patch action
+            from kin.tui.local_state import preview_patch_action
+            preview, rec_err = preview_patch_action(self.profile_dir, artifact_id=artifact_id, relative_target_path=rel_target)
+
+            unified_diff = preview.unified_diff if preview else "--- a/target\n+++ b/target\n@@ -1 +1 @@\n-old\n+new"
+            modal = PatchApplyConfirmModal(
+                artifact_id=artifact_id,
+                relative_target_path=rel_target,
+                unified_diff=unified_diff,
+            )
+
+            def _on_patch_confirm(confirmed: Optional[bool]) -> None:
+                if confirmed:
+                    self._execute_apply_patch(artifact_id, rel_target)
+
+            if self.is_mounted and hasattr(self, "app") and self.app:
+                self.app.push_screen(modal, _on_patch_confirm)
+
+    def _execute_import_artifact(self, artifact_id: str, relative_target_path: str) -> None:
+        from kin.tui.local_state import import_artifact_action
+        success, rec_err = import_artifact_action(
+            self.profile_dir,
+            session_id=self.session_id or "",
+            artifact_id=artifact_id,
+            relative_target_path=relative_target_path,
+            profile_name=self.profile_name,
+        )
+        if success:
+            msg = f"Imported artifact '{artifact_id[:8]}' into '{relative_target_path}'."
+            if self.is_mounted and hasattr(self, "app") and self.app and getattr(self.app, "status_bar", None):
+                self.app.status_bar.status_message = msg
+                self.app.status_bar.refresh()
+            self.load_arena_data()
+            self.refresh()
+        elif rec_err and self.is_mounted and hasattr(self, "app") and self.app:
+            self.last_arena_error = rec_err
+            self.set_lifecycle_state(WidgetLifecycleState.RECOVERABLE_ERROR)
+
+    def _execute_apply_patch(self, artifact_id: str, relative_target_path: str) -> None:
+        from kin.tui.local_state import apply_patch_action
+        success, rec_err = apply_patch_action(
+            self.profile_dir,
+            session_id=self.session_id or "",
+            artifact_id=artifact_id,
+            relative_target_path=relative_target_path,
+            profile_name=self.profile_name,
+        )
+        if success:
+            msg = f"Applied patch '{artifact_id[:8]}' to '{relative_target_path}'."
+            if self.is_mounted and hasattr(self, "app") and self.app and getattr(self.app, "status_bar", None):
+                self.app.status_bar.status_message = msg
+                self.app.status_bar.refresh()
+            self.load_arena_data()
+            self.refresh()
+        elif rec_err and self.is_mounted and hasattr(self, "app") and self.app:
+            self.last_arena_error = rec_err
+            self.set_lifecycle_state(WidgetLifecycleState.RECOVERABLE_ERROR)
             self.refresh()
 
     def on_resize(self, event: Resize) -> None:
@@ -383,6 +472,12 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         # 1. Needs-You Approval Actions (checked first to prevent key collision on 'e' with activity lane switch)
         if self.active_lane == "needs_you" and k in ("a", "d", "e", "b"):
             self.handle_approval_key(k)
+            event.stop()
+            return
+
+        # 2. Outputs Lane Artifact Actions ('v' import, 'a' apply patch)
+        if self.active_lane == "outputs" and k in ("v", "a"):
+            self.handle_artifact_key(k)
             event.stop()
             return
 

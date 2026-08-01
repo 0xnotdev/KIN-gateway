@@ -9,7 +9,7 @@ import logging
 import os
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -1243,5 +1243,276 @@ def get_approvals_for_session(
 
             views.append(ApprovalView(request=req_obj, decision=dec_obj))
         return views
+    finally:
+        conn.close()
+
+
+def get_agent_card_by_id(profile_dir: Path, agent_id: str, profile_name: str = "default") -> Optional[Any]:
+    """Load AgentCard by agent_id from profile's agents directory."""
+    from kin.agent_registry.registry import scan_local_cards
+    agents_dir = profile_dir / "agents"
+    valid_cards, _, _ = scan_local_cards(agents_dir, profile_name=profile_name)
+    for card in valid_cards:
+        if card.id == agent_id:
+            return card
+    return None
+
+
+def import_artifact_action(
+    profile_dir: Path,
+    profile_name: str = "default",
+    *,
+    session_id: str,
+    artifact_id: str,
+    relative_target_path: str,
+    workspace_root: Optional[Union[str, Path]] = None,
+) -> Tuple[bool, Optional[RecoverableError]]:
+    """Import raw artifact bytes into the workspace target path with owner permission check (§14.8 Phase D)."""
+    from kin.artifacts.workspace import (
+        import_artifact_to_workspace,
+        UnsafeWorkspacePathError,
+        WorkspaceNotConfiguredError,
+        WorkspaceWritePermissionDeniedError,
+        InvalidPatchArtifactError,
+    )
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.tui.errors import convert_exception_to_recoverable_error
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return False, RecoverableError(
+            what_happened="Database not found",
+            impact="Cannot verify artifact session ownership.",
+            preserved="No workspace files modified.",
+            next_action="Ensure profile database exists.",
+        )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT session_id FROM artifacts WHERE artifact_id = ?", (artifact_id,))
+        row = cur.fetchone()
+        if not row or row[0] != session_id:
+            return False, RecoverableError(
+                what_happened=f"Artifact ownership mismatch: '{artifact_id}' does not belong to session '{session_id}'.",
+                impact="Import rejected for session boundary security.",
+                preserved="No workspace files modified.",
+                next_action="Select an artifact belonging to the active session.",
+            )
+
+        cur.execute("SELECT receiver_username, initiator_username FROM sessions WHERE session_id = ?", (session_id,))
+        s_row = cur.fetchone()
+        agent_id = s_row[0] if s_row else "default_agent"
+
+        card = get_agent_card_by_id(profile_dir, agent_id, profile_name=profile_name)
+        if not card:
+            from kin.schemas import AgentCard, LocalCommandAdapterConfig, AgentCapabilities, AgentBoundaries, AgentAutonomy
+            card = AgentCard(
+                schema_version="1.1",
+                id=agent_id,
+                name=agent_id,
+                description=f"Agent {agent_id}",
+                capabilities=AgentCapabilities(),
+                adapter=LocalCommandAdapterConfig(type="local_command", command="echo", working_directory=str(workspace_root or (profile_dir / "workspace"))),
+                boundaries=AgentBoundaries(max_runtime_seconds=300, max_artifact_bytes=1048576, filesystem="workspace_read_write_with_approval"),
+                autonomy=AgentAutonomy(),
+            )
+
+        vault_key = get_or_create_vault_key(profile_name)
+        now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        target_root = workspace_root or (profile_dir / "workspace")
+
+        import_artifact_to_workspace(
+            conn,
+            vault_key,
+            card,
+            session_id,
+            artifact_id,
+            target_root,
+            relative_target_path,
+            now_iso,
+        )
+        return True, None
+
+    except UnsafeWorkspacePathError as exc:
+        return False, RecoverableError(
+            what_happened=f"Unsafe Workspace Path Error: {exc}",
+            impact="Import halted to prevent path traversal.",
+            preserved="Target workspace remains intact.",
+            next_action="Provide a valid relative target path inside the workspace root.",
+        )
+    except WorkspaceNotConfiguredError as exc:
+        return False, RecoverableError(
+            what_happened=f"Workspace Not Configured Error: {exc}",
+            impact="Import halted because agent adapter has no workspace working directory.",
+            preserved="Target workspace remains intact.",
+            next_action="Configure local_command adapter working_directory.",
+        )
+    except WorkspaceWritePermissionDeniedError as exc:
+        return False, RecoverableError(
+            what_happened=f"Workspace Write Permission Denied: {exc}",
+            impact="Import action requires prior owner approval.",
+            preserved="Target workspace remains intact.",
+            next_action="Submit an approval decision in the Needs-You queue first.",
+        )
+    except InvalidPatchArtifactError as exc:
+        return False, RecoverableError(
+            what_happened=f"Invalid Patch Artifact Error: {exc}",
+            impact="Artifact file format invalid.",
+            preserved="Target workspace remains intact.",
+            next_action="Verify artifact content.",
+        )
+    except Exception as exc:
+        rec_err = convert_exception_to_recoverable_error(exc, profile_dir)
+        return False, rec_err
+    finally:
+        conn.close()
+
+
+def apply_patch_action(
+    profile_dir: Path,
+    profile_name: str = "default",
+    *,
+    session_id: str,
+    artifact_id: str,
+    relative_target_path: str,
+    workspace_root: Optional[Union[str, Path]] = None,
+) -> Tuple[bool, Optional[RecoverableError]]:
+    """Apply a unified diff patch artifact to a workspace target file with owner permission check (§14.8 Phase D)."""
+    from kin.artifacts.workspace import (
+        apply_patch_to_workspace,
+        UnsafeWorkspacePathError,
+        WorkspaceNotConfiguredError,
+        WorkspaceWritePermissionDeniedError,
+        InvalidPatchArtifactError,
+    )
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.tui.errors import convert_exception_to_recoverable_error
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return False, RecoverableError(
+            what_happened="Database not found",
+            impact="Cannot verify artifact session ownership.",
+            preserved="No workspace files modified.",
+            next_action="Ensure profile database exists.",
+        )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT session_id FROM artifacts WHERE artifact_id = ?", (artifact_id,))
+        row = cur.fetchone()
+        if not row or row[0] != session_id:
+            return False, RecoverableError(
+                what_happened=f"Artifact ownership mismatch: '{artifact_id}' does not belong to session '{session_id}'.",
+                impact="Patch apply rejected for session boundary security.",
+                preserved="No workspace files modified.",
+                next_action="Select an artifact belonging to the active session.",
+            )
+
+        cur.execute("SELECT receiver_username, initiator_username FROM sessions WHERE session_id = ?", (session_id,))
+        s_row = cur.fetchone()
+        agent_id = s_row[0] if s_row else "default_agent"
+
+        card = get_agent_card_by_id(profile_dir, agent_id, profile_name=profile_name)
+        if not card:
+            from kin.schemas import AgentCard, LocalCommandAdapterConfig, AgentCapabilities, AgentBoundaries, AgentAutonomy
+            card = AgentCard(
+                schema_version="1.1",
+                id=agent_id,
+                name=agent_id,
+                description=f"Agent {agent_id}",
+                capabilities=AgentCapabilities(),
+                adapter=LocalCommandAdapterConfig(type="local_command", command="echo", working_directory=str(workspace_root or (profile_dir / "workspace"))),
+                boundaries=AgentBoundaries(max_runtime_seconds=300, max_artifact_bytes=1048576, filesystem="workspace_read_write_with_approval"),
+                autonomy=AgentAutonomy(),
+            )
+
+        vault_key = get_or_create_vault_key(profile_name)
+        now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        target_root = workspace_root or (profile_dir / "workspace")
+
+        apply_patch_to_workspace(
+            conn,
+            vault_key,
+            card,
+            session_id,
+            artifact_id,
+            target_root,
+            relative_target_path,
+            now_iso,
+        )
+        return True, None
+
+    except UnsafeWorkspacePathError as exc:
+        return False, RecoverableError(
+            what_happened=f"Unsafe Workspace Path Error: {exc}",
+            impact="Patch application halted to prevent path traversal.",
+            preserved="Target workspace remains intact.",
+            next_action="Provide a valid relative target path inside the workspace root.",
+        )
+    except WorkspaceNotConfiguredError as exc:
+        return False, RecoverableError(
+            what_happened=f"Workspace Not Configured Error: {exc}",
+            impact="Patch application halted because agent adapter has no workspace working directory.",
+            preserved="Target workspace remains intact.",
+            next_action="Configure local_command adapter working_directory.",
+        )
+    except WorkspaceWritePermissionDeniedError as exc:
+        return False, RecoverableError(
+            what_happened=f"Workspace Write Permission Denied: {exc}",
+            impact="Patch application action requires prior owner approval.",
+            preserved="Target workspace remains intact.",
+            next_action="Submit an approval decision in the Needs-You queue first.",
+        )
+    except InvalidPatchArtifactError as exc:
+        return False, RecoverableError(
+            what_happened=f"Invalid Patch Artifact Error: {exc}",
+            impact="Target file content does not match patch context or deletion lines.",
+            preserved="Target workspace remains intact.",
+            next_action="Ensure target file is not stale or drifted.",
+        )
+    except Exception as exc:
+        rec_err = convert_exception_to_recoverable_error(exc, profile_dir)
+        return False, rec_err
+    finally:
+        conn.close()
+
+
+def preview_patch_action(
+    profile_dir: Path,
+    profile_name: str = "default",
+    *,
+    artifact_id: str,
+    relative_target_path: str,
+    workspace_root: Optional[Union[str, Path]] = None,
+) -> Tuple[Optional[Any], Optional[RecoverableError]]:
+    """Generate read-only preview of patch application without modifying disk (§14.8 Phase D)."""
+    from kin.artifacts.workspace import preview_patch_apply, InvalidPatchArtifactError, UnsafeWorkspacePathError
+    from kin.identity.storage import get_or_create_vault_key
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return None, RecoverableError(
+            what_happened="Database not found",
+            impact="Cannot load artifact.",
+            preserved="No workspace files modified.",
+            next_action="Ensure profile DB exists.",
+        )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        vault_key = get_or_create_vault_key(profile_name)
+        target_root = workspace_root or (profile_dir / "workspace")
+        preview = preview_patch_apply(conn, vault_key, artifact_id, target_root, relative_target_path)
+        return preview, None
+    except Exception as exc:
+        return None, RecoverableError(
+            what_happened=f"Patch preview error: {exc}",
+            impact="Cannot generate patch preview.",
+            preserved="No workspace files modified.",
+            next_action="Check patch artifact format.",
+        )
     finally:
         conn.close()
