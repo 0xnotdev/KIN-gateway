@@ -172,8 +172,9 @@ def test_polling_worker_uses_seen_event_ids_incremental_diffing(tmp_path):
     assert incremental[0].event_id == "e-102"
 
 
-def test_incremental_query_performance_and_rowcount_bounding(tmp_path):
+def test_incremental_query_performance_and_rowcount_bounding(tmp_path, monkeypatch):
     """Assert 5,000-event session with after_event_order & after_created_at cursors scans strictly new rows in SQL (§14.8 Phase C2 Round 2)."""
+    import sqlite3
     from kin.tui.local_state import ensure_profile_db, get_session_events
 
     db_path = tmp_path / "kin.db"
@@ -214,7 +215,54 @@ def test_incremental_query_performance_and_rowcount_bounding(tmp_path):
     conn.commit()
     conn.close()
 
-    # 4. Incremental fetch with cursors after_event_order=5000 & after_created_at="2026-08-01T12:00:00Z"
+    # 4. Instrument sqlite3.connect with a wrapper class to track raw_sql_rows_fetched from session_events/audit_events queries
+    session_event_rows_fetched = 0
+    audit_event_rows_fetched = 0
+    orig_connect = sqlite3.connect
+
+    class TrackingConnection:
+        def __init__(self, real_conn):
+            self._conn = real_conn
+
+        def cursor(self, *args, **kwargs):
+            real_cur = self._conn.cursor(*args, **kwargs)
+
+            class TrackingCursor:
+                def __init__(self, cur):
+                    self._cur = cur
+                    self.last_sql = ""
+
+                def execute(self, sql, *cargs, **ckwargs):
+                    self.last_sql = str(sql)
+                    return self._cur.execute(sql, *cargs, **ckwargs)
+
+                def fetchall(self):
+                    rows = self._cur.fetchall()
+                    if "session_events" in self.last_sql:
+                        nonlocal session_event_rows_fetched
+                        session_event_rows_fetched += len(rows)
+                    elif "audit_events" in self.last_sql:
+                        nonlocal audit_event_rows_fetched
+                        audit_event_rows_fetched += len(rows)
+                    return rows
+
+                def __getattr__(self, name):
+                    return getattr(self._cur, name)
+
+            return TrackingCursor(real_cur)
+
+        def close(self):
+            return self._conn.close()
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    def tracking_connect(*args, **kwargs):
+        real_conn = orig_connect(*args, **kwargs)
+        return TrackingConnection(real_conn)
+
+    monkeypatch.setattr(sqlite3, "connect", tracking_connect)
+
     incremental = get_session_events(
         tmp_path,
         "sess-5k",
@@ -223,7 +271,9 @@ def test_incremental_query_performance_and_rowcount_bounding(tmp_path):
         after_created_at=max_created,
     )
 
-    # Assert SQL fetch returned strictly the 3 new rows, NOT all 5,003 rows
+    # Assert session_events SQL query returned strictly 3 raw rows (not 5,003) and audit_events returned 0 raw rows
+    assert session_event_rows_fetched == 3
+    assert audit_event_rows_fetched == 0
     assert len(incremental) == 3
     assert [e.event_id for e in incremental] == ["e-new-1", "e-new-2", "e-new-3"]
 
