@@ -1052,44 +1052,24 @@ def dispatch_session(
     return {"session_id": session_id, "status": "delivered" if delivered else ("queued" if queued_at_relay else "sent")}
 
 
-def respond_to_session(
+def send_session_message(
     conn: sqlite3.Connection,
     vault_key: bytes,
     owner_identity_key: ed25519.Ed25519PrivateKey,
     owner_x25519_privkey: bytes,
     owner_username: str,
     session_id: str,
-    decision: Literal["accept", "decline", "clarify"],
-    accepting_agent_id: str | None = None,
-    reason_or_question: str | None = None,
+    kind: MessageKind,
+    payload: dict[str, Any],
+    actor_agent_id: str | None = None,
     peer_endpoint: str | None = None,
     relay_url: str | None = None,
     recipient_x25519_pubkey: bytes | None = None,
     now: datetime.datetime | None = None,
     http_client: httpx.Client | None = None,
 ) -> dict[str, Any]:
-    """Respond to a session proposal (ACCEPTANCE, DECLINE, CLARIFICATION)."""
+    """Construct, cryptographically sign, self-ingest, and deliver an envelope to a session peer (§14.8 Step 5/6)."""
     now_str = _iso_now(now)
-
-    if decision == "accept":
-        if not accepting_agent_id:
-            raise ValueError("accepting_agent_id is required when accepting a session.")
-        ag = get_card(conn, accepting_agent_id)
-        if not ag or not ag.get("enabled"):
-            raise ValueError(f"Agent '{accepting_agent_id}' does not exist or is disabled.")
-        if ag.get("availability") == AgentAvailability.POLICY_BLOCKED.value:
-            raise ValueError(f"Agent '{accepting_agent_id}' is policy blocked.")
-
-        kind = MessageKind.ACCEPTANCE
-        payload = {"accepting_agent_id": accepting_agent_id, "reason": reason_or_question or "Accepted"}
-    elif decision == "decline":
-        kind = MessageKind.DECLINE
-        payload = {"reason": reason_or_question or "Declined"}
-    elif decision == "clarify":
-        kind = MessageKind.CLARIFICATION
-        payload = {"question": reason_or_question or "Clarification requested"}
-    else:
-        raise ValueError(f"Unknown decision '{decision}'.")
 
     cur = conn.cursor()
     cur.execute("SELECT initiator_username, receiver_username FROM sessions WHERE session_id = ?", (session_id,))
@@ -1109,9 +1089,9 @@ def respond_to_session(
         "session_id": session_id,
         "sequence": seq,
         "actor_username": owner_username,
-        "actor_agent_id": accepting_agent_id or owner_username,
+        "actor_agent_id": actor_agent_id or owner_username,
         "timestamp": now_str,
-        "kind": kind.value,
+        "kind": kind.value if isinstance(kind, MessageKind) else str(kind),
         "content_hash": content_hash,
         "payload": payload,
     }
@@ -1125,7 +1105,7 @@ def respond_to_session(
 
     ack = ingest_envelope(conn, vault_key, env_dict, get_public_key_fn=get_pubkey, now=now)
     if ack.status == "rejected":
-        raise TransportError(f"Self-processing of response envelope rejected: {ack.error_message}")
+        raise TransportError(f"Self-processing of envelope rejected: {ack.error_message}")
 
     delivered = False
     queued_at_relay = False
@@ -1161,7 +1141,69 @@ def respond_to_session(
 
     return {
         "session_id": session_id,
-        "status": "queued" if queued_at_relay else "processed",
+        "status": "delivered" if delivered else ("queued" if queued_at_relay else "failed"),
+        "kind": kind.value if isinstance(kind, MessageKind) else str(kind),
+        "delivered": delivered,
+        "queued_at_relay": queued_at_relay,
+    }
+
+
+def respond_to_session(
+    conn: sqlite3.Connection,
+    vault_key: bytes,
+    owner_identity_key: ed25519.Ed25519PrivateKey,
+    owner_x25519_privkey: bytes,
+    owner_username: str,
+    session_id: str,
+    decision: Literal["accept", "decline", "clarify"],
+    accepting_agent_id: str | None = None,
+    reason_or_question: str | None = None,
+    peer_endpoint: str | None = None,
+    relay_url: str | None = None,
+    recipient_x25519_pubkey: bytes | None = None,
+    now: datetime.datetime | None = None,
+    http_client: httpx.Client | None = None,
+) -> dict[str, Any]:
+    """Respond to a session proposal (ACCEPTANCE, DECLINE, CLARIFICATION)."""
+    if decision == "accept":
+        if not accepting_agent_id:
+            raise ValueError("accepting_agent_id is required when accepting a session.")
+        ag = get_card(conn, accepting_agent_id)
+        if not ag or not ag.get("enabled"):
+            raise ValueError(f"Agent '{accepting_agent_id}' does not exist or is disabled.")
+        if ag.get("availability") == AgentAvailability.POLICY_BLOCKED.value:
+            raise ValueError(f"Agent '{accepting_agent_id}' is policy blocked.")
+
+        kind = MessageKind.ACCEPTANCE
+        payload = {"accepting_agent_id": accepting_agent_id, "reason": reason_or_question or "Accepted"}
+    elif decision == "decline":
+        kind = MessageKind.DECLINE
+        payload = {"reason": reason_or_question or "Declined"}
+    elif decision == "clarify":
+        kind = MessageKind.CLARIFICATION
+        payload = {"question": reason_or_question or "Clarification requested"}
+    else:
+        raise ValueError(f"Unknown decision '{decision}'.")
+
+    res = send_session_message(
+        conn=conn,
+        vault_key=vault_key,
+        owner_identity_key=owner_identity_key,
+        owner_x25519_privkey=owner_x25519_privkey,
+        owner_username=owner_username,
+        session_id=session_id,
+        kind=kind,
+        payload=payload,
+        actor_agent_id=accepting_agent_id or owner_username,
+        peer_endpoint=peer_endpoint,
+        relay_url=relay_url,
+        recipient_x25519_pubkey=recipient_x25519_pubkey,
+        now=now,
+        http_client=http_client,
+    )
+    return {
+        "session_id": session_id,
+        "status": "queued" if res.get("queued_at_relay") else "processed",
         "kind": kind.value,
     }
 

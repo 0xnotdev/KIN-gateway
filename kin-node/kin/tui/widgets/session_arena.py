@@ -28,6 +28,7 @@ from kin.tui.local_state import (
     get_stale_peer_card_count,
     pause_session,
     resume_session,
+    send_human_message_to_session_action,
 )
 from kin.tui.state import ApprovalView, ArtifactView, RecoverableError, SessionSummary, UiEvent
 from kin.tui.tokens import get_glyph
@@ -35,6 +36,7 @@ from kin.tui.widgets.activity_feed import ActivityFeedWidget
 from kin.tui.widgets.approval_card import ApprovalCardWidget
 from kin.tui.widgets.approval_modals import ApproveConfirmModal, DenyReasonModal, EditConstraintsModal, PatchApplyConfirmModal
 from kin.tui.widgets.artifact_list import ArtifactListWidget
+from kin.tui.widgets.compose_modal import ComposeMessageModal
 from kin.tui.widgets.exchange_timeline import ExchangeTimelineWidget
 from kin.tui.widgets.inspector import InspectorWidget
 from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
@@ -511,9 +513,12 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             self.open_session_state_menu()
             event.stop()
         elif k == "m":
-            if self.is_mounted and hasattr(self, "app") and self.app and getattr(self.app, "status_bar", None):
-                self.app.status_bar.status_message = "Compose message not yet available (Phase D2)."
-                self.app.status_bar.refresh()
+            if self.is_mounted and hasattr(self, "app") and self.app:
+                is_clarification = (self.session_summary.status in ("peer_review", "needs_clarification")) if self.session_summary else False
+                def _handle_compose_result(content: Optional[str]) -> None:
+                    if content and content.strip():
+                        self._dispatch_compose_message(content.strip())
+                self.app.push_screen(ComposeMessageModal(self.session_id, is_clarification=is_clarification), _handle_compose_result)
             event.stop()
         elif k == "r":
             if self.events:
@@ -600,6 +605,26 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             self.activity_feed_widget.events = self.exchange_timeline_widget.events
             self.selected_event = self.exchange_timeline_widget.get_selected_event()
             self.inspector_widget.selected_event = self.selected_event
+
+    def _dispatch_compose_message(self, message_text: str) -> None:
+        """Transmit composed message to session peer and update status bar (§14.8 Step 5/6)."""
+        ok, res, err = send_human_message_to_session_action(
+            profile_name=self.profile_name,
+            session_id=self.session_id,
+            message_text=message_text,
+            profile_dir=self.profile_dir,
+        )
+        if ok and res:
+            status = res.get("status", "sent")
+            msg = f"Message {status} to session '{self.session_id}'."
+            if self.is_mounted and hasattr(self, "app") and self.app and getattr(self.app, "status_bar", None):
+                self.app.status_bar.status_message = msg
+                self.app.status_bar.refresh()
+        elif err:
+            self.last_arena_error = err
+            if self.is_mounted and hasattr(self, "app") and self.app and getattr(self.app, "status_bar", None):
+                self.app.status_bar.status_message = f"Error: {err.what_happened}"
+                self.app.status_bar.refresh()
 
     def append_event(self, evt: UiEvent, now: Optional[Union[datetime, str, float]] = None) -> None:
         self.append_events([evt], now=now)

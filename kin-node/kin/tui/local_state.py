@@ -20,7 +20,7 @@ from kin.agent_registry.registry import scan_local_cards
 from kin.cli import DEFAULT_RELAY_URL, open_profile_db
 from kin.identity.fingerprint import compute_fingerprint
 from kin.identity.storage import load_private_key
-from kin.schemas import ActionClass, ApprovalRequest, RiskLabel
+from kin.schemas import ActionClass, ApprovalRequest, MessageKind, RiskLabel
 from kin.storage.db import create_schema
 from kin.tui.state import (
     AgentCardView,
@@ -902,6 +902,128 @@ def dispatch_new_session(
             impact="Outbound dispatch failed.",
             preserved="Draft session state preserved.",
             next_action="Check connection and try again.",
+            technical_detail=str(exc),
+        )
+    finally:
+        conn.close()
+
+
+def send_human_message_to_session_action(
+    profile_name: str,
+    session_id: str,
+    message_text: str,
+    profile_dir: Optional[Path] = None,
+    relay_url: Optional[str] = None,
+    http_client: Optional[httpx.Client] = None,
+    now: Optional[datetime] = None,
+) -> tuple[bool, Optional[dict[str, Any]], Optional[RecoverableError]]:
+    """Compose and transmit a human-authored message to a session peer (§14.8 Step 5/6).
+    
+    1. Loads real owner identity keys (Ed25519 and X25519) from vault/keychain via load_private_key/load_x25519_private_key.
+       Fails with clear RecoverableError if keys are unavailable (NO synthetic key fallbacks).
+    2. Opens kin.db.
+    3. Checks session status:
+       - If status is 'needs_clarification' or 'peer_review', routes through respond_to_session(decision="clarify").
+       - If status is 'active', routes through send_session_message(kind=MessageKind.QUESTION).
+    4. Cryptographically signs envelope, ingests locally, and delivers directly via HTTP or queues to Relay Mailbox.
+    """
+    if not message_text or not message_text.strip():
+        return False, None, RecoverableError(
+            what_happened="Message text cannot be empty.",
+            impact="Compose action cancelled.",
+            preserved="No changes made.",
+            next_action="Enter message content before sending.",
+        )
+
+    p_dir = profile_dir or (Path.home() / ".kin" / "profiles" / profile_name)
+    ok, own_username, _ = get_local_identity_info(profile_name, p_dir)
+    if not ok or not own_username:
+        return False, None, RecoverableError(
+            what_happened="Local identity key not initialized.",
+            impact="Cannot sign outbound session message.",
+            preserved="Draft content preserved in modal.",
+            next_action="Run First Flight setup to generate identity key.",
+        )
+
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+        from kin.identity.storage import get_or_create_vault_key, load_private_key, load_x25519_private_key
+        vault_key = get_or_create_vault_key(profile_name)
+        raw_ed_bytes = load_private_key(profile_name)
+        ed_priv = ed25519.Ed25519PrivateKey.from_private_bytes(raw_ed_bytes)
+        x255_priv = load_x25519_private_key(profile_name)
+    except Exception as exc:
+        return False, None, RecoverableError(
+            what_happened="Failed to load private identity keys.",
+            impact="Cannot encrypt or sign outbound message.",
+            preserved="Draft content preserved in modal.",
+            next_action="Check profile permissions and vault key.",
+            technical_detail=str(exc),
+        )
+
+    db_path = p_dir / "kin.db"
+    conn = ensure_profile_db(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
+        row = cur.fetchone()
+        if not row:
+            return False, None, RecoverableError(
+                what_happened=f"Session '{session_id}' not found.",
+                impact="Cannot send message to non-existent session.",
+                preserved="No changes made.",
+                next_action="Select a valid active session.",
+            )
+        status = row[0]
+
+        r_url = relay_url or os.environ.get("KIN_RELAY_URL", DEFAULT_RELAY_URL)
+        from kin.transport.v11 import respond_to_session, send_session_message
+
+        if status in ("peer_review", "needs_clarification"):
+            res = respond_to_session(
+                conn=conn,
+                vault_key=vault_key,
+                owner_identity_key=ed_priv,
+                owner_x25519_privkey=x255_priv,
+                owner_username=own_username,
+                session_id=session_id,
+                decision="clarify",
+                reason_or_question=message_text.strip(),
+                relay_url=r_url,
+                now=now,
+                http_client=http_client,
+            )
+        else:
+            payload = {"message": message_text.strip(), "question": message_text.strip()}
+            res = send_session_message(
+                conn=conn,
+                vault_key=vault_key,
+                owner_identity_key=ed_priv,
+                owner_x25519_privkey=x255_priv,
+                owner_username=own_username,
+                session_id=session_id,
+                kind=MessageKind.QUESTION,
+                payload=payload,
+                relay_url=r_url,
+                now=now,
+                http_client=http_client,
+            )
+
+        if res.get("status") == "failed":
+            return False, None, RecoverableError(
+                what_happened="Failed to deliver message to peer.",
+                impact="Outbound message delivery failed (peer endpoint unreachable & relay queue failed).",
+                preserved="Message saved locally in draft state.",
+                next_action="Check network connectivity and peer endpoint.",
+            )
+
+        return True, res, None
+    except Exception as exc:
+        return False, None, RecoverableError(
+            what_happened="Error sending session message.",
+            impact="Outbound message failed.",
+            preserved="Draft content preserved.",
+            next_action="Check logs and try again.",
             technical_detail=str(exc),
         )
     finally:
