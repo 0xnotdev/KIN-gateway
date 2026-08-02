@@ -113,6 +113,7 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
         warn = self._c("state.waiting", "#e0af68")
         accent2 = self._c("accent.secondary", "#9d7cd8")
         highlight = self._c("accent.highlight", "#7aa2f7")
+        text_pri = self._c("text.primary", "#e1e2e7")
 
         if self.lifecycle_state == WidgetLifecycleState.LOADING:
             return Panel("[dim]Loading Home Dashboard...[/dim]", title="Home", border_style="cyan")

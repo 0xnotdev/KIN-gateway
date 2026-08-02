@@ -24,7 +24,14 @@ from kin.tui.persistence import (
     save_ui_preferences,
 )
 from kin.tui.shell import ConfirmationModal, Inspector, MainCanvas, Sidebar, StatusBar, WorkspaceTabBar
-from kin.tui.tokens import resolve_theme
+from kin.tui.tokens import (
+    GLYPH_REGISTRY,
+    RECOGNIZED_THEME_NAMES,
+    resolve_theme,
+    Theme,
+)
+from kin.tui.theme_yaml import load_theme_yaml_override
+from kin.tui.state import RecoverableError
 from kin.tui.widgets import WidgetLifecycleState
 from kin.tui.widgets.compose_modal import ComposeMessageModal
 from kin.tui.widgets.session_arena import SessionArenaWidget
@@ -78,6 +85,9 @@ class KinApp(App[None]):
         self.transient_reduced_motion: bool = False
         self.latency_breach_count: int = 0
 
+        # Operational error state (§10.3)
+        self.active_error: Optional[RecoverableError] = None
+
         # Command Palette candidate index (§5.4)
         self.command_index: List[CommandItem] = [
             CommandItem("dispatch", "Dispatch a collaboration", "Actions", "d", recent=True),
@@ -88,6 +98,11 @@ class KinApp(App[None]):
             CommandItem("help", "Contextual help", "System", "?"),
             CommandItem("guide", "Open kin guide", "System"),
             CommandItem("theme_graphite", "Change theme: KIN Graphite", "Settings"),
+            CommandItem("theme_night", "Change theme: KIN Night", "Settings"),
+            CommandItem("theme_nord", "Change theme: Nord", "Settings"),
+            CommandItem("theme_dracula", "Change theme: Dracula", "Settings"),
+            CommandItem("theme_catppuccin", "Change theme: Catppuccin Mocha", "Settings"),
+            CommandItem("theme_high_contrast", "Change theme: High Contrast", "Settings"),
             CommandItem("cancel_archive", "Cancel / Archive active work", "Actions", "x", consequential=True),
         ]
 
@@ -97,12 +112,45 @@ class KinApp(App[None]):
         return bool(self.prefs.reduced_motion or self.transient_reduced_motion)
 
     def set_theme(self, theme_name: str) -> None:
-        """Live non-teardown theme transition preserving widget DOM, focus, and scroll state (§14.9 Phase B)."""
+        """Live non-teardown theme transition preserving widget DOM, focus, and scroll state (§14.9 Phase B).
+
+        If theme_name is invalid/unrecognized:
+        - Retains current theme (no fallback overwriting current theme)
+        - Surfaces a clear RecoverableError
+        """
         resolution = resolve_theme(theme_name)
+        if resolution.is_fallback and theme_name != "kin-graphite" and theme_name not in RECOGNIZED_THEME_NAMES:
+            err = RecoverableError(
+                what_happened=f"Invalid theme name '{theme_name}'.",
+                impact=f"Theme was not updated. Retained active theme '{self.requested_theme}'.",
+                preserved=f"Active theme '{self.requested_theme}' remains active.",
+                next_action=f"Valid themes: {', '.join(sorted(list(RECOGNIZED_THEME_NAMES)))}",
+                technical_detail=resolution.fallback_reason,
+            )
+            self.active_error = err
+            return
+
+        self.active_error = None
         self.theme_tokens = resolution.theme
         self.requested_theme = resolution.requested_name
         self.is_theme_fallback = resolution.is_fallback
         self.prefs.theme = theme_name
+        save_ui_preferences(self.prefs, self.profile_name)
+
+        # Non-teardown refresh on all mounted regions
+        self.canvas.refresh(layout=False)
+        self.sidebar.refresh(layout=False)
+        self.status_bar.refresh(layout=False)
+        self.inspector.refresh(layout=False)
+        self.tab_bar.refresh(layout=False)
+
+    def set_custom_theme(self, theme: Theme) -> None:
+        """Live theme transition for a custom Theme object (§14.9 Phase A)."""
+        self.active_error = None
+        self.theme_tokens = theme
+        self.requested_theme = theme.name
+        self.is_theme_fallback = False
+        self.prefs.theme = theme.name
         save_ui_preferences(self.prefs, self.profile_name)
 
         # Non-teardown refresh on all mounted regions
@@ -240,7 +288,18 @@ class KinApp(App[None]):
         """Open Command Palette modal overlay (Ctrl+K)."""
         def handle_selected(item: Optional[CommandItem]) -> None:
             if item:
-                if item.command_id.startswith("colon:"):
+                if item.command_id.startswith("theme_"):
+                    theme_map = {
+                        "theme_graphite": "kin-graphite",
+                        "theme_night": "kin-night",
+                        "theme_nord": "nord",
+                        "theme_dracula": "dracula",
+                        "theme_catppuccin": "catppuccin-mocha",
+                        "theme_high_contrast": "high-contrast",
+                    }
+                    target_theme = theme_map.get(item.command_id, item.command_id[6:])
+                    self.set_theme(target_theme)
+                elif item.command_id.startswith("colon:"):
                     self.execute_colon_command(item.title)
                 elif item.consequential:
                     self.gate_consequential_action(item.title, "selected target")
@@ -257,12 +316,40 @@ class KinApp(App[None]):
         arg_str = parts[1] if len(parts) > 1 else ""
 
         if cmd_name == "theme":
-            res = resolve_theme(arg_str)
-            self.theme_tokens = res.theme
-            self.prefs.theme = res.requested_name
-            save_ui_preferences(self.prefs, self.profile_name)
-            self.status_bar.status_message = f"Theme updated to '{res.requested_name}'."
-            self.status_bar.refresh()
+            if not arg_str or arg_str not in RECOGNIZED_THEME_NAMES:
+                err = RecoverableError(
+                    what_happened=f"Invalid theme name '{arg_str}'.",
+                    impact=f"Theme was not updated. Retained active theme '{self.requested_theme}'.",
+                    preserved=f"Active theme '{self.requested_theme}' remains active.",
+                    next_action=f"Valid theme names: {', '.join(sorted(list(RECOGNIZED_THEME_NAMES)))}",
+                    technical_detail=f"Requested: '{arg_str}', Recognized: {sorted(list(RECOGNIZED_THEME_NAMES))}",
+                )
+                self.active_error = err
+                self.status_bar.status_message = f"Invalid theme '{arg_str}' — retained '{self.requested_theme}'."
+                self.status_bar.refresh()
+            else:
+                self.active_error = None
+                self.set_theme(arg_str)
+                self.status_bar.status_message = f"Theme updated to '{arg_str}'."
+                self.status_bar.refresh()
+        elif cmd_name == "theme-yaml":
+            try:
+                custom_theme = load_theme_yaml_override(arg_str)
+                self.active_error = None
+                self.set_custom_theme(custom_theme)
+                self.status_bar.status_message = f"Custom theme '{custom_theme.name}' applied from YAML."
+                self.status_bar.refresh()
+            except Exception as exc:
+                err = RecoverableError(
+                    what_happened="Theme YAML validation error.",
+                    impact=f"YAML override rejected. Retained active theme '{self.requested_theme}'.",
+                    preserved=f"Active theme '{self.requested_theme}' remains active.",
+                    next_action="Fix YAML file (must contain only known semantic tokens and valid hex colors).",
+                    technical_detail=str(exc),
+                )
+                self.active_error = err
+                self.status_bar.status_message = f"Theme YAML error — retained '{self.requested_theme}'."
+                self.status_bar.refresh()
         elif cmd_name == "open":
             self.tab_manager.open_tab(f"open:{arg_str}", arg_str.title(), "search")
             self.sync_tab_bar()
