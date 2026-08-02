@@ -33,7 +33,7 @@
     }
 
     .terminal-r1 { fill: #c5c8c6 }
-.terminal-r2 { fill: #00ffff;font-weight: bold }
+.terminal-r2 { fill: #bb9af7;font-weight: bold }
 .terminal-r3 { fill: #e1e1e1 }
 .terminal-r4 { fill: #fea62b }
 .terminal-r5 { fill: #0053aa }
@@ -56,9 +56,9 @@
 .terminal-r22 { fill: #58d1eb }
 .terminal-r23 { fill: #98e024 }
 .terminal-r24 { fill: #9d65ff;font-weight: bold;font-style: italic; }
-.terminal-r25 { fill: #ff0000 }
-.terminal-r26 { fill: #008000 }
-.terminal-r27 { fill: #ffff00 }
+.terminal-r25 { fill: #f7768e }
+.terminal-r26 { fill: #73daca }
+.terminal-r27 { fill: #e0af68 }
     </style>
 
     <defs>

@@ -103,7 +103,7 @@ class KinApp(App[None]):
         self.requested_theme = resolution.requested_name
         self.is_theme_fallback = resolution.is_fallback
         self.prefs.theme = theme_name
-        save_ui_preferences(self.profile_name, self.prefs)
+        save_ui_preferences(self.prefs, self.profile_name)
 
         # Non-teardown refresh on all mounted regions
         self.canvas.refresh(layout=False)
@@ -202,7 +202,7 @@ class KinApp(App[None]):
     # ═══════════════════════════════════════════════════════════════════
     # Esc Priority Chain (§4, §14.4)
     # ═══════════════════════════════════════════════════════════════════
-    def action_action_handle_escape(self) -> None:
+    def action_handle_escape(self) -> None:
         """Exact 3-stage Esc priority chain:
 
         Stage 1: Clear active search/filter if active.
@@ -236,7 +236,7 @@ class KinApp(App[None]):
     # ═══════════════════════════════════════════════════════════════════
     # Command Palette, Quick Switcher, & Help Overlays
     # ═══════════════════════════════════════════════════════════════════
-    def action_action_command_palette(self) -> None:
+    def action_command_palette(self) -> None:
         """Open Command Palette modal overlay (Ctrl+K)."""
         def handle_selected(item: Optional[CommandItem]) -> None:
             if item:
@@ -269,7 +269,7 @@ class KinApp(App[None]):
         elif cmd_name == "quit":
             self.exit(0)
 
-    def action_action_quick_switcher(self) -> None:
+    def action_quick_switcher(self) -> None:
         """Open Quick Switcher modal overlay (Ctrl+P) (§A3)."""
         from kin.tui.local_state import get_all_agent_summaries, get_local_contacts_summaries
 
@@ -306,75 +306,75 @@ class KinApp(App[None]):
 
         self.push_screen(QuickSwitcherModal(candidates), handle_selected)
 
-    def action_action_toggle_help(self) -> None:
+    def action_toggle_help(self) -> None:
         """Toggle Contextual Help overlay screen (?)."""
         self.push_screen(HelpOverlayScreen())
 
     # ═══════════════════════════════════════════════════════════════════
     # Tab Lifecycle Navigation (§4.1, §4.2)
     # ═══════════════════════════════════════════════════════════════════
-    def action_action_open_dispatch(self) -> None:
+    def action_open_dispatch(self) -> None:
         ok, msg = self.tab_manager.open_tab("dispatch:draft", "Dispatch", "dispatch")
         self.sync_tab_bar()
         if msg:
             self.status_bar.status_message = msg
             self.status_bar.refresh()
 
-    def action_action_open_agents(self) -> None:
+    def action_open_agents(self) -> None:
         ok, msg = self.tab_manager.open_tab("agents", "Agents", "agents", singleton=True)
         self.sync_tab_bar()
         if msg:
             self.status_bar.status_message = msg
             self.status_bar.refresh()
 
-    def action_action_open_network(self) -> None:
+    def action_open_network(self) -> None:
         ok, msg = self.tab_manager.open_tab("network", "Network", "network", singleton=True)
         self.sync_tab_bar()
         if msg:
             self.status_bar.status_message = msg
             self.status_bar.refresh()
 
-    def action_action_open_inbox(self) -> None:
+    def action_open_inbox(self) -> None:
         ok, msg = self.tab_manager.open_tab("inbox", "Inbox", "inbox", singleton=True)
         self.sync_tab_bar()
         if msg:
             self.status_bar.status_message = msg
             self.status_bar.refresh()
 
-    def action_action_open_approvals(self) -> None:
+    def action_open_approvals(self) -> None:
         ok, msg = self.tab_manager.open_tab("inbox", "Inbox", "inbox", singleton=True)
         self.sync_tab_bar()
 
-    def action_action_help(self) -> None:
+    def action_help(self) -> None:
         self.push_screen(HelpOverlayScreen())
 
     def action_open_guide(self) -> None:
         from kin.tui.guide import GuideOverlayScreen
         self.push_screen(GuideOverlayScreen())
 
-    def action_action_next_tab(self) -> None:
+    def action_next_tab(self) -> None:
         self.tab_manager.cycle_tab(+1)
         self.sync_tab_bar()
 
-    def action_action_prev_tab(self) -> None:
+    def action_prev_tab(self) -> None:
         self.tab_manager.cycle_tab(-1)
         self.sync_tab_bar()
 
-    def action_action_close_tab(self) -> None:
+    def action_close_tab(self) -> None:
         ok, msg = self.tab_manager.close_tab()
         self.sync_tab_bar()
         if msg:
             self.status_bar.status_message = msg
             self.status_bar.refresh()
 
-    def action_action_reopen_tab(self) -> None:
+    def action_reopen_tab(self) -> None:
         ok, msg = self.tab_manager.reopen_last_tab()
         self.sync_tab_bar()
         if msg:
             self.status_bar.status_message = msg
             self.status_bar.refresh()
 
-    def action_action_save_draft(self) -> None:
+    def action_save_draft(self) -> None:
         active = self.tab_manager.get_active_tab()
         if active.kind == "dispatch":
             active.dirty = False
@@ -385,32 +385,31 @@ class KinApp(App[None]):
         if self.tab_manager.jump_to_tab_index(idx):
             self.sync_tab_bar()
 
-    def action_action_jump_tab_1(self) -> None: self.jump_tab(1)
-    def action_action_jump_tab_2(self) -> None: self.jump_tab(2)
-    def action_action_jump_tab_3(self) -> None: self.jump_tab(3)
-    def action_action_jump_tab_4(self) -> None: self.jump_tab(4)
-    def action_action_jump_tab_5(self) -> None: self.jump_tab(5)
-    def action_action_jump_tab_6(self) -> None: self.jump_tab(6)
-    def action_action_jump_tab_7(self) -> None: self.jump_tab(7)
-    def action_action_jump_tab_8(self) -> None: self.jump_tab(8)
-    def action_action_jump_tab_9(self) -> None: self.jump_tab(9)
+    def action_jump_tab_1(self) -> None: self.jump_tab(1)
+    def action_jump_tab_2(self) -> None: self.jump_tab(2)
+    def action_jump_tab_3(self) -> None: self.jump_tab(3)
+    def action_jump_tab_4(self) -> None: self.jump_tab(4)
+    def action_jump_tab_5(self) -> None: self.jump_tab(5)
+    def action_jump_tab_6(self) -> None: self.jump_tab(6)
+    def action_jump_tab_7(self) -> None: self.jump_tab(7)
+    def action_jump_tab_8(self) -> None: self.jump_tab(8)
+    def action_jump_tab_9(self) -> None: self.jump_tab(9)
 
     def action_focus_prev(self) -> None: self.action_focus_previous()
-    def action_action_focus_prev(self) -> None: self.action_focus_previous()
 
-    def action_action_replay_item(self) -> None:
+    def action_replay_item(self) -> None:
         self.status_bar.status_message = "Replay not yet available."
         self.status_bar.refresh()
 
-    def action_action_fork_item(self) -> None:
+    def action_fork_item(self) -> None:
         self.status_bar.status_message = "Fork not yet available."
         self.status_bar.refresh()
 
-    def action_action_open_actions(self) -> None:
+    def action_open_actions(self) -> None:
         self.status_bar.status_message = "Actions menu not yet available."
         self.status_bar.refresh()
 
-    def action_action_smart_quit(self) -> None:
+    def action_smart_quit(self) -> None:
         """Smart Quit (§5.1): Quit only from Home; otherwise return Home cleanly."""
         active = self.tab_manager.get_active_tab()
         if active.kind == "home":
@@ -436,7 +435,7 @@ class KinApp(App[None]):
         except Exception:
             return self.canvas.get_session_arena_widget()
 
-    def action_action_lane_focus(self) -> None:
+    def action_lane_focus(self) -> None:
         arena = self._get_active_arena_widget()
         if arena:
             arena.toggle_focus_mode()
@@ -444,7 +443,7 @@ class KinApp(App[None]):
             self.status_bar.status_message = "Focus mode requires an active Session Arena tab."
             self.status_bar.refresh()
 
-    def action_action_lane_transcript(self) -> None:
+    def action_lane_transcript(self) -> None:
         arena = self._get_active_arena_widget()
         if arena:
             arena.switch_lane("transcript")
@@ -452,7 +451,7 @@ class KinApp(App[None]):
             self.status_bar.status_message = "Transcript lane requires an active Session Arena tab."
             self.status_bar.refresh()
 
-    def action_action_lane_activity(self) -> None:
+    def action_lane_activity(self) -> None:
         arena = self._get_active_arena_widget()
         if arena:
             arena.switch_lane("activity")
@@ -460,7 +459,7 @@ class KinApp(App[None]):
             self.status_bar.status_message = "Activity lane requires an active Session Arena tab."
             self.status_bar.refresh()
 
-    def action_action_lane_decisions(self) -> None:
+    def action_lane_decisions(self) -> None:
         arena = self._get_active_arena_widget()
         if arena:
             arena.switch_lane("decisions")
@@ -468,7 +467,7 @@ class KinApp(App[None]):
             self.status_bar.status_message = "Decisions lane requires an active Session Arena tab."
             self.status_bar.refresh()
 
-    def action_action_lane_needs_you(self) -> None:
+    def action_lane_needs_you(self) -> None:
         arena = self._get_active_arena_widget()
         if arena:
             arena.open_needs_you_lane()
@@ -476,7 +475,7 @@ class KinApp(App[None]):
             self.status_bar.status_message = "Needs-you lane requires an active Session Arena tab."
             self.status_bar.refresh()
 
-    def action_action_compose_message(self) -> None:
+    def action_compose_message(self) -> None:
         arena = self._get_active_arena_widget()
         if not arena:
             self.status_bar.status_message = "Compose message requires an active Session Arena tab."
@@ -515,7 +514,7 @@ class KinApp(App[None]):
 
         self.push_screen(ComposeMessageModal(session_id=session_id, peer_username=peer_username), handle_composed_message)
 
-    def action_action_session_state_menu(self) -> None:
+    def action_session_state_menu(self) -> None:
         arena = self._get_active_arena_widget()
         if arena:
             arena.open_session_state_menu()
@@ -526,19 +525,19 @@ class KinApp(App[None]):
     # ═══════════════════════════════════════════════════════════════════
     # Sidebar Tree Interaction (§4.3)
     # ═══════════════════════════════════════════════════════════════════
-    def action_action_cursor_down(self) -> None:
+    def action_cursor_down(self) -> None:
         self.sidebar.move_selection(+1)
 
-    def action_action_cursor_up(self) -> None:
+    def action_cursor_up(self) -> None:
         self.sidebar.move_selection(-1)
 
-    def action_action_cursor_top(self) -> None:
+    def action_cursor_top(self) -> None:
         self.sidebar.move_to_boundary(first=True)
 
-    def action_action_cursor_bottom(self) -> None:
+    def action_cursor_bottom(self) -> None:
         self.sidebar.move_to_boundary(first=False)
 
-    def action_action_focus_filter(self) -> None:
+    def action_focus_filter(self) -> None:
         """Focus SearchField widget in SidebarTree (§14.5)."""
         if hasattr(self.sidebar, "search_field"):
             self.sidebar.search_field.set_query("")
@@ -551,7 +550,7 @@ class KinApp(App[None]):
             self.sidebar.filter_query = ""
         self.sidebar.refresh()
 
-    def action_action_activate_selection(self) -> None:
+    def action_activate_selection(self) -> None:
         node = self.sidebar.get_selected_node()
         if not node:
             return
@@ -565,14 +564,14 @@ class KinApp(App[None]):
             self.tab_manager.open_tab(tab_id, node.title, kind)
             self.sync_tab_bar()
 
-    def action_action_preview_selection(self) -> None:
+    def action_preview_selection(self) -> None:
         node = self.sidebar.get_selected_node()
         if node:
             self.inspector.preview_item(node)
             self.status_bar.status_message = f"Previewing '{node.title}' in Inspector."
             self.status_bar.refresh()
 
-    def action_action_open_in_new_tab(self) -> None:
+    def action_open_in_new_tab(self) -> None:
         node = self.sidebar.get_selected_node()
         if node and node.kind == "item":
             self.tab_manager.open_tab(f"tab:{node.node_id}", node.title, "session")
@@ -581,7 +580,7 @@ class KinApp(App[None]):
     # ═══════════════════════════════════════════════════════════════════
     # Consequential Action Gate (§5.3, §14.4)
     # ═══════════════════════════════════════════════════════════════════
-    def action_action_consequential_action(self) -> None:
+    def action_consequential_action(self) -> None:
         node = self.sidebar.get_selected_node()
         target = node.title if node else "active session"
         self.gate_consequential_action("Cancel / Archive", target)

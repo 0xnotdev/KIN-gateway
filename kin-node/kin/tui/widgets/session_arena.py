@@ -525,54 +525,19 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             self.handle_artifact_key("v")
 
     def on_key(self, event: Key) -> None:
+        """Handle navigation keys with complex lane-dependent cursor logic.
+
+        Command keys (z, t, e, c, o, u, i, s, m, r, a, d, b, v) are handled
+        exclusively via BINDINGS → action_* methods. Only navigation keys
+        remain here because they require multi-branch cursor arithmetic that
+        doesn't map cleanly to a single Textual action.
+        """
         if self.lifecycle_state == WidgetLifecycleState.DISABLED:
             return
 
         k = event.key
 
-        # 1. Needs-You Approval Actions (checked first to prevent key collision on 'e' with activity lane switch)
-        if self.active_lane == "needs_you" and k in ("a", "d", "e", "b"):
-            self.handle_approval_key(k)
-            event.stop()
-            return
-
-        # 2. Outputs Lane Artifact Actions ('v' import, 'a' apply patch)
-        if self.active_lane == "outputs" and k in ("v", "a"):
-            self.handle_artifact_key(k)
-            event.stop()
-            return
-
-        if k == "z":
-            self.toggle_focus_mode()
-            event.stop()
-        elif k == "t":
-            self.switch_lane("transcript")
-            event.stop()
-        elif k == "e":
-            self.switch_lane("activity")
-            event.stop()
-        elif k == "c":
-            self.switch_lane("decisions")
-            event.stop()
-        elif k == "o":
-            self.switch_lane("outputs")
-            event.stop()
-        elif k == "u":
-            self.open_needs_you_lane()
-            event.stop()
-        elif k == "i":
-            self.toggle_inspector()
-            event.stop()
-        elif k == "s":
-            self.open_session_state_menu()
-            event.stop()
-        elif k == "m":
-            self.action_compose_message()
-            event.stop()
-        elif k == "r":
-            self.action_replay_item()
-            event.stop()
-        elif k in ("down", "j"):
+        if k in ("down", "j"):
             if self.active_lane in ("transcript", "decisions"):
                 self.exchange_timeline_widget.cursor_down()
                 self.selected_event = self.exchange_timeline_widget.get_selected_event()

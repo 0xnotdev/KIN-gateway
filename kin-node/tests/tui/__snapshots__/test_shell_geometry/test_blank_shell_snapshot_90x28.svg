@@ -33,7 +33,7 @@
     }
 
     .terminal-r1 { fill: #c5c8c6 }
-.terminal-r2 { fill: #00ffff;font-weight: bold }
+.terminal-r2 { fill: #bb9af7;font-weight: bold }
 .terminal-r3 { fill: #e1e1e1 }
 .terminal-r4 { fill: #fea62b }
 .terminal-r5 { fill: #0053aa }
@@ -53,7 +53,7 @@
 .terminal-r19 { fill: #8b8c81;font-weight: bold }
 .terminal-r20 { fill: #58d1eb }
 .terminal-r21 { fill: #98e024 }
-.terminal-r22 { fill: #008000 }
+.terminal-r22 { fill: #73daca }
     </style>
 
     <defs>

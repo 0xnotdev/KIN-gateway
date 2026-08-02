@@ -69,11 +69,19 @@ class WorkspaceTabBar(Static):
         self.tabs = ["home"]
         self.active_tab = "home"
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
+        accent = self._c("accent.primary", "#bb9af7")
         res = []
         for t in self.tabs:
             if t == self.active_tab:
-                res.append(f"[bold cyan]● {t}[/bold cyan]")
+                res.append(f"[bold {accent}]● {t}[/bold {accent}]")
             else:
                 res.append(f"[dim]○ {t}[/dim]")
         return " | ".join(res)
@@ -335,15 +343,25 @@ class Sidebar(Static):
         self.refresh()
         return True, msg
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
         if self.collapsed:
             return "●\n✓\n!\n→\n(1)"
+
+        accent = self._c("accent.primary", "#bb9af7")
+        warn = self._c("state.waiting", "#e0af68")
 
         vis = self.get_visible_nodes()
         lines = []
 
         if self.filter_query:
-            lines.append(f"[bold yellow]/ {self.filter_query}[/bold yellow]")
+            lines.append(f"[bold {warn}]/ {self.filter_query}[/bold {warn}]")
 
         for idx, node in enumerate(vis):
             is_selected = (idx == self.selected_index)
@@ -354,15 +372,15 @@ class Sidebar(Static):
                 arrow = "›" if is_col else "▼"
                 label = f"{arrow} [bold]{node.title}[/bold]"
                 if is_selected:
-                    lines.append(f"[bold cyan]{prefix}{label}[/bold cyan]")
+                    lines.append(f"[bold {accent}]{prefix}{label}[/bold {accent}]")
                 else:
                     lines.append(f"{prefix}{label}")
             else:  # item
-                badge_str = f" [bold yellow]({node.badge})[/bold yellow]" if node.badge else ""
+                badge_str = f" [bold {warn}]({node.badge})[/bold {warn}]" if node.badge else ""
                 detail_str = f" [dim]({node.detail})[/dim]" if node.detail else ""
 
                 if is_selected:
-                    lines.append(f"[bold cyan]{prefix}{node.glyph} {node.title}{badge_str}{detail_str}[/bold cyan]")
+                    lines.append(f"[bold {accent}]{prefix}{node.glyph} {node.title}{badge_str}{detail_str}[/bold {accent}]")
                 else:
                     lines.append(f"{prefix}{node.glyph} {node.title}{badge_str}{detail_str}")
 
@@ -572,20 +590,31 @@ class StatusBar(Static):
 
         self.refresh()
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
+        ok_color = self._c("state.live", "#73daca")
+        err_color = self._c("state.error", "#f7768e")
+        warn_color = self._c("state.waiting", "#e0af68")
+
         glyph_ok = get_glyph("✓", ascii_fallback=False)
         glyph_warn = get_glyph("!", ascii_fallback=False)
         glyph_live = get_glyph("●", ascii_fallback=False)
 
-        keychain_str = f"[green]{glyph_ok} key[/green]" if self.health.keychain_ok else f"[red]{glyph_warn} KEY[/red]"
-        identity_str = f"[green]{glyph_ok} id[/green]" if self.health.identity_ok else f"[red]{glyph_warn} ID[/red]"
-        relay_str = f"[green]{glyph_live} relay[/green]" if self.health.relay_reachable else f"[yellow]{glyph_warn} RELAY[/yellow]"
-        node_str = f"[green]{glyph_live} node[/green]" if self.health.node_reachable else f"[yellow]{glyph_warn} NODE[/yellow]"
+        keychain_str = f"[{ok_color}]{glyph_ok} key[/{ok_color}]" if self.health.keychain_ok else f"[{err_color}]{glyph_warn} KEY[/{err_color}]"
+        identity_str = f"[{ok_color}]{glyph_ok} id[/{ok_color}]" if self.health.identity_ok else f"[{err_color}]{glyph_warn} ID[/{err_color}]"
+        relay_str = f"[{ok_color}]{glyph_live} relay[/{ok_color}]" if self.health.relay_reachable else f"[{warn_color}]{glyph_warn} RELAY[/{warn_color}]"
+        node_str = f"[{ok_color}]{glyph_live} node[/{ok_color}]" if self.health.node_reachable else f"[{warn_color}]{glyph_warn} NODE[/{warn_color}]"
 
         inbox_str = f"inbox:{self.health.pending_inbox_count}"
 
         if self.health.degraded_reason:
-            msg = f" | [yellow]({self.health.degraded_reason})[/yellow]"
+            msg = f" | [{warn_color}]({self.health.degraded_reason})[/{warn_color}]"
         elif self.status_message:
             msg = f" | [dim]{self.status_message}[/dim]"
         else:

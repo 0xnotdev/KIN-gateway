@@ -32,12 +32,17 @@ class KeyBindingSpec:
 
     @property
     def target_action(self) -> str:
-        """Exact Textual action string for KinApp binding dispatch without hardcoded exception tuples (§14.4)."""
+        """Exact Textual action string for Binding dispatch (§14.4).
+
+        Textual's Binding resolution automatically prepends 'action_' when
+        looking up the handler method, so we must return the bare action name
+        (e.g. 'lane_focus' not 'action_lane_focus').
+        """
         if self.explicit_action:
-            return self.explicit_action
-        if self.action.startswith("action_"):
-            return self.action
-        return f"action_{self.action}"
+            # Strip action_ prefix if present for explicit overrides too
+            ea = self.explicit_action
+            return ea[len("action_"):] if ea.startswith("action_") else ea
+        return self.action
 
 
 # Central authoritative list of all registered keybindings (§5.1 - §5.3, including T1 geometry controls)
@@ -558,6 +563,16 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         section="arena",
         scope="arena",
         justification="Printable letter 'b' in Needs-you lane; yields to text input fields.",
+    ),
+    KeyBindingSpec(
+        key="v",
+        action="import_artifact",
+        label="Import Artifact (Outputs)",
+        priority=False,
+        suppressed_when_text_focused=True,
+        section="arena",
+        scope="arena",
+        justification="Printable letter 'v' in Outputs lane; yields to text input fields.",
     ),
 ]
 
