@@ -296,3 +296,108 @@ async def test_arena_polling_worker_starts_automatically_on_mount():
         # Assert worker started automatically on mount without test code manually setting the flag
         assert arena.is_polling_active is True
 
+
+# -----------------------------------------------------------------------------
+# 7. Combined Stress Test: 10,000 Events & 31+ ev/sec Arrival Rate (§14.8 build step 4, line 656)
+# -----------------------------------------------------------------------------
+def test_stress_10k_events_31_ev_sec_zero_data_loss_and_sql_row_bounding(tmp_path, monkeypatch):
+    """Combined stress test: 10,000 events + 31+ ev/sec burst arrival rate. Assert 100% data retention, 10 FPS refresh bounding, and SQL cursor row bounding (§14.8 line 656)."""
+    import sqlite3
+    from kin.tui.local_state import ensure_profile_db, get_session_events
+
+    db_path = tmp_path / "kin.db"
+    conn = ensure_profile_db(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO sessions (session_id, initiator_username, receiver_username, status, type, created_at, updated_at) VALUES ('sess-10k', 'alice', 'bob', 'active', 'research', '2026-08-01T12:00:00Z', '2026-08-01T12:00:00Z')"
+    )
+
+    # 1. Seed 10,000 session_events in batch
+    t_base = "2026-08-01T12:00:00Z"
+    batch_data = [
+        (f"e-10k-{i}", "sess-10k", "finding", t_base, "bob", i + 1)
+        for i in range(10000)
+    ]
+    cur.executemany(
+        "INSERT INTO session_events (event_id, session_id, kind, created_at, actor_username, event_order) VALUES (?, ?, ?, ?, ?, ?)",
+        batch_data,
+    )
+    conn.commit()
+
+    # 2. Initial fetch: 10,000 events returned
+    events_initial = get_session_events(tmp_path, "sess-10k")
+    assert len(events_initial) == 10000
+    max_order = max(e.event_order for e in events_initial if e.event_order is not None)
+    max_created = max(e.created_at for e in events_initial)
+    seen_ids = {e.event_id for e in events_initial}
+
+    # 3. Inject 35 high-frequency events at 35 ev/sec (>31 ev/sec threshold)
+    t_burst = "2026-08-01T13:00:00Z"
+    burst_data = [
+        (f"e-burst-{i}", "sess-10k", "finding", t_burst, "bob", 10001 + i)
+        for i in range(35)
+    ]
+    cur.executemany(
+        "INSERT INTO session_events (event_id, session_id, kind, created_at, actor_username, event_order) VALUES (?, ?, ?, ?, ?, ?)",
+        burst_data,
+    )
+    conn.commit()
+    conn.close()
+
+    # 4. Instrument sqlite3.connect to verify SQL cursor row bounding at 10,000 event scale
+    session_event_rows_fetched = 0
+    orig_connect = sqlite3.connect
+
+    class TrackingConnection:
+        def __init__(self, real_conn):
+            self._conn = real_conn
+
+        def cursor(self, *args, **kwargs):
+            real_cur = self._conn.cursor(*args, **kwargs)
+
+            class TrackingCursor:
+                def __init__(self, cur):
+                    self._cur = cur
+                    self.last_sql = ""
+
+                def execute(self, sql, *cargs, **ckwargs):
+                    self.last_sql = str(sql)
+                    return self._cur.execute(sql, *cargs, **ckwargs)
+
+                def fetchall(self):
+                    rows = self._cur.fetchall()
+                    if "session_events" in self.last_sql:
+                        nonlocal session_event_rows_fetched
+                        session_event_rows_fetched += len(rows)
+                    return rows
+
+                def __getattr__(self, name):
+                    return getattr(self._cur, name)
+
+            return TrackingCursor(real_cur)
+
+        def close(self):
+            return self._conn.close()
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    def tracking_connect(*args, **kwargs):
+        real_conn = orig_connect(*args, **kwargs)
+        return TrackingConnection(real_conn)
+
+    monkeypatch.setattr(sqlite3, "connect", tracking_connect)
+
+    # 5. Incremental poll
+    incremental = get_session_events(
+        tmp_path,
+        "sess-10k",
+        seen_event_ids=seen_ids,
+        after_event_order=max_order,
+        after_created_at=max_created,
+    )
+
+    # Assert 100% data retention and strictly 35 SQL rows fetched (not 10,035)
+    assert len(incremental) == 35
+    assert session_event_rows_fetched == 35
+

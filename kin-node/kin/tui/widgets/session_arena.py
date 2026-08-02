@@ -114,6 +114,8 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self.active_lane: str = "transcript"
         self.inspector_visible: bool = True
         self.selected_approval_index: int = 0
+        self.is_replay_mode: bool = False
+        self.replay_index: Optional[int] = None
 
         # Sub-widgets
         self.trust_strip_widget = TrustStripWidget()
@@ -514,9 +516,12 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
                 self.app.status_bar.refresh()
             event.stop()
         elif k == "r":
-            if self.is_mounted and hasattr(self, "app") and self.app and getattr(self.app, "status_bar", None):
-                self.app.status_bar.status_message = "Replay scrubber not yet available."
-                self.app.status_bar.refresh()
+            if self.events:
+                if self.is_replay_mode:
+                    self.exit_replay_mode()
+                else:
+                    self.enter_replay_mode()
+            self.refresh()
             event.stop()
         elif k in ("down", "j"):
             if self.active_lane in ("transcript", "decisions"):
@@ -546,6 +551,8 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             self.refresh()
             event.stop()
         elif k in ("G", "end"):
+            if self.is_replay_mode:
+                self.exit_replay_mode()
             if self.active_lane in ("transcript", "decisions"):
                 self.exchange_timeline_widget.jump_to_tail()
                 self.selected_event = self.exchange_timeline_widget.get_selected_event()
@@ -555,13 +562,44 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             self.refresh()
             event.stop()
 
-    def append_events(self, new_events: List[UiEvent], now: Optional[Union[datetime, str, float]] = None) -> None:
-        """Forward new events to ExchangeTimelineWidget and update selected inspector item (§14.8 Phase C2)."""
-        self.exchange_timeline_widget.append_events(new_events, now=now)
-        self.activity_feed_widget.events = self.exchange_timeline_widget.events
-        self.events = self.exchange_timeline_widget.events
+    def enter_replay_mode(self, target_index: Optional[int] = None) -> None:
+        """Enter read-only timeline replay mode (§14.8 Step 5)."""
+        if not self.events:
+            return
+        self.is_replay_mode = True
+        idx = target_index if target_index is not None else self.exchange_timeline_widget.selected_index
+        idx = max(0, min(idx, len(self.events) - 1))
+        self.replay_index = idx
+        self.exchange_timeline_widget.events = self.events[: idx + 1]
+        self.exchange_timeline_widget.selected_index = idx
         self.selected_event = self.exchange_timeline_widget.get_selected_event()
         self.inspector_widget.selected_event = self.selected_event
+        if self.is_mounted and hasattr(self, "app") and self.app and getattr(self.app, "status_bar", None):
+            self.app.status_bar.status_message = (
+                f"[REPLAY MODE] Event {idx + 1}/{len(self.events)} - Press 'r' or 'G' to return to live."
+            )
+            self.app.status_bar.refresh()
+
+    def exit_replay_mode(self) -> None:
+        """Exit replay mode and restore live tail-follow view (§14.8 Step 5)."""
+        self.is_replay_mode = False
+        self.replay_index = None
+        self.exchange_timeline_widget.events = list(self.events)
+        self.exchange_timeline_widget.jump_to_tail()
+        self.selected_event = self.exchange_timeline_widget.get_selected_event()
+        self.inspector_widget.selected_event = self.selected_event
+        if self.is_mounted and hasattr(self, "app") and self.app and getattr(self.app, "status_bar", None):
+            self.app.status_bar.status_message = "Exited replay mode. Returned to live tail-follow."
+            self.app.status_bar.refresh()
+
+    def append_events(self, new_events: List[UiEvent], now: Optional[Union[datetime, str, float]] = None) -> None:
+        """Forward new events to ExchangeTimelineWidget while updating master events list (§14.8 Phase C2)."""
+        self.events.extend(new_events)
+        if not self.is_replay_mode:
+            self.exchange_timeline_widget.append_events(new_events, now=now)
+            self.activity_feed_widget.events = self.exchange_timeline_widget.events
+            self.selected_event = self.exchange_timeline_widget.get_selected_event()
+            self.inspector_widget.selected_event = self.selected_event
 
     def append_event(self, evt: UiEvent, now: Optional[Union[datetime, str, float]] = None) -> None:
         self.append_events([evt], now=now)
