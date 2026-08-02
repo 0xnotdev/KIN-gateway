@@ -134,7 +134,7 @@ def test_worker_standing_requirement_guard_prevents_polling_when_session_id_unsp
 
 
 # -----------------------------------------------------------------------------
-# 5. Incremental Seen-Event-ID Query Test (§14.8 Phase C2 Round 2)
+# 5. Incremental Seen-Event-ID & Cursor Query Test (§14.8 Phase C2 Round 2)
 # -----------------------------------------------------------------------------
 def test_polling_worker_uses_seen_event_ids_incremental_diffing(tmp_path):
     """Assert get_session_events accepts seen_event_ids and returns ONLY unseen events (§14.8 Phase C2 Round 2)."""
@@ -170,6 +170,62 @@ def test_polling_worker_uses_seen_event_ids_incremental_diffing(tmp_path):
     incremental = get_session_events(tmp_path, "sess-inc-1", seen_event_ids={"e-101"})
     assert len(incremental) == 1
     assert incremental[0].event_id == "e-102"
+
+
+def test_incremental_query_performance_and_rowcount_bounding(tmp_path):
+    """Assert 5,000-event session with after_event_order & after_created_at cursors scans strictly new rows in SQL (§14.8 Phase C2 Round 2)."""
+    from kin.tui.local_state import ensure_profile_db, get_session_events
+
+    db_path = tmp_path / "kin.db"
+    conn = ensure_profile_db(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO sessions (session_id, initiator_username, receiver_username, status, type, created_at, updated_at) VALUES ('sess-5k', 'alice', 'bob', 'active', 'research', '2026-08-01T12:00:00Z', '2026-08-01T12:00:00Z')"
+    )
+
+    # 1. Seed 5,000 session_events in batch
+    t_base = "2026-08-01T12:00:00Z"
+    batch_data = [
+        (f"e-bulk-{i}", "sess-5k", "finding", t_base, "bob", i + 1)
+        for i in range(5000)
+    ]
+    cur.executemany(
+        "INSERT INTO session_events (event_id, session_id, kind, created_at, actor_username, event_order) VALUES (?, ?, ?, ?, ?, ?)",
+        batch_data,
+    )
+    conn.commit()
+
+    # 2. Initial fetch: 5,000 events returned
+    events_initial = get_session_events(tmp_path, "sess-5k")
+    assert len(events_initial) == 5000
+    max_order = max(e.event_order for e in events_initial if e.event_order is not None)
+    max_created = max(e.created_at for e in events_initial)
+    seen_ids = {e.event_id for e in events_initial}
+
+    # 3. Seed 3 more events
+    cur.executemany(
+        "INSERT INTO session_events (event_id, session_id, kind, created_at, actor_username, event_order) VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            ("e-new-1", "sess-5k", "finding", "2026-08-01T13:00:01Z", "bob", 5001),
+            ("e-new-2", "sess-5k", "finding", "2026-08-01T13:00:02Z", "bob", 5002),
+            ("e-new-3", "sess-5k", "finding", "2026-08-01T13:00:03Z", "bob", 5003),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    # 4. Incremental fetch with cursors after_event_order=5000 & after_created_at="2026-08-01T12:00:00Z"
+    incremental = get_session_events(
+        tmp_path,
+        "sess-5k",
+        seen_event_ids=seen_ids,
+        after_event_order=max_order,
+        after_created_at=max_created,
+    )
+
+    # Assert SQL fetch returned strictly the 3 new rows, NOT all 5,003 rows
+    assert len(incremental) == 3
+    assert [e.event_id for e in incremental] == ["e-new-1", "e-new-2", "e-new-3"]
 
 
 # -----------------------------------------------------------------------------

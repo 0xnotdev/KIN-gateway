@@ -210,6 +210,7 @@ class UiEvent:
     created_at: str
     actor_username: Optional[str]
     presentation_class: PresentationClass
+    event_order: Optional[int] = None
 
     @classmethod
     def from_session_event(cls, event: SessionEvent) -> "UiEvent":

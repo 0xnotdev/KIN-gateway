@@ -1030,8 +1030,10 @@ def get_session_events(
     session_id: str,
     profile_name: str = "default",
     seen_event_ids: Optional[Set[str]] = None,
+    after_event_order: Optional[int] = None,
+    after_created_at: Optional[str] = None,
 ) -> List[UiEvent]:
-    """Fetch session_events and audit_events into chronologically ordered UiEvent list with incremental seen_event_ids filter (§14.8 Phase A, C2 Round 2)."""
+    """Fetch session_events and audit_events into chronologically ordered UiEvent list with incremental cursor filtering (§14.8 Phase A, C2 Round 2)."""
     db_path = profile_dir / "kin.db"
     if not db_path.exists():
         return []
@@ -1042,19 +1044,32 @@ def get_session_events(
     try:
         cur = conn.cursor()
 
-        # 1. Query session_events table
-        cur.execute(
-            """
-            SELECT event_id, session_id, kind, created_at, actor_username
-            FROM session_events
-            WHERE session_id = ?
-            """,
-            (session_id,),
-        )
+        # 1. Query session_events table using event_order cursor if provided
+        if after_event_order is not None:
+            cur.execute(
+                """
+                SELECT event_id, session_id, kind, created_at, actor_username, event_order
+                FROM session_events
+                WHERE session_id = ? AND event_order > ?
+                ORDER BY event_order ASC
+                """,
+                (session_id, after_event_order),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT event_id, session_id, kind, created_at, actor_username, event_order
+                FROM session_events
+                WHERE session_id = ?
+                ORDER BY event_order ASC
+                """,
+                (session_id,),
+            )
         for row in cur.fetchall():
-            e_id, s_id, kind_str, c_at, actor = row
+            e_id, s_id, kind_str, c_at, actor, e_ord = row
             if e_id in seen:
                 continue
+
             try:
                 p_class = map_event_kind_to_presentation_class(kind_str)
             except ValueError:
@@ -1069,18 +1084,29 @@ def get_session_events(
                     created_at=c_at,
                     actor_username=actor,
                     presentation_class=p_class,
+                    event_order=e_ord,
                 )
             )
 
-        # 2. Query audit_events table for session_id (excluding session_event_<kind> mirror rows to avoid duplication)
-        cur.execute(
-            """
-            SELECT audit_id, session_id, category, created_at, actor_username, summary
-            FROM audit_events
-            WHERE session_id = ?
-            """,
-            (session_id,),
-        )
+        # 2. Query audit_events table for session_id using created_at cursor if provided
+        if after_created_at is not None:
+            cur.execute(
+                """
+                SELECT audit_id, session_id, category, created_at, actor_username, summary
+                FROM audit_events
+                WHERE session_id = ? AND created_at >= ?
+                """,
+                (session_id, after_created_at),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT audit_id, session_id, category, created_at, actor_username, summary
+                FROM audit_events
+                WHERE session_id = ?
+                """,
+                (session_id,),
+            )
         for row in cur.fetchall():
             a_id, s_id, cat, c_at, actor, summ = row
             if cat.startswith("session_event_"):

@@ -590,7 +590,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self.is_polling_active = False
 
     def _run_event_polling_worker_logic(self) -> None:
-        """Core polling worker logic with seen-event-id tracking (§14.8 Phase C2 Round 2)."""
+        """Core polling worker logic with incremental cursor filtering (§14.8 Phase C2 Round 2)."""
         import time
 
         # Standing requirement guard: NEVER poll when session_id is empty or None
@@ -598,17 +598,29 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             return
 
         seen_ids: Set[str] = {e.event_id for e in (self.events or []) if getattr(e, "event_id", None)}
+        max_order: Optional[int] = max([e.event_order for e in (self.events or []) if getattr(e, "event_order", None) is not None], default=None)
+        max_created: Optional[str] = max([e.created_at for e in (self.events or []) if getattr(e, "created_at", None)], default=None)
+
         while getattr(self, "is_polling_active", False):
             time.sleep(getattr(self, "polling_interval_sec", 0.5))
             try:
                 fetched = get_session_events(
-                    self.profile_dir, self.session_id, self.profile_name, seen_event_ids=seen_ids
+                    self.profile_dir,
+                    self.session_id,
+                    self.profile_name,
+                    seen_event_ids=seen_ids,
+                    after_event_order=max_order,
+                    after_created_at=max_created,
                 ) or []
                 if fetched:
                     new_evts = [e for e in fetched if e.event_id not in seen_ids]
                     if new_evts:
                         for e in new_evts:
                             seen_ids.add(e.event_id)
+                            if getattr(e, "event_order", None) is not None:
+                                max_order = e.event_order if max_order is None else max(max_order, e.event_order)
+                            if getattr(e, "created_at", None):
+                                max_created = e.created_at if max_created is None else max(max_created, e.created_at)
                         if hasattr(self, "is_mounted") and self.is_mounted and hasattr(self, "app") and self.app:
                             self.app.call_from_thread(self.append_events, new_evts)
             except Exception as exc:
