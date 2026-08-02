@@ -119,7 +119,8 @@ class KinApp(App[None]):
         - Surfaces a clear RecoverableError
         """
         resolution = resolve_theme(theme_name)
-        if resolution.is_fallback and theme_name != "kin-graphite" and theme_name not in RECOGNIZED_THEME_NAMES:
+        # Verified against resolve_theme contract: resolve_theme never returns is_fallback=True for registered theme names.
+        if resolution.is_fallback:
             err = RecoverableError(
                 what_happened=f"Invalid theme name '{theme_name}'.",
                 impact=f"Theme was not updated. Retained active theme '{self.requested_theme}'.",
