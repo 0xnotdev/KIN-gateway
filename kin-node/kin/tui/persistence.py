@@ -47,6 +47,8 @@ class UiStatePreferences(BaseModel):
     quiet_hours_end: str = "08:00"
     snoozed_items: Dict[str, str] = Field(default_factory=dict)
     reduced_motion: bool = False
+    ascii_fallback: bool = False
+    color_depth: str = "auto"
 
 
 def get_profile_dir(profile_name: str = "default") -> Path:

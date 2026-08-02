@@ -23,11 +23,16 @@ class ApprovalCardWidget(LifecycleWidgetMixin, Static):
     """
 
     def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
+        """Resolve a theme color by role, falling back when app is unavailable or empty string if colorless mode active."""
+        app = self._get_app_instance()
+        if app is not None and getattr(app, "is_colorless_active", False):
+            return ""
+        if app is not None and hasattr(app, "theme_tokens"):
+            try:
+                return app.theme_tokens.get_role_color(role)
+            except Exception:
+                pass
+        return fallback if app is None else ""
 
     can_focus = True
 
@@ -78,11 +83,13 @@ class ApprovalCardWidget(LifecycleWidgetMixin, Static):
     def render(self) -> str:
         warn = self._c("state.waiting", "#e0af68")
         err = self._c("state.error", "#f7768e")
+        app_inst = self._get_app_instance()
+        is_colorless = getattr(app_inst, "is_colorless_active", False) if app_inst else False
 
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
-            glyph = get_glyph("◌")
+            glyph = self._g("◌")
             return f"[dim]{glyph} Loading Approval Gate...[/dim]"
 
         if state == WidgetLifecycleState.DISABLED:
@@ -93,15 +100,20 @@ class ApprovalCardWidget(LifecycleWidgetMixin, Static):
             return "[dim]ApprovalCard: No pending approval request.[/dim]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
-            glyph = get_glyph("!")
-            return f"[bold {err}]{glyph} ApprovalCard Error: Approval request expired or invalid. Press [Retry].[/bold {err}]"
+            glyph = self._g("!")
+            err_tag = f" {err}".rstrip()
+            return f"[bold{err_tag}]{glyph} ApprovalCard Error: Approval request expired or invalid. Press [Retry].[/bold{err_tag}]"
 
         app_v = self.approval_view
         req = app_v.request
         risk_raw = getattr(req, "risk_label", "medium")
         risk = str(risk_raw.value if hasattr(risk_raw, "value") else risk_raw).upper()
 
-        glyph, style, role = self.RISK_PRESENTATION.get(risk, ("▲", "bold yellow", "medium_risk"))
+        raw_glyph, style, role = self.RISK_PRESENTATION.get(risk, ("▲", "bold yellow", "medium_risk"))
+        glyph = self._g(raw_glyph)
+
+        if is_colorless:
+            style = "bold"
 
         rem_sec = app_v.time_remaining
         time_str = f"{rem_sec:.1f}s remaining" if rem_sec is not None else "No expiration"
@@ -113,12 +125,15 @@ class ApprovalCardWidget(LifecycleWidgetMixin, Static):
         action_class = getattr(req, "action_class", "workspace_write")
         reason = redact_ui_text(getattr(req, "reason", ""))
 
+        warn_open = f"[{warn}]" if warn else ""
+        warn_close = f"[/{warn}]" if warn else ""
+
         if state == WidgetLifecycleState.NARROW:
             return f"[{style}]{glyph} {risk}[/{style}] {summary[:12]} ({time_str})"
 
         return (
             f"[{style}]{glyph} RISK: {risk}[/{style}]{focus_mark}\n"
             f"Action: [bold]{summary}[/bold] [dim]({action_class})[/dim]\n"
-            f"Requester: {agent_id} | Time Remaining: [{warn}]{time_str}[/{warn}]\n"
+            f"Requester: {agent_id} | Time Remaining: {warn_open}{time_str}{warn_close}\n"
             f"Reason: [dim]{reason}[/dim]"
         )

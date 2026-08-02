@@ -38,6 +38,34 @@ def is_narrow_breakpoint(breakpoint_or_width: Union[Breakpoint, int], height: in
 class LifecycleWidgetMixin:
     """Mixin enforcing the shared 7-state lifecycle contract across all foundation widgets."""
 
+    def _get_app_instance(self):
+        app = getattr(self, "_app", None)
+        if app is None:
+            try:
+                app = self.app
+            except Exception:
+                app = None
+        return app
+
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, returning fallback if app is unavailable or empty string if colorless mode active."""
+        app = self._get_app_instance()
+        if app is not None and getattr(app, "is_colorless_active", False):
+            return ""
+        if app is not None and hasattr(app, "theme_tokens"):
+            try:
+                return app.theme_tokens.get_role_color(role)
+            except Exception:
+                pass
+        return fallback if app is None else ""
+
+    def _g(self, symbol: str) -> str:
+        """Resolve a glyph symbol, using ASCII fallback if app.is_ascii_fallback_active is True."""
+        app = self._get_app_instance()
+        ascii_fallback = getattr(app, "is_ascii_fallback_active", False) if app is not None else False
+        from kin.tui.tokens import get_glyph
+        return get_glyph(symbol, ascii_fallback=ascii_fallback)
+
     def __init__(
         self,
         lifecycle_state: WidgetLifecycleState = WidgetLifecycleState.NORMAL,

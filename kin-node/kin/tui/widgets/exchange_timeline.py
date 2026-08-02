@@ -333,12 +333,33 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
                 self.on_event_selected(selected)
             event.stop()
 
+    def _get_app_instance(self):
+        app = getattr(self, "_app", None)
+        if app is None:
+            try:
+                app = self.app
+            except Exception:
+                app = None
+        return app
+
     def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
+        """Resolve a theme color by role, falling back when app is unavailable or empty string if colorless mode active."""
+        app = self._get_app_instance()
+        if app is not None and getattr(app, "is_colorless_active", False):
+            return ""
+        if app is not None and hasattr(app, "theme_tokens"):
+            try:
+                return app.theme_tokens.get_role_color(role)
+            except Exception:
+                pass
+        return fallback if app is None else ""
+
+    def _g(self, symbol: str) -> str:
+        """Resolve a glyph symbol using ASCII fallback if app.is_ascii_fallback_active is True."""
+        app = self._get_app_instance()
+        ascii_fallback = getattr(app, "is_ascii_fallback_active", False) if app is not None else False
+        from kin.tui.tokens import get_glyph
+        return get_glyph(symbol, ascii_fallback=ascii_fallback)
 
     def _render_group_card(self, group: CoalescedTimelineGroup, is_selected: bool, now_dt: datetime) -> str:
         accent = self._c("accent.primary", "#bb9af7")
@@ -349,12 +370,20 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         highlight = self._c("accent.highlight", "#7aa2f7")
 
         evt = group.last_event
-        p_class = evt.presentation_class
+        p_class = evt.presentation_class or "info"
         actor = redact_ui_text(evt.actor_username or "system")
         ts = redact_ui_text(evt.created_at[:19] if evt.created_at else "00:00:00")
         kind_clean = redact_ui_text(evt.kind or p_class)
-        prefix = "▶ " if is_selected else "  "
-        select_tag = f" [bold {warn}][INSPECTED][/bold {warn}]" if is_selected else ""
+        play_glyph = self._g("▶")
+        prefix = f"{play_glyph} " if is_selected else "  "
+        accent_tag = f" {accent}".rstrip()
+        ok_tag = f" {ok}".rstrip()
+        err_tag = f" {err}".rstrip()
+        warn_tag = f" {warn}".rstrip()
+        accent2_tag = f" {accent2}".rstrip()
+        highlight_tag = f" {highlight}".rstrip()
+
+        select_tag = f" [bold{warn_tag}][INSPECTED][/bold{warn_tag}]" if is_selected else ""
 
         # Live-Only Tail Pulse Tracking (§7.2, §14.8 Phase C1/C2)
         is_pulsing = False
@@ -363,31 +392,33 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
             if (not self.reduced_motion) and (0.0 <= elapsed_sec < 0.120):
                 is_pulsing = True
 
-        pulse_badge = f" [bold {ok}]⚡ [TAIL PULSE][/bold {ok}]" if is_pulsing else ""
+        pulse_badge = f" [bold{ok_tag}]⚡ [TAIL PULSE][/bold{ok_tag}]" if is_pulsing else ""
+        dot_glyph = self._g("●")
 
         # Coalesced Activity Group (Multiple repeats)
         if group.is_coalesced_activity and group.count > 1:
             ts_start = group.first_event.created_at[:19] if group.first_event.created_at else "00:00:00"
             ts_end = group.last_event.created_at[11:19] if group.last_event.created_at else "00:00:00"
-            return f"{prefix}● [dim][ACTIVITY][/dim] {kind_clean} (actor: @{actor}) [bold {accent}]x{group.count}[/bold {accent}] ({group.count} events, {ts_start} - {ts_end}){select_tag}{pulse_badge}"
+            return f"{prefix}{dot_glyph} [dim][ACTIVITY][/dim] {kind_clean} (actor: @{actor}) [bold{accent_tag}]x{group.count}[/bold{accent_tag}] ({group.count} events, {ts_start} - {ts_end}){select_tag}{pulse_badge}"
 
         # 1. MESSAGE: provenance-rich showing actor, timestamp, and content
         if p_class == "message":
+            msg_glyph = self._g("💬")
             body_line = f"\n   [italic]\"{redact_ui_text(evt.content)}\"[/italic]" if evt.content else ""
             return (
-                f"{prefix}[bold {ok}]💬 MESSAGE[/bold {ok}] [dim]@{actor} at {ts}[/dim]{select_tag}{pulse_badge}\n"
+                f"{prefix}[bold{ok_tag}]{msg_glyph} MESSAGE[/bold{ok_tag}] [dim]@{actor} at {ts}[/dim]{select_tag}{pulse_badge}\n"
                 f"   [bold]Kind:[/bold] {kind_clean}{body_line}\n"
                 f"   Event ID: {evt.event_id}"
             )
 
         # 2. ACTIVITY: concise, coalesced visual format (Single repeat)
         elif p_class == "activity":
-            return f"{prefix}● [dim][ACTIVITY][/dim] {kind_clean} (actor: @{actor} at {ts}){select_tag}{pulse_badge}"
+            return f"{prefix}{dot_glyph} [dim][ACTIVITY][/dim] {kind_clean} (actor: @{actor} at {ts}){select_tag}{pulse_badge}"
 
         # 3. CHECKPOINT: bordered box
         elif p_class == "checkpoint":
             return (
-                f"{prefix}┌─ [bold {accent}]CHECKPOINT[/bold {accent}] ──────────────────────┐\n"
+                f"{prefix}┌─ [bold{accent_tag}]CHECKPOINT[/bold{accent_tag}] ──────────────────────┐\n"
                 f"│ Event: {kind_clean:<32} │\n"
                 f"│ Timestamp: {ts:<28} │\n"
                 f"└────────────────────────────────────────┘{select_tag}{pulse_badge}"
@@ -395,48 +426,58 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
 
         # 4. ARTIFACT: metadata & preview ONLY (zero import / apply affordances)
         elif p_class == "artifact":
+            acc_open = f"[{accent}]" if accent else ""
+            acc_close = f"[/{accent}]" if accent else ""
             return (
-                f"{prefix}[bold {highlight}]📦 ARTIFACT OFFER[/bold {highlight}] [dim]by @{actor} at {ts}[/dim]{select_tag}{pulse_badge}\n"
-                f"   Metadata: [{accent}]{kind_clean}[/{accent}] (ID: {evt.event_id[:8]})\n"
+                f"{prefix}[bold{highlight_tag}]📦 ARTIFACT OFFER[/bold{highlight_tag}] [dim]by @{actor} at {ts}[/dim]{select_tag}{pulse_badge}\n"
+                f"   Metadata: {acc_open}{kind_clean}{acc_close} (ID: {evt.event_id[:8]})\n"
                 f"   [dim](Read-only metadata preview - press Enter/inspect to view details)[/dim]"
             )
 
         # 5. APPROVAL: amber token (zero action buttons)
         elif p_class == "approval":
+            risk_glyph = self._g("▲")
+            warn_open = f"[{warn}]" if warn else ""
+            warn_close = f"[/{warn}]" if warn else ""
             return (
-                f"{prefix}[bold {warn}]▲ APPROVAL GATE [AMBER/POLICY][/bold {warn}] [dim]at {ts}[/dim]{select_tag}{pulse_badge}\n"
-                f"   [{warn}]Request: {kind_clean} by @{actor}[/{warn}]\n"
+                f"{prefix}[bold{warn_tag}]{risk_glyph} APPROVAL GATE [AMBER/POLICY][/bold{warn_tag}] [dim]at {ts}[/dim]{select_tag}{pulse_badge}\n"
+                f"   {warn_open}Request: {kind_clean} by @{actor}{warn_close}\n"
                 f"   [dim](Policy review required - pending owner decision)[/dim]"
             )
 
         # 6. STATE_TRANSITION: clear visual state divider
         elif p_class == "state_transition":
             return (
-                f"{prefix}═══ [bold {accent2}]STATE TRANSITION[/bold {accent2}] ═════════════════════════════\n"
+                f"{prefix}═══ [bold{accent2_tag}]STATE TRANSITION[/bold{accent2_tag}] ═════════════════════════════\n"
                 f"   Event: [bold]{kind_clean}[/bold] by @{actor} at {ts}{select_tag}{pulse_badge}"
             )
 
         # 7. SECURITY: persistent RED card (zero action affordances)
         elif p_class == "security":
-            glyph_x = get_glyph("✖")
+            glyph_x = self._g("!")
+            err_open = f"[{err}]" if err else ""
+            err_close = f"[/{err}]" if err else ""
             return (
-                f"{prefix}[bold {err}]{glyph_x} SECURITY REJECTION CARD[/bold {err}] [dim]at {ts}[/dim]{select_tag}{pulse_badge}\n"
-                f"   [{err}]Category: {kind_clean}[/{err}]\n"
-                f"   [{err}]Actor: @{actor} | ID: {evt.event_id}[/{err}]\n"
-                f"   [bold {err}]CRITICAL: Security boundary rejection logged. No actions available.[/bold {err}]"
+                f"{prefix}[bold{err_tag}]{glyph_x} SECURITY REJECTION CARD[/bold{err_tag}] [dim]at {ts}[/dim]{select_tag}{pulse_badge}\n"
+                f"   {err_open}Category: {kind_clean}{err_close}\n"
+                f"   {err_open}Actor: @{actor} | ID: {evt.event_id}{err_close}\n"
+                f"   [bold{err_tag}]CRITICAL: Security boundary rejection logged. No actions available.[/bold{err_tag}]"
             )
 
         # Fallback
-        return f"{prefix}● [{p_class.upper()}] {kind_clean} (@{actor} at {ts}){select_tag}{pulse_badge}"
+        return f"{prefix}{dot_glyph} [{p_class.upper()}] {kind_clean} (@{actor} at {ts}){select_tag}{pulse_badge}"
 
     def render(self, now: Optional[Union[datetime, str, float]] = None) -> str:
         accent = self._c("accent.primary", "#bb9af7")
         ok = self._c("state.live", "#73daca")
         err = self._c("state.error", "#f7768e")
+        accent_tag = f" {accent}".rstrip()
+        ok_tag = f" {ok}".rstrip()
+        err_tag = f" {err}".rstrip()
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
-            glyph = get_glyph("◌")
+            glyph = self._g("◌")
             return f"[dim]{glyph} Loading Exchange Timeline...[/dim]"
 
         if state == WidgetLifecycleState.DISABLED:
@@ -449,15 +490,16 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
             return "[dim]ExchangeTimeline: No dialogue/session events recorded.[/dim]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
-            glyph = get_glyph("!")
-            return f"[bold {err}]{glyph} ExchangeTimeline Error: Event timeline corrupted. Press [Retry].[/bold {err}]"
+            glyph = self._g("!")
+            return f"[bold{err_tag}]{glyph} ExchangeTimeline Error: Event timeline corrupted. Press [Retry].[/bold{err_tag}]"
 
         now_dt = _parse_now(now)
-        lines = [f"[bold {ok}]Exchange Timeline ({len(groups)} cards / {len(self.get_filtered_events())} events):[/bold {ok}]"]
+        down_glyph = self._g("↓")
+        lines = [f"[bold{ok_tag}]Exchange Timeline ({len(groups)} cards / {len(self.get_filtered_events())} events):[/bold{ok_tag}]"]
 
         # Surface fixed off-tail control when reader is off tail (§7.2, §14.8 Phase C1/C2)
         if self.new_events_off_tail_count > 0 and not self.is_at_tail():
-            lines.append(f"[bold {accent}]↓ {self.new_events_off_tail_count} new events (press 'G' or 'End' to jump to tail)[/bold {accent}]")
+            lines.append(f"[bold{accent_tag}]{down_glyph} {self.new_events_off_tail_count} new events (press 'G' or 'End' to jump to tail)[/bold{accent_tag}]")
 
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
 

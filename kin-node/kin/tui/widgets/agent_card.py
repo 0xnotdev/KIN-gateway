@@ -37,11 +37,21 @@ class AgentCardWidget(LifecycleWidgetMixin, Static):
     """
 
     def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
+        """Resolve a theme color by role, falling back when app is unavailable or empty string if colorless mode active."""
         try:
+            if getattr(self.app, "is_colorless_active", False):
+                return ""
             return self.app.theme_tokens.get_role_color(role)
         except Exception:
             return fallback
+
+    def _g(self, symbol: str) -> str:
+        """Resolve a glyph symbol using ASCII fallback if app.is_ascii_fallback_active is True."""
+        try:
+            ascii_fallback = getattr(self.app, "is_ascii_fallback_active", False)
+        except Exception:
+            ascii_fallback = False
+        return get_glyph(symbol, ascii_fallback=ascii_fallback)
 
     def __init__(
         self,
@@ -57,7 +67,7 @@ class AgentCardWidget(LifecycleWidgetMixin, Static):
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
-            glyph = get_glyph("◌")
+            glyph = self._g("◌")
             return f"[dim]{glyph} Loading Agent Card...[/dim]"
 
         if state == WidgetLifecycleState.EMPTY or not self.card_view:
@@ -68,15 +78,17 @@ class AgentCardWidget(LifecycleWidgetMixin, Static):
             return f"[dim]AgentCard (DISABLED: {reason})[/dim]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
-            glyph = get_glyph("!")
-            return f"[bold {err}]{glyph} AgentCard Error: Agent metadata corrupted. Press [Retry].[/bold {err}]"
+            glyph = self._g("!")
+            color_tag = f" {err}".rstrip()
+            return f"[bold{color_tag}]{glyph} AgentCard Error: Agent metadata corrupted. Press [Retry].[/bold{color_tag}]"
 
         card = self.card_view
 
         # Formatting peer vs local card
         from kin.schemas import AgentAvailability
         avail_val = card.availability.value if isinstance(card.availability, AgentAvailability) else str(card.availability)
-        avail_glyph = "●" if avail_val in (AgentAvailability.READY.value, AgentAvailability.BUSY.value, AgentAvailability.RESERVED.value) else "○"
+        raw_glyph = "●" if avail_val in (AgentAvailability.READY.value, AgentAvailability.BUSY.value, AgentAvailability.RESERVED.value) else "○"
+        avail_glyph = self._g(raw_glyph)
         status_str = f"{avail_glyph} {avail_val} ({card.readiness_reason})"
 
         name = redact_ui_text(card.name)

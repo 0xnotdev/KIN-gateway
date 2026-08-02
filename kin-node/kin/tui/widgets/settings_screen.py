@@ -59,7 +59,7 @@ class SettingsScreenWidget(Static, LifecycleWidgetMixin):
         self,
         current_theme: str = "kin-graphite",
         color_depth: str = "auto",
-        ascii_mode: bool = False,
+        ascii_fallback: bool = False,
         reduced_motion: bool = False,
         on_preference_change: Optional[Callable[[str, object], None]] = None,
         **kwargs,
@@ -68,7 +68,7 @@ class SettingsScreenWidget(Static, LifecycleWidgetMixin):
         LifecycleWidgetMixin.__init__(self, **kwargs)
         self.current_theme = current_theme
         self.color_depth = color_depth
-        self.ascii_mode = ascii_mode
+        self.ascii_fallback = ascii_fallback
         self.reduced_motion = reduced_motion
         self.on_preference_change = on_preference_change
 
@@ -94,7 +94,7 @@ class SettingsScreenWidget(Static, LifecycleWidgetMixin):
         with Vertical(classes="settings-section"):
             yield Checkbox(
                 "ASCII Fallback Mode (ASCII-only glyphs)",
-                value=self.ascii_mode,
+                value=self.ascii_fallback,
                 id="check-ascii-mode",
             )
             yield Checkbox(
@@ -115,9 +115,9 @@ class SettingsScreenWidget(Static, LifecycleWidgetMixin):
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         if event.checkbox.id == "check-ascii-mode":
-            self.ascii_mode = event.value
+            self.ascii_fallback = event.value
             if self.on_preference_change:
-                self.on_preference_change("ascii_fallback", self.ascii_mode)
+                self.on_preference_change("ascii_fallback", self.ascii_fallback)
         elif event.checkbox.id == "check-reduced-motion":
             self.reduced_motion = event.value
             if self.on_preference_change:
@@ -145,13 +145,13 @@ class SettingsModal(ModalScreen[None]):
         self,
         current_theme: str = "kin-graphite",
         color_depth: str = "auto",
-        ascii_mode: bool = False,
+        ascii_fallback: bool = False,
         reduced_motion: bool = False,
     ):
         super().__init__()
         self.current_theme = current_theme
         self.color_depth = color_depth
-        self.ascii_mode = ascii_mode
+        self.ascii_fallback = ascii_fallback
         self.reduced_motion = reduced_motion
 
     def compose(self) -> ComposeResult:
@@ -159,7 +159,7 @@ class SettingsModal(ModalScreen[None]):
             yield SettingsScreenWidget(
                 current_theme=self.current_theme,
                 color_depth=self.color_depth,
-                ascii_mode=self.ascii_mode,
+                ascii_fallback=self.ascii_fallback,
                 reduced_motion=self.reduced_motion,
                 on_preference_change=self._handle_preference_change,
             )

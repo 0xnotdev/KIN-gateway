@@ -83,25 +83,50 @@ class TimelineWidget(LifecycleWidgetMixin, Static):
             self.window_offset = max(0, len(self.items) - self.visible_items_window)
         self.refresh()
 
+    def _get_app_instance(self):
+        app = getattr(self, "_app", None)
+        if app is None:
+            try:
+                app = self.app
+            except Exception:
+                app = None
+        return app
+
     def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
+        """Resolve a theme color by role, falling back when app is unavailable or empty string if colorless mode active."""
+        app = self._get_app_instance()
+        if app is not None and getattr(app, "is_colorless_active", False):
+            return ""
+        if app is not None and hasattr(app, "theme_tokens"):
+            try:
+                return app.theme_tokens.get_role_color(role)
+            except Exception:
+                pass
+        return fallback if app is None else ""
+
+    def _g(self, symbol: str) -> str:
+        """Resolve a glyph symbol using ASCII fallback if app.is_ascii_fallback_active is True."""
+        app = self._get_app_instance()
+        ascii_fallback = getattr(app, "is_ascii_fallback_active", False) if app is not None else False
+        from kin.tui.tokens import get_glyph
+        return get_glyph(symbol, ascii_fallback=ascii_fallback)
 
     def render(self) -> str:
         state = self.lifecycle_state
         err = self._c("state.error", "#f7768e")
         warn = self._c("state.waiting", "#e0af68")
         accent = self._c("accent.primary", "#bb9af7")
+        err_tag = f" {err}".rstrip()
+        warn_tag = f" {warn}".rstrip()
+        accent_tag = f" {accent}".rstrip()
 
         if state == WidgetLifecycleState.LOADING:
-            glyph = get_glyph("◌")
+            glyph = self._g("◌")
             return f"[dim]{glyph} Streaming timeline events...[/dim]"
 
         if state == WidgetLifecycleState.EMPTY or not self.items:
-            act_str = f" → Action: {self._next_action_label}" if self._next_action_label else ""
+            next_act = self._g("→")
+            act_str = f" {next_act} Action: {self._next_action_label}" if self._next_action_label else ""
             return f"[dim]Timeline Empty (0 events){act_str}[/dim]"
 
         if state == WidgetLifecycleState.DISABLED:
@@ -109,8 +134,8 @@ class TimelineWidget(LifecycleWidgetMixin, Static):
             return f"[dim]Timeline (DISABLED: {reason})[/dim]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
-            glyph = get_glyph("!")
-            return f"[bold {err}]{glyph} Timeline Error: Event stream lost. Press [Retry].[/bold {err}]"
+            glyph = self._g("!")
+            return f"[bold{err_tag}]{glyph} Timeline Error: Event stream lost. Press [Retry].[/bold{err_tag}]"
 
         if state == WidgetLifecycleState.NARROW:
             return f"[bold]Timeline ({len(self.items)} events)[/bold] | Latest: {self.items[-1].title[:15]}"
@@ -121,23 +146,24 @@ class TimelineWidget(LifecycleWidgetMixin, Static):
         visible_items = self.items[start:end]
 
         lines = []
+        play_glyph = self._g("▶")
         for idx_in_window, item in enumerate(visible_items):
             actual_idx = start + idx_in_window
             is_selected = (actual_idx == self.selected_index)
-            prefix = "▶ " if is_selected else "  "
+            prefix = f"{play_glyph} " if is_selected else "  "
 
-            glyph = get_glyph(item.glyph_symbol)
+            glyph = self._g(item.glyph_symbol)
             ts = f"[dim]{item.timestamp}[/dim]"
             title = f"[bold]{item.title}[/bold]"
             body_part = f" - {item.body}" if item.body else ""
 
             if is_selected:
-                lines.append(f"[bold {warn}]{prefix}[{ts}] {glyph} {title}{body_part}[/bold {warn}]")
+                lines.append(f"[bold{warn_tag}]{prefix}[{ts}] {glyph} {title}{body_part}[/bold{warn_tag}]")
             else:
                 lines.append(f"{prefix}[{ts}] {glyph} {title}{body_part}")
 
-        scroll_lock_indicator = f" [bold {err}][SCROLL LOCK ACTIVE][/bold {err}]" if self.user_scrolled_up else ""
+        scroll_lock_indicator = f" [bold{err_tag}][SCROLL LOCK ACTIVE][/bold{err_tag}]" if self.user_scrolled_up else ""
         focus_mark = " [focus]" if state == WidgetLifecycleState.FOCUSED else ""
 
-        header = f"[bold {accent}]Timeline ({len(self.items)} events)[/bold {accent}]{scroll_lock_indicator}{focus_mark}"
+        header = f"[bold{accent_tag}]Timeline ({len(self.items)} events)[/bold{accent_tag}]{scroll_lock_indicator}{focus_mark}"
         return f"{header}\n" + "\n".join(lines)

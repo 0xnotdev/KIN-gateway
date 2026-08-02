@@ -3,6 +3,7 @@
 Spec authority: KIN-V1.1-TUI-SYSTEM.md §3, §4, §5, §14.4
 """
 
+import os
 import sys
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
@@ -110,6 +111,58 @@ class KinApp(App[None]):
     def is_reduced_motion_active(self) -> bool:
         """Effective reduced motion state combining persisted setting and transient overrides."""
         return bool(self.prefs.reduced_motion or self.transient_reduced_motion)
+
+    @property
+    def is_ascii_fallback_active(self) -> bool:
+        """Effective ASCII fallback mode active flag.
+
+        Evaluates user preference (prefs.ascii_fallback), terminal encoding
+        (ascii/cp1252), or TERM=dumb.
+        Note: NO_COLOR affects color depth/colorless active mode, NOT ASCII glyph support.
+        """
+        if getattr(self.prefs, "ascii_fallback", False):
+            return True
+        if os.environ.get("TERM") == "dumb":
+            return True
+        console_obj = getattr(self, "console", None)
+        if console_obj is not None:
+            encoding = str(getattr(console_obj, "encoding", "") or "").lower()
+            if encoding in ("ascii", "us-ascii"):
+                return True
+        return False
+
+    @property
+    def is_colorless_active(self) -> bool:
+        """Effective colorless/monochrome mode active flag.
+
+        Evaluates user preference (color_depth == 'monochrome' or '1-bit'),
+        is_ascii_fallback_active, NO_COLOR environment variable, or console.color_system is None.
+        """
+        depth = getattr(self.prefs, "color_depth", "auto")
+        if depth in ("monochrome", "1-bit"):
+            return True
+        if self.is_ascii_fallback_active:
+            return True
+        if "NO_COLOR" in os.environ:
+            return True
+        console_obj = getattr(self, "console", None)
+        if console_obj is not None and getattr(console_obj, "color_system", "auto") is None:
+            return True
+        return False
+
+    def set_preference(self, key: str, value: object) -> None:
+        """Update a UI preference, persist to disk, and refresh mounted regions live."""
+        if hasattr(self.prefs, key):
+            setattr(self.prefs, key, value)
+            save_ui_preferences(self.prefs, self.profile_name)
+            if key == "theme":
+                self.set_theme(str(value))
+            else:
+                self.canvas.refresh(layout=False)
+                self.sidebar.refresh(layout=False)
+                self.status_bar.refresh(layout=False)
+                self.inspector.refresh(layout=False)
+                self.tab_bar.refresh(layout=False)
 
     def set_theme(self, theme_name: str) -> None:
         """Live non-teardown theme transition preserving widget DOM, focus, and scroll state (§14.9 Phase B).

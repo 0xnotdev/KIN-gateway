@@ -85,11 +85,21 @@ class ActivityFeedWidget(LifecycleWidgetMixin, Static):
             event.stop()
 
     def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
+        """Resolve a theme color by role, falling back when app is unavailable or empty string if colorless mode active."""
         try:
+            if getattr(self.app, "is_colorless_active", False):
+                return ""
             return self.app.theme_tokens.get_role_color(role)
         except Exception:
             return fallback
+
+    def _g(self, symbol: str) -> str:
+        """Resolve a glyph symbol using ASCII fallback if app.is_ascii_fallback_active is True."""
+        try:
+            ascii_fallback = getattr(self.app, "is_ascii_fallback_active", False)
+        except Exception:
+            ascii_fallback = False
+        return get_glyph(symbol, ascii_fallback=ascii_fallback)
 
     def render(self) -> str:
         err = self._c("state.error", "#f7768e")
@@ -97,7 +107,7 @@ class ActivityFeedWidget(LifecycleWidgetMixin, Static):
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
-            glyph = get_glyph("◌")
+            glyph = self._g("◌")
             return f"[dim]{glyph} Loading Activity Feed...[/dim]"
 
         filtered = [e for e in self.raw_events if e.presentation_class in self.ALLOWED_PRESENTATION_CLASSES]
@@ -109,11 +119,16 @@ class ActivityFeedWidget(LifecycleWidgetMixin, Static):
             return f"[dim]ActivityFeed (DISABLED: {reason})[/dim]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
-            glyph = get_glyph("!")
-            return f"[bold {err}]{glyph} ActivityFeed Error: System log unreadable. Press [Retry].[/bold {err}]"
+            glyph = self._g("!")
+            err_tag = f" {err}".rstrip()
+            return f"[bold{err_tag}]{glyph} ActivityFeed Error: System log unreadable. Press [Retry].[/bold{err_tag}]"
 
+        app_inst = self._get_app_instance()
+        if app_inst:
+            self.timeline._app = app_inst
         self.timeline.set_lifecycle_state(state, disabled_reason=self.disabled_reason)
 
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
-        header = f"[bold {warn}]Activity & Security Feed ({len(filtered)} events)[/bold {warn}]{focus_mark}\n"
+        warn_tag = f" {warn}".rstrip()
+        header = f"[bold{warn_tag}]Activity & Security Feed ({len(filtered)} events)[/bold{warn_tag}]{focus_mark}\n"
         return header + self.timeline.render()
