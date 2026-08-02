@@ -79,7 +79,8 @@ def resolve_safe_workspace_path(workspace_root: str | Path, relative_path: str) 
         raise UnsafeWorkspacePathError(f"Absolute paths are forbidden: '{relative_path}'.")
 
     root_resolved = Path(workspace_root).resolve()
-    candidate_resolved = (root_resolved / Path(raw)).resolve()
+    normalized = raw.replace("\\", "/")
+    candidate_resolved = (root_resolved / Path(normalized)).resolve()
 
     if not candidate_resolved.is_relative_to(root_resolved):
         raise UnsafeWorkspacePathError(
