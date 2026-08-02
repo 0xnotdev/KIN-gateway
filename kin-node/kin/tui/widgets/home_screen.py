@@ -158,7 +158,7 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
                 " • Run First Flight wizard to initialize identity, connect agents & relay.\n"
                 " • Or press [Ctrl+P] / type [bold]/init[/bold] in command bar.\n\n"
                 "[dim]Next Action: Complete First Flight setup step to unlock agent dispatch.[/dim]",
-                title="[bold gold1]Getting Started[/bold gold1]",
+                title=f"[bold {warn}]Getting Started[/bold {warn}]",
                 border_style="yellow",
             )
             layout_table.add_row(discovery_panel)
@@ -167,7 +167,7 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
         if self.approvals:
             approval_table = Table(title=f"[bold {warn}]⚠️ Needs You (Pending Approvals)[/bold {warn}]", expand=True, show_edge=True)
             approval_table.add_column("Agent / Requester", style=accent)
-            approval_table.add_column("Action / Reason", style="white")
+            approval_table.add_column("Action / Reason", style=text_pri)
             approval_table.add_column("Risk", style=f"bold {err}")
 
             for app_v in self.approvals[:5]:  # Bounded top 5

@@ -35,13 +35,12 @@ EXEMPT_FILES = {
 HARDCODED_HEX_IN_CSS = re.compile(r"#[0-9a-fA-F]{3,6}")
 
 # Rich color names that should be theme-resolved, not hardcoded
-RICH_COLOR_NAMES = {"cyan", "green", "red", "yellow", "magenta", "blue", "white"}
-
-# Pattern: [color] or [bold color] or [italic color] etc — bare Rich color in markup
 HARDCODED_RICH_COLOR_PATTERN = re.compile(
     r"\[(?:bold\s+|italic\s+|dim\s+)*("
-    + "|".join(RICH_COLOR_NAMES)
-    + r")(?:\s|\])"
+    r"#[0-9a-fA-F]{3,6}|"  # Hex color literals like #ff0000 inside Rich tags
+    r"cyan|green|red|yellow|magenta|blue|white|black|"
+    r"grey\d*|gray\d*|bright_[a-z]+|gold\d*|orange\d*|purple\d*|pink\d*|salmon\d*|violet|plum\d*"
+    r")(?:\s|\])"
 )
 
 
