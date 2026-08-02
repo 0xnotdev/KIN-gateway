@@ -59,15 +59,24 @@ class ComposeMessageModal(ModalScreen[Optional[str]]):
             yield Button("Review & Send", variant="primary", id="btn-review")
             yield Button("Cancel", variant="default", id="btn-cancel")
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def on_input_changed(self, event: Input.Changed) -> None:
+        accent = self._c("accent.primary", "#bb9af7")
         self.composed_text = event.value
         preview = self.query_one("#compose-preview", Static)
         if self.review_step:
-            preview.update(f"[bold cyan]REVIEW BEFORE SENDING:[/bold cyan]\n\"{self.composed_text}\"")
+            preview.update(f"[bold {accent}]REVIEW BEFORE SENDING:[/bold {accent}]\n\"{self.composed_text}\"")
         else:
             preview.update(f"Message preview ({len(self.composed_text)} chars): \"{self.composed_text[:45]}\"")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        warn = self._c("state.waiting", "#e0af68")
         if event.button.id == "btn-cancel":
             self.dismiss(None)
         elif event.button.id == "btn-review":
@@ -76,7 +85,7 @@ class ComposeMessageModal(ModalScreen[Optional[str]]):
             if not self.review_step:
                 self.review_step = True
                 preview = self.query_one("#compose-preview", Static)
-                preview.update(f"[bold gold1]REVIEW BEFORE SENDING TO SESSION:[/bold gold1]\n\"{self.composed_text}\"")
+                preview.update(f"[bold {warn}]REVIEW BEFORE SENDING TO SESSION:[/bold {warn}]\n\"{self.composed_text}\"")
                 btn_review = self.query_one("#btn-review", Button)
                 btn_review.label = "Confirm & Transmit"
             else:

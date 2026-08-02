@@ -41,10 +41,19 @@ class SessionStateMenuModal(ModalScreen[Optional[str]]):
         self.session_id = session_id
         self.current_status = current_status
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def compose(self) -> ComposeResult:
+        accent = self._c("accent.primary", "#bb9af7")
+        warn = self._c("state.waiting", "#e0af68")
         with Vertical(id="session-state-container"):
-            yield Static(f"[bold cyan]SESSION STATE MENU [{self.session_id[:12]}][/bold cyan]")
-            yield Static(f"Current Status: [bold yellow]{self.current_status.upper()}[/bold yellow]\n")
+            yield Static(f"[bold {accent}]SESSION STATE MENU [{self.session_id[:12]}][/bold {accent}]")
+            yield Static(f"Current Status: [bold {warn}]{self.current_status.upper()}[/bold {warn}]\n")
 
             if self.current_status == "active":
                 yield Button("Pause Session (p)", id="btn-pause", variant="warning", classes="state-btn")

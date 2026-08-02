@@ -37,6 +37,13 @@ class PanelWidget(LifecycleWidgetMixin, Static):
     }
     """
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def __init__(
         self,
         title: str = "Panel",
@@ -52,12 +59,15 @@ class PanelWidget(LifecycleWidgetMixin, Static):
         self.actions = actions or []
 
     def render(self) -> str:
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
+        accent = self._c("accent.primary", "#bb9af7")
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
             glyph = get_glyph("◌")
             time_str = self.last_updated_at.strftime("%H:%M:%S") if self.last_updated_at else "00:00:00"
-            return f"[bold cyan]{glyph} Loading {self.title}...[/bold cyan] [dim]({time_str})[/dim]"
+            return f"[bold {accent}]{glyph} Loading {self.title}...[/bold {accent}] [dim]({time_str})[/dim]"
 
         if state == WidgetLifecycleState.EMPTY:
             act_str = f" → Action: {self._next_action_label}" if self._next_action_label else ""
@@ -65,13 +75,13 @@ class PanelWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.DISABLED:
             reason = self.disabled_reason or "Disabled by system policy"
-            return f"[dim][bold]{self.title}[/bold] (DISABLED)[/dim]\n[yellow]Reason: {reason}[/yellow]"
+            return f"[dim][bold]{self.title}[/bold] (DISABLED)[/dim]\n[{warn}]Reason: {reason}[/{warn}]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
             return (
-                f"[bold red]{glyph} ERROR: {self.title}[/bold red]\n"
-                f"[red]Failed to load panel content.[/red] [bold yellow]Press [Retry] to attempt recovery.[/bold yellow]"
+                f"[bold {err}]{glyph} ERROR: {self.title}[/bold {err}]\n"
+                f"[{err}]Failed to load panel content.[/{err}] [bold {warn}]Press [Retry] to attempt recovery.[/bold {warn}]"
             )
 
         if state == WidgetLifecycleState.NARROW:
@@ -79,7 +89,7 @@ class PanelWidget(LifecycleWidgetMixin, Static):
 
         # NORMAL or FOCUSED
         focused_mark = " [focus]" if state == WidgetLifecycleState.FOCUSED else ""
-        header = f"[bold cyan]{self.title}{focused_mark}[/bold cyan]"
+        header = f"[bold {accent}]{self.title}{focused_mark}[/bold {accent}]"
         body = self.content_text
         footer = f"\n[dim]{self.footer_text}[/dim]" if self.footer_text else ""
         return f"{header}\n{body}{footer}"

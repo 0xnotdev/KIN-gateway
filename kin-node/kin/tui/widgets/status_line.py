@@ -42,8 +42,18 @@ class StatusLineWidget(LifecycleWidgetMixin, Static):
         self.glyph_symbol = glyph_symbol
         self.role = validate_widget_role_consumption(role)
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
         state = self.lifecycle_state
+        warn = self._c("state.waiting", "#e0af68")
+        err = self._c("state.error", "#f7768e")
+        ok = self._c("state.live", "#73daca")
 
         if state == WidgetLifecycleState.LOADING:
             glyph = get_glyph("◌")
@@ -55,11 +65,11 @@ class StatusLineWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.DISABLED:
             reason = self.disabled_reason or "Disabled by policy"
-            return f"[dim]Status Offline | [yellow]Reason: {reason}[/yellow][/dim]"
+            return f"[dim]Status Offline | [{warn}]Reason: {reason}[/{warn}][/dim]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} Status Error: Connection interrupted. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} Status Error: Connection interrupted. Press [Retry].[/bold {err}]"
 
         scrubbed_msg = redact_ui_text(self.message)
 
@@ -72,4 +82,4 @@ class StatusLineWidget(LifecycleWidgetMixin, Static):
         time_part = f" | [dim]{time_str}[/dim]" if time_str else ""
         focus_mark = " [focus]" if state == WidgetLifecycleState.FOCUSED else ""
 
-        return f"[green]{glyph}[/green] [bold]{scrubbed_msg}[/bold]{time_part}{focus_mark}"
+        return f"[{ok}]{glyph}[/{ok}] [bold]{scrubbed_msg}[/bold]{time_part}{focus_mark}"

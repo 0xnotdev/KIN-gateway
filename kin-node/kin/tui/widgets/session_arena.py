@@ -49,6 +49,13 @@ from kin.tui.widgets.trust_strip import TrustStripWidget
 class SessionArenaWidget(LifecycleWidgetMixin, Static):
     """Session Arena domain widget composing header, session map, exchange timeline, activity feed, artifacts, and inspector (§14.8 Phase D)."""
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     can_focus = True
     BINDINGS = build_arena_bindings()
 
@@ -382,9 +389,10 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         if key == "v":
             # Import action
             title = f"CONFIRM WORKSPACE ARTIFACT IMPORT [{artifact_id[:8]}]"
+            accent = self._c("accent.primary", "#bb9af7")
             desc = (
                 f"Write raw artifact bytes directly to workspace target file?\n\n"
-                f"Target Relative Path: [bold cyan]{rel_target}[/bold cyan]"
+                f"Target Relative Path: [bold {accent}]{rel_target}[/bold {accent}]"
             )
             modal = ApproveConfirmModal(title=title, description=desc)
 
@@ -705,7 +713,10 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self._run_event_polling_worker_logic()
 
     def _render_needs_you_queue(self) -> str:
-        lines = ["[bold yellow]─── NEEDS-YOU QUEUE (Pending Approvals & Security Items) ───[/bold yellow]"]
+        warn = self._c("state.waiting", "#e0af68")
+        err = self._c("state.error", "#f7768e")
+
+        lines = [f"[bold {warn}]─── NEEDS-YOU QUEUE (Pending Approvals & Security Items) ───[/bold {warn}]"]
         sec_events = [e for e in (self.events or []) if e.presentation_class == "security" or "security" in str(e.kind).lower()]
 
         if not self.approvals and not sec_events:
@@ -715,13 +726,13 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         if sec_events:
             glyph_alert = get_glyph("▲")
             glyph_x = get_glyph("✖")
-            lines.append(f"[bold red]{glyph_alert} SECURITY REJECTION CARDS ({len(sec_events)}) — PERSISTENT ALERT[/bold red]")
+            lines.append(f"[bold {err}]{glyph_alert} SECURITY REJECTION CARDS ({len(sec_events)}) — PERSISTENT ALERT[/bold {err}]")
             for sec_evt in sec_events:
                 actor = sec_evt.actor_username or "unknown"
                 lines.append(
-                    f"  [bold red]{glyph_x} SECURITY REJECTION CARD [{sec_evt.event_id[:8]}][/bold red]\n"
-                    f"     [red]Kind: {sec_evt.kind} | Actor: @{actor} | Timestamp: {sec_evt.created_at}[/red]\n"
-                    f"     [red]Status: Validation Failed — Persistent Alert (No auto-dismiss)[/red]"
+                    f"  [bold {err}]{glyph_x} SECURITY REJECTION CARD [{sec_evt.event_id[:8]}][/bold {err}]\n"
+                    f"     [{err}]Kind: {sec_evt.kind} | Actor: @{actor} | Timestamp: {sec_evt.created_at}[/{err}]\n"
+                    f"     [{err}]Status: Validation Failed — Persistent Alert (No auto-dismiss)[/{err}]"
                 )
 
         if self.approvals:
@@ -735,6 +746,12 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         return "\n\n".join(lines)
 
     def render(self) -> Union[str, Group]:
+        ok = self._c("state.live", "#73daca")
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
+        accent = self._c("accent.primary", "#bb9af7")
+        accent2 = self._c("accent.secondary", "#9d7cd8")
+
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -750,9 +767,9 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             error_msg = self.last_arena_error.what_happened if self.last_arena_error else "Session load error"
             error_detail = self.last_arena_error.technical_detail if (self.last_arena_error and self.last_arena_error.technical_detail) else ""
             return (
-                f"[bold red]{glyph} Arena Error: {error_msg}[/bold red]\n"
+                f"[bold {err}]{glyph} Arena Error: {error_msg}[/bold {err}]\n"
                 f"[dim]{error_detail}[/dim]\n\n"
-                f"[yellow]Press [Retry] to attempt reloading session data.[/yellow]"
+                f"[{warn}]Press [Retry] to attempt reloading session data.[/{warn}]"
             )
 
         if state == WidgetLifecycleState.EMPTY or not self.session_summary:
@@ -794,19 +811,19 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             center_renderable = self.exchange_timeline_widget.render()
 
         lane_title_map = {
-            "transcript": "[bold green]EXCHANGE TIMELINE[/bold green]",
-            "activity": "[bold green]ACTIVITY FEED[/bold green]",
-            "outputs": "[bold green]OUTPUTS / ARTIFACTS[/bold green]",
-            "decisions": "[bold green]DECISIONS / CHECKPOINTS[/bold green]",
-            "needs_you": "[bold yellow]NEEDS-YOU QUEUE[/bold yellow]",
+            "transcript": f"[bold {ok}]EXCHANGE TIMELINE[/bold {ok}]",
+            "activity": f"[bold {ok}]ACTIVITY FEED[/bold {ok}]",
+            "outputs": f"[bold {ok}]OUTPUTS / ARTIFACTS[/bold {ok}]",
+            "decisions": f"[bold {ok}]DECISIONS / CHECKPOINTS[/bold {ok}]",
+            "needs_you": f"[bold {warn}]NEEDS-YOU QUEUE[/bold {warn}]",
         }
-        lane_title = lane_title_map.get(self.active_lane, f"[bold green]LANE: {self.active_lane.upper()}[/bold green]")
+        lane_title = lane_title_map.get(self.active_lane, f"[bold {ok}]LANE: {self.active_lane.upper()}[/bold {ok}]")
 
         # 1. FOCUS MODE (z key active) -> full-bleed active lane view hiding session map and inspector
         if self.focus_mode:
             return Group(
-                header_str + focus_mark + " [bold yellow][FOCUS MODE][/bold yellow]",
-                Panel(center_renderable, title=f"[bold cyan]FOCUS LANE: {self.active_lane.upper()}[/bold cyan]", border_style="cyan"),
+                header_str + focus_mark + f" [bold {warn}][FOCUS MODE][/bold {warn}]",
+                Panel(center_renderable, title=f"[bold {accent}]FOCUS LANE: {self.active_lane.upper()}[/bold {accent}]", border_style="cyan"),
             )
 
         # 2. COCKPIT MODE -> Breakpoint-driven layout
@@ -817,11 +834,11 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             if self.inspector_visible:
                 grid.add_column("inspector", ratio=1)
 
-            panel_map = Panel(map_str, title="[bold cyan]SESSION MAP[/bold cyan]", border_style="cyan")
+            panel_map = Panel(map_str, title=f"[bold {accent}]SESSION MAP[/bold {accent}]", border_style="cyan")
             panel_timeline = Panel(center_renderable, title=lane_title, border_style="green")
 
             if self.inspector_visible:
-                panel_inspector = Panel(inspector_str, title="[bold magenta]DETAIL INSPECTOR[/bold magenta]", border_style="magenta")
+                panel_inspector = Panel(inspector_str, title=f"[bold {accent2}]DETAIL INSPECTOR[/bold {accent2}]", border_style="magenta")
                 grid.add_row(panel_map, panel_timeline, panel_inspector)
             else:
                 grid.add_row(panel_map, panel_timeline)
@@ -840,7 +857,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
 
             panel_timeline = Panel(center_renderable, title=lane_title, border_style="green")
             if self.inspector_visible:
-                panel_inspector = Panel(inspector_str, title="[bold magenta]DOCKED INSPECTOR[/bold magenta]", border_style="magenta")
+                panel_inspector = Panel(inspector_str, title=f"[bold {accent2}]DOCKED INSPECTOR[/bold {accent2}]", border_style="magenta")
                 grid.add_row(panel_timeline, panel_inspector)
             else:
                 grid.add_row(panel_timeline)

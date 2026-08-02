@@ -84,7 +84,16 @@ class ActivityFeedWidget(LifecycleWidgetMixin, Static):
             self.refresh()
             event.stop()
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -101,10 +110,10 @@ class ActivityFeedWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} ActivityFeed Error: System log unreadable. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} ActivityFeed Error: System log unreadable. Press [Retry].[/bold {err}]"
 
         self.timeline.set_lifecycle_state(state, disabled_reason=self.disabled_reason)
 
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
-        header = f"[bold yellow]Activity & Security Feed ({len(filtered)} events)[/bold yellow]{focus_mark}\n"
+        header = f"[bold {warn}]Activity & Security Feed ({len(filtered)} events)[/bold {warn}]{focus_mark}\n"
         return header + self.timeline.render()

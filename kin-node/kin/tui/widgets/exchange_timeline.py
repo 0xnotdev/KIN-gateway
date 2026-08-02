@@ -333,14 +333,28 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
                 self.on_event_selected(selected)
             event.stop()
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def _render_group_card(self, group: CoalescedTimelineGroup, is_selected: bool, now_dt: datetime) -> str:
+        accent = self._c("accent.primary", "#bb9af7")
+        ok = self._c("state.live", "#73daca")
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
+        accent2 = self._c("accent.secondary", "#9d7cd8")
+        highlight = self._c("accent.highlight", "#7aa2f7")
+
         evt = group.last_event
         p_class = evt.presentation_class
         actor = redact_ui_text(evt.actor_username or "system")
         ts = redact_ui_text(evt.created_at[:19] if evt.created_at else "00:00:00")
         kind_clean = redact_ui_text(evt.kind or p_class)
         prefix = "▶ " if is_selected else "  "
-        select_tag = " [bold yellow][INSPECTED][/bold yellow]" if is_selected else ""
+        select_tag = f" [bold {warn}][INSPECTED][/bold {warn}]" if is_selected else ""
 
         # Live-Only Tail Pulse Tracking (§7.2, §14.8 Phase C1/C2)
         is_pulsing = False
@@ -349,19 +363,19 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
             if (not self.reduced_motion) and (0.0 <= elapsed_sec < 0.120):
                 is_pulsing = True
 
-        pulse_badge = " [bold green]⚡ [TAIL PULSE][/bold green]" if is_pulsing else ""
+        pulse_badge = f" [bold {ok}]⚡ [TAIL PULSE][/bold {ok}]" if is_pulsing else ""
 
         # Coalesced Activity Group (Multiple repeats)
         if group.is_coalesced_activity and group.count > 1:
             ts_start = group.first_event.created_at[:19] if group.first_event.created_at else "00:00:00"
             ts_end = group.last_event.created_at[11:19] if group.last_event.created_at else "00:00:00"
-            return f"{prefix}● [dim][ACTIVITY][/dim] {kind_clean} (actor: @{actor}) [bold cyan]x{group.count}[/bold cyan] ({group.count} events, {ts_start} - {ts_end}){select_tag}{pulse_badge}"
+            return f"{prefix}● [dim][ACTIVITY][/dim] {kind_clean} (actor: @{actor}) [bold {accent}]x{group.count}[/bold {accent}] ({group.count} events, {ts_start} - {ts_end}){select_tag}{pulse_badge}"
 
         # 1. MESSAGE: provenance-rich showing actor, timestamp, and content
         if p_class == "message":
             body_line = f"\n   [italic]\"{redact_ui_text(evt.content)}\"[/italic]" if evt.content else ""
             return (
-                f"{prefix}[bold green]💬 MESSAGE[/bold green] [dim]@{actor} at {ts}[/dim]{select_tag}{pulse_badge}\n"
+                f"{prefix}[bold {ok}]💬 MESSAGE[/bold {ok}] [dim]@{actor} at {ts}[/dim]{select_tag}{pulse_badge}\n"
                 f"   [bold]Kind:[/bold] {kind_clean}{body_line}\n"
                 f"   Event ID: {evt.event_id}"
             )
@@ -373,7 +387,7 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         # 3. CHECKPOINT: bordered box
         elif p_class == "checkpoint":
             return (
-                f"{prefix}┌─ [bold cyan]CHECKPOINT[/bold cyan] ──────────────────────┐\n"
+                f"{prefix}┌─ [bold {accent}]CHECKPOINT[/bold {accent}] ──────────────────────┐\n"
                 f"│ Event: {kind_clean:<32} │\n"
                 f"│ Timestamp: {ts:<28} │\n"
                 f"└────────────────────────────────────────┘{select_tag}{pulse_badge}"
@@ -382,23 +396,23 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         # 4. ARTIFACT: metadata & preview ONLY (zero import / apply affordances)
         elif p_class == "artifact":
             return (
-                f"{prefix}[bold blue]📦 ARTIFACT OFFER[/bold blue] [dim]by @{actor} at {ts}[/dim]{select_tag}{pulse_badge}\n"
-                f"   Metadata: [cyan]{kind_clean}[/cyan] (ID: {evt.event_id[:8]})\n"
+                f"{prefix}[bold {highlight}]📦 ARTIFACT OFFER[/bold {highlight}] [dim]by @{actor} at {ts}[/dim]{select_tag}{pulse_badge}\n"
+                f"   Metadata: [{accent}]{kind_clean}[/{accent}] (ID: {evt.event_id[:8]})\n"
                 f"   [dim](Read-only metadata preview - press Enter/inspect to view details)[/dim]"
             )
 
         # 5. APPROVAL: amber token (zero action buttons)
         elif p_class == "approval":
             return (
-                f"{prefix}[bold yellow]▲ APPROVAL GATE [AMBER/POLICY][/bold yellow] [dim]at {ts}[/dim]{select_tag}{pulse_badge}\n"
-                f"   [yellow]Request: {kind_clean} by @{actor}[/yellow]\n"
+                f"{prefix}[bold {warn}]▲ APPROVAL GATE [AMBER/POLICY][/bold {warn}] [dim]at {ts}[/dim]{select_tag}{pulse_badge}\n"
+                f"   [{warn}]Request: {kind_clean} by @{actor}[/{warn}]\n"
                 f"   [dim](Policy review required - pending owner decision)[/dim]"
             )
 
         # 6. STATE_TRANSITION: clear visual state divider
         elif p_class == "state_transition":
             return (
-                f"{prefix}═══ [bold magenta]STATE TRANSITION[/bold magenta] ═════════════════════════════\n"
+                f"{prefix}═══ [bold {accent2}]STATE TRANSITION[/bold {accent2}] ═════════════════════════════\n"
                 f"   Event: [bold]{kind_clean}[/bold] by @{actor} at {ts}{select_tag}{pulse_badge}"
             )
 
@@ -406,16 +420,19 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         elif p_class == "security":
             glyph_x = get_glyph("✖")
             return (
-                f"{prefix}[bold red]{glyph_x} SECURITY REJECTION CARD[/bold red] [dim]at {ts}[/dim]{select_tag}{pulse_badge}\n"
-                f"   [red]Category: {kind_clean}[/red]\n"
-                f"   [red]Actor: @{actor} | ID: {evt.event_id}[/red]\n"
-                f"   [bold red]CRITICAL: Security boundary rejection logged. No actions available.[/bold red]"
+                f"{prefix}[bold {err}]{glyph_x} SECURITY REJECTION CARD[/bold {err}] [dim]at {ts}[/dim]{select_tag}{pulse_badge}\n"
+                f"   [{err}]Category: {kind_clean}[/{err}]\n"
+                f"   [{err}]Actor: @{actor} | ID: {evt.event_id}[/{err}]\n"
+                f"   [bold {err}]CRITICAL: Security boundary rejection logged. No actions available.[/bold {err}]"
             )
 
         # Fallback
         return f"{prefix}● [{p_class.upper()}] {kind_clean} (@{actor} at {ts}){select_tag}{pulse_badge}"
 
     def render(self, now: Optional[Union[datetime, str, float]] = None) -> str:
+        accent = self._c("accent.primary", "#bb9af7")
+        ok = self._c("state.live", "#73daca")
+        err = self._c("state.error", "#f7768e")
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -433,14 +450,14 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} ExchangeTimeline Error: Event timeline corrupted. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} ExchangeTimeline Error: Event timeline corrupted. Press [Retry].[/bold {err}]"
 
         now_dt = _parse_now(now)
-        lines = [f"[bold green]Exchange Timeline ({len(groups)} cards / {len(self.get_filtered_events())} events):[/bold green]"]
+        lines = [f"[bold {ok}]Exchange Timeline ({len(groups)} cards / {len(self.get_filtered_events())} events):[/bold {ok}]"]
 
         # Surface fixed off-tail control when reader is off tail (§7.2, §14.8 Phase C1/C2)
         if self.new_events_off_tail_count > 0 and not self.is_at_tail():
-            lines.append(f"[bold cyan]↓ {self.new_events_off_tail_count} new events (press 'G' or 'End' to jump to tail)[/bold cyan]")
+            lines.append(f"[bold {accent}]↓ {self.new_events_off_tail_count} new events (press 'G' or 'End' to jump to tail)[/bold {accent}]")
 
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
 

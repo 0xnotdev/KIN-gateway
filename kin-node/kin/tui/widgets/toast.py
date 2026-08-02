@@ -62,8 +62,19 @@ class ToastWidget(LifecycleWidgetMixin, Static):
             return True
         return False
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
         state = self.lifecycle_state
+        accent = self._c("accent.primary", "#bb9af7")
+        ok = self._c("state.live", "#73daca")
+        warn = self._c("state.waiting", "#e0af68")
+        err = self._c("state.error", "#f7768e")
 
         if state == WidgetLifecycleState.LOADING:
             glyph = get_glyph("◌")
@@ -74,22 +85,29 @@ class ToastWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.DISABLED:
             reason = self.disabled_reason or "Notifications muted"
-            return f"[dim]Toast Muted | [yellow]Reason: {reason}[/yellow][/dim]"
+            return f"[dim]Toast Muted | [{warn}]Reason: {reason}[/{warn}][/dim]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} Notification Error: Failed to render toast. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} Notification Error: Failed to render toast. Press [Retry].[/bold {err}]"
 
         raw_glyph = self.SEVERITY_GLYPHS.get(self.severity, "●")
         glyph = get_glyph(raw_glyph)
-        style = self.SEVERITY_STYLES.get(self.severity, "cyan")
+        
+        severity_styles = {
+            "info": accent,
+            "success": ok,
+            "warning": warn,
+            "error": f"bold {err}",
+        }
+        style = severity_styles.get(self.severity, accent)
 
         scrubbed_msg = redact_ui_text(self.message)
 
         if state == WidgetLifecycleState.NARROW:
-            return f"[{style}]{glyph} {scrubbed_msg[:18]}[/{style}]"
+            return f"[{style}]{glyph} {scrubbed_msg[:18]}[/]"
 
         focus_mark = " [focus]" if state == WidgetLifecycleState.FOCUSED else ""
         dismiss_hint = " [dim][x][/dim]" if self.dismiss_callback else ""
 
-        return f"[{style}]{glyph} [{self.severity.upper()}] {scrubbed_msg}[/{style}]{dismiss_hint}{focus_mark}"
+        return f"[{style}]{glyph} [{self.severity.upper()}] {scrubbed_msg}[/]{dismiss_hint}{focus_mark}"

@@ -38,6 +38,13 @@ class DataTableWidget(LifecycleWidgetMixin, Static):
     }
     """
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def __init__(
         self,
         columns: Optional[List[ColumnDef]] = None,
@@ -73,6 +80,8 @@ class DataTableWidget(LifecycleWidgetMixin, Static):
             self.refresh()
 
     def render(self) -> str:
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -89,7 +98,7 @@ class DataTableWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} Table Error: Failed to load dataset. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} Table Error: Failed to load dataset. Press [Retry].[/bold {err}]"
 
         if state == WidgetLifecycleState.NARROW:
             return f"[bold]Table ({len(self.rows)} rows)[/bold] | Selected: #{self.selected_index + 1}"
@@ -117,7 +126,7 @@ class DataTableWidget(LifecycleWidgetMixin, Static):
 
             line_content = " | ".join(cells)
             if is_selected:
-                row_lines.append(f"[bold yellow]{prefix}{line_content}[/bold yellow]")
+                row_lines.append(f"[bold {warn}]{prefix}{line_content}[/bold {warn}]")
             else:
                 row_lines.append(f"{prefix}{line_content}")
 

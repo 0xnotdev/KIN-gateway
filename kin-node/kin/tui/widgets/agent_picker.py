@@ -20,6 +20,13 @@ from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
 class AgentPickerWidget(LifecycleWidgetMixin, ModalScreen[Optional[AgentCardView]]):
     """AgentPicker modal screen overlay for selecting an agent (§5.5, §14.7 Phase B)."""
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     can_focus = True
 
     DEFAULT_CSS = """
@@ -118,6 +125,11 @@ class AgentPickerWidget(LifecycleWidgetMixin, ModalScreen[Optional[AgentCardView
             event.stop()
 
     def render(self) -> str:
+        ok = self._c("state.live", "#73daca")
+        err = self._c("state.error", "#f7768e")
+        accent = self._c("accent.primary", "#bb9af7")
+        warn = self._c("state.waiting", "#e0af68")
+
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -133,9 +145,9 @@ class AgentPickerWidget(LifecycleWidgetMixin, ModalScreen[Optional[AgentCardView
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} AgentPicker Error: Failed to query roster. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} AgentPicker Error: Failed to query roster. Press [Retry].[/bold {err}]"
 
-        lines = [f"[bold green]{self.prompt}[/bold green]"]
+        lines = [f"[bold {ok}]{self.prompt}[/bold {ok}]"]
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
         lines[0] += focus_mark
 
@@ -169,12 +181,12 @@ class AgentPickerWidget(LifecycleWidgetMixin, ModalScreen[Optional[AgentCardView
             if is_selected and self.drawer_open:
                 b_sum = agent.boundary_summary or "Workspace restricted"
                 line += (
-                    f"\n    ↳ [bold cyan]Boundary Summary:[/bold cyan] {b_sum}\n"
-                    f"    ↳ [bold yellow]Rationale:[/bold yellow] Ordered by readiness status (READY agents first)"
+                    f"\n    ↳ [bold {accent}]Boundary Summary:[/bold {accent}] {b_sum}\n"
+                    f"    ↳ [bold {warn}]Rationale:[/bold {warn}] Ordered by readiness status (READY agents first)"
                 )
 
             if is_selected:
-                lines.append(f"[cyan]{line}[/cyan]")
+                lines.append(f"[{accent}]{line}[/{accent}]")
             else:
                 lines.append(line)
 

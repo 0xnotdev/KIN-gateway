@@ -26,6 +26,13 @@ class CommandPaletteWidget(LifecycleWidgetMixin, Static):
     }
     """
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def __init__(
         self,
         query: str = "",
@@ -39,6 +46,8 @@ class CommandPaletteWidget(LifecycleWidgetMixin, Static):
         self.selected_index = selected_index
 
     def render(self) -> str:
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -51,7 +60,7 @@ class CommandPaletteWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} Palette Error: Action registry lost. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} Palette Error: Action registry lost. Press [Retry].[/bold {err}]"
 
         if state == WidgetLifecycleState.EMPTY or not self.results:
             act_str = f" → Action: {self._next_action_label}" if self._next_action_label else ""
@@ -64,7 +73,7 @@ class CommandPaletteWidget(LifecycleWidgetMixin, Static):
             cat = f"[{item.category.upper()}]"
 
             if is_selected:
-                lines.append(f"[bold yellow]{prefix}{cat} {item.title} — {item.description}[/bold yellow]")
+                lines.append(f"[bold {warn}]{prefix}{cat} {item.title} — {item.description}[/bold {warn}]")
             else:
                 lines.append(f"{prefix}[dim]{cat}[/dim] {item.title}")
 
@@ -94,6 +103,13 @@ class CommandPaletteModal(ModalScreenWidget):
         padding: 1 2;
     }
     """
+
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
 
     def __init__(self, commands: List[CommandItem], active_tab: str = "home", **kwargs) -> None:
         super().__init__(
@@ -135,8 +151,9 @@ class CommandPaletteModal(ModalScreenWidget):
                 self.palette_widget.set_lifecycle_state(WidgetLifecycleState.NORMAL)
 
     def compose(self) -> ComposeResult:
+        accent = self._c("accent.primary", "#bb9af7")
         with Vertical(id="palette-container"):
-            yield Static("[bold cyan]COMMAND PALETTE (Ctrl+K)[/bold cyan]", id="palette-header")
+            yield Static(f"[bold {accent}]COMMAND PALETTE (Ctrl+K)[/bold {accent}]", id="palette-header")
             yield Input(placeholder="Type command or :colon command...", id="palette-input")
             yield self.palette_widget
 

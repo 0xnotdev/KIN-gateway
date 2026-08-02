@@ -28,6 +28,13 @@ class EmptyStateWidget(LifecycleWidgetMixin, Static):
     }
     """
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def __init__(
         self,
         title: str = "No Items Available",
@@ -54,6 +61,9 @@ class EmptyStateWidget(LifecycleWidgetMixin, Static):
         return False
 
     def render(self) -> str:
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
+        accent = self._c("accent.primary", "#bb9af7")
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -62,11 +72,11 @@ class EmptyStateWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.DISABLED:
             reason = self.disabled_reason or "Collection disabled"
-            return f"[dim]Empty Collection | [yellow]Reason: {reason}[/yellow][/dim]"
+            return f"[dim]Empty Collection | [{warn}]Reason: {reason}[/{warn}][/dim]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} Empty State Error: Failed to fetch collection. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} Empty State Error: Failed to fetch collection. Press [Retry].[/bold {err}]"
 
         glyph = get_glyph(self.glyph_symbol)
 
@@ -75,12 +85,12 @@ class EmptyStateWidget(LifecycleWidgetMixin, Static):
 
         action_str = ""
         if self._next_action_label:
-            action_str = f"\n\n[bold cyan][ {self._next_action_label} ][/bold cyan]"
+            action_str = f"\n\n[bold {accent}][ {self._next_action_label} ][/bold {accent}]"
 
         focus_mark = " [focus]" if state == WidgetLifecycleState.FOCUSED else ""
 
         return (
-            f"[bold cyan]{glyph} {self.title}{focus_mark}[/bold cyan]\n"
+            f"[bold {accent}]{glyph} {self.title}{focus_mark}[/bold {accent}]\n"
             f"[dim]{self.description}[/dim]"
             f"{action_str}"
         )

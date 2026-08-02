@@ -55,8 +55,20 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
         self.is_missing_peer: bool = is_missing_peer
         self.is_trust_unknown: bool = is_trust_unknown
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
         state = self.lifecycle_state
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
+        accent = self._c("accent.primary", "#bb9af7")
+        ok = self._c("state.live", "#73daca")
+        hl = self._c("accent.highlight", "#7aa2f7")
 
         if state == WidgetLifecycleState.LOADING:
             glyph = get_glyph("◌")
@@ -68,7 +80,7 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} TrustStrip Error: Security state unreadable. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} TrustStrip Error: Security state unreadable. Press [Retry].[/bold {err}]"
 
         # Mode A: Render Session Header / Trust Strip (§14.8 Step 1)
         if self.session_summary:
@@ -76,19 +88,19 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
             init_user = redact_ui_text(sess.initiator_username or "local_user")
             
             if self.is_trust_unknown:
-                peer_trust = "[bold red][TRUST STATUS UNKNOWN / CHECK ERROR][/bold red]"
+                peer_trust = f"[bold {err}][TRUST STATUS UNKNOWN / CHECK ERROR][/bold {err}]"
                 rec_user = f"@{redact_ui_text(sess.receiver_username or 'unknown')}"
             elif self.is_missing_peer:
-                rec_user = f"@{redact_ui_text(sess.receiver_username or 'unknown')} [bold yellow][UNKNOWN PEER][/bold yellow]"
-                peer_trust = "[bold red][UNVERIFIED PEER][/bold red]"
+                rec_user = f"@{redact_ui_text(sess.receiver_username or 'unknown')} [bold {warn}][UNKNOWN PEER][/bold {warn}]"
+                peer_trust = f"[bold {err}][UNVERIFIED PEER][/bold {err}]"
             else:
                 rec_user = f"@{redact_ui_text(sess.receiver_username or 'peer')}"
-                peer_trust = "[bold cyan][PEER VERIFIED][/bold cyan]"
+                peer_trust = f"[bold {accent}][PEER VERIFIED][/bold {accent}]"
 
-            transport_badge = "[bold green][DIRECT TRANSPORT][/bold green]" if self.is_direct_transport else "[bold yellow][RELAY TRANSPORT][/bold yellow]"
-            stale_badge = " [bold red][STALE PEER CARD][/bold red]" if self.is_stale_peer else ""
+            transport_badge = f"[bold {ok}][DIRECT TRANSPORT][/bold {ok}]" if self.is_direct_transport else f"[bold {warn}][RELAY TRANSPORT][/bold {warn}]"
+            stale_badge = f" [bold {err}][STALE PEER CARD][/bold {err}]" if self.is_stale_peer else ""
 
-            status_style = "green" if sess.status == "active" else ("blue" if sess.status == "completed" else "red")
+            status_style = ok if sess.status == "active" else (hl if sess.status == "completed" else err)
             obj_clean = redact_ui_text(sess.objective or "No objective declared")
 
             if state == WidgetLifecycleState.NARROW:
@@ -97,7 +109,7 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
             focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
             return (
                 f"🔒 SESSION TRUST STRIP: {peer_trust} {transport_badge}{stale_badge}{focus_mark}\n"
-                f"Session ID: [bold]{sess.session_id}[/bold] | Type: [cyan]{sess.type}[/cyan] | Status: [{status_style}]{sess.status}[/{status_style}]\n"
+                f"Session ID: [bold]{sess.session_id}[/bold] | Type: [{accent}]{sess.type}[/{accent}] | Status: [{status_style}]{sess.status}[/]\n"
                 f"Participants: [bold]@{init_user}[/bold] (initiator) → [bold]{rec_user}[/bold]\n"
                 f"Objective: [dim]{obj_clean}[/dim]"
             )
@@ -107,7 +119,7 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
             return "[dim]TrustStrip: No agent security identity or session summary bound.[/dim]"
 
         card = self.card_view
-        badge = "[bold cyan][PEER VERIFIED][/bold cyan]" if card.is_peer else "[bold green][LOCAL TRUSTED][/bold green]"
+        badge = f"[bold {accent}][PEER VERIFIED][/bold {accent}]" if card.is_peer else f"[bold {ok}][LOCAL TRUSTED][/bold {ok}]"
         truncated_id = card.agent_id[:8] if len(card.agent_id) >= 8 else card.agent_id
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
 
@@ -116,6 +128,6 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
 
         return (
             f"🔒 TRUST STRIP: {badge}{focus_mark}\n"
-            f"Agent ID: [bold]{card.agent_id}[/bold] (FPR: [yellow]{truncated_id}...[/yellow])\n"
+            f"Agent ID: [bold]{card.agent_id}[/bold] (FPR: [{warn}]{truncated_id}...[/{warn}])\n"
             f"Isolation Boundary: [dim]sandbox-isolated | readiness={card.readiness_reason}[/dim]"
         )

@@ -37,6 +37,13 @@ class InspectorWidget(LifecycleWidgetMixin, Static):
     }
     """
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def __init__(
         self,
         title: str = "Detail Inspector",
@@ -57,6 +64,10 @@ class InspectorWidget(LifecycleWidgetMixin, Static):
         self.collapsed = collapsed
 
     def render(self) -> str:
+        ok = self._c("state.live", "#73daca")
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
+        accent = self._c("accent.primary", "#bb9af7")
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -69,7 +80,7 @@ class InspectorWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} Inspector Error: Item details unreadable. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} Inspector Error: Item details unreadable. Press [Retry].[/bold {err}]"
 
         if self.collapsed:
             return "i\nn\ns\np"
@@ -82,11 +93,11 @@ class InspectorWidget(LifecycleWidgetMixin, Static):
             ts = redact_ui_text(evt.created_at or "")
             p_class = evt.presentation_class
 
-            p_color = "green" if p_class in ("message", "checkpoint") else ("red" if p_class == "security" else "yellow")
+            p_color = ok if p_class in ("message", "checkpoint") else (err if p_class == "security" else warn)
             content_line = f"\n[bold]Content:[/bold] {redact_ui_text(evt.content)}" if evt.content else ""
             
             return (
-                f"[bold cyan]🔍 INSPECT EVENT: {evt.event_id[:12]}[/bold cyan]\n"
+                f"[bold {accent}]🔍 INSPECT EVENT: {evt.event_id[:12]}[/bold {accent}]\n"
                 f"[bold]Class:[/bold] [{p_color}]{p_class.upper()}[/{p_color}] | [bold]Kind:[/bold] {kind_clean}\n"
                 f"[bold]Actor:[/bold] @{actor} | [bold]Created:[/bold] {ts}\n"
                 f"[bold]Session ID:[/bold] {evt.session_id}{content_line}\n\n"
@@ -105,7 +116,7 @@ class InspectorWidget(LifecycleWidgetMixin, Static):
             sha_trunc = meta.sha256[:16] if meta.sha256 else "0000000000000000"
 
             return (
-                f"[bold cyan]🔍 INSPECT ARTIFACT: {meta.artifact_id[:12]}[/bold cyan]\n"
+                f"[bold {accent}]🔍 INSPECT ARTIFACT: {meta.artifact_id[:12]}[/bold {accent}]\n"
                 f"[bold]Offered By:[/bold] @{offered_by} | [bold]MIME Type:[/bold] {mime}\n"
                 f"[bold]Size:[/bold] {art.display_size} | [bold]SHA-256:[/bold] {sha_trunc}...\n"
                 f"[bold]Created:[/bold] {meta.created_at or 'N/A'}\n\n"
@@ -122,7 +133,7 @@ class InspectorWidget(LifecycleWidgetMixin, Static):
             dec_str = "PENDING OWNER DECISION" if not app_v.decision else app_v.decision.decision.value
 
             return (
-                f"[bold yellow]🔍 INSPECT APPROVAL GATE: {req.approval_id[:12]}[/bold yellow]\n"
+                f"[bold {warn}]🔍 INSPECT APPROVAL GATE: {req.approval_id[:12]}[/bold {warn}]\n"
                 f"[bold]Action Class:[/bold] {action_cls} | [bold]Agent:[/bold] {req.agent_id}\n"
                 f"[bold]Risk Label:[/bold] {req.risk_label.value.upper()} | [bold]Status:[/bold] {dec_str}\n"
                 f"[bold]Summary:[/bold] {summary_clean}\n\n"
@@ -137,4 +148,4 @@ class InspectorWidget(LifecycleWidgetMixin, Static):
         if state == WidgetLifecycleState.EMPTY or not scrubbed_details:
             return f"[bold]{scrubbed_title}[/bold]\n[dim]No item selected for preview.[/dim]"
 
-        return f"[bold cyan]{scrubbed_title}[/bold cyan]\n{scrubbed_details}"
+        return f"[bold {accent}]{scrubbed_title}[/bold {accent}]\n{scrubbed_details}"

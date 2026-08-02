@@ -93,9 +93,17 @@ class GuideOverlayScreen(ModalScreen[None]):
         super().__init__(**kwargs)
         self.search_query: str = ""
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def compose(self) -> ComposeResult:
+        accent = self._c("accent.primary", "#bb9af7")
         with Container(id="guide-container"):
-            yield Static("[bold cyan]KIN USER GUIDE — SEARCHABLE OVERLAY[/bold cyan]", id="guide-header")
+            yield Static(f"[bold {accent}]KIN USER GUIDE — SEARCHABLE OVERLAY[/bold {accent}]", id="guide-header")
             yield Input(placeholder="Search guide pages...", id="guide-search-input")
             yield Static(self.render_pages(), id="guide-content")
 
@@ -119,10 +127,12 @@ class GuideOverlayScreen(ModalScreen[None]):
         table = Table.grid(expand=True)
         table.add_column()
 
+        warn = self._c("state.waiting", "#e0af68")
+        ok = self._c("state.live", "#73daca")
         for p in filtered:
             panel = Panel(
-                f"{p.body}\n\n[bold yellow]Next Action:[/bold yellow] {p.next_action}",
-                title=f"[bold green]{p.title}[/bold green]",
+                f"{p.body}\n\n[bold {warn}]Next Action:[/bold {warn}] {p.next_action}",
+                title=f"[bold {ok}]{p.title}[/bold {ok}]",
                 border_style="cyan",
             )
             table.add_row(panel)

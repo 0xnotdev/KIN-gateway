@@ -31,8 +31,18 @@ class WorkspaceTabBarWidget(LifecycleWidgetMixin, Static):
         super().__init__(**kwargs)
         self.tab_manager = tab_manager
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
         state = self.lifecycle_state
+        err = self._c("state.error", "#f7768e")
+        text_inv = self._c("text.inverse", "#1a1b26")
+        accent_hl = self._c("accent.highlight", "#7aa2f7")
 
         if state == WidgetLifecycleState.LOADING:
             glyph = get_glyph("◌")
@@ -47,7 +57,7 @@ class WorkspaceTabBarWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} TabBar Error: Session state lost. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} TabBar Error: Session state lost. Press [Retry].[/bold {err}]"
 
         tabs = self.tab_manager.tabs
         active_idx = self.tab_manager.active_index
@@ -64,7 +74,7 @@ class WorkspaceTabBarWidget(LifecycleWidgetMixin, Static):
             label = f"{tab.title}{dirty_str}{badge_str}"
 
             if idx == active_idx:
-                tab_parts.append(f"[bold white on blue] {idx + 1}:{label} [/bold white on blue]")
+                tab_parts.append(f"[bold {text_inv} on {accent_hl}] {idx + 1}:{label} [/bold {text_inv} on {accent_hl}]")
             else:
                 tab_parts.append(f"[dim] {idx + 1}:{label} [/dim]")
 

@@ -36,6 +36,13 @@ class AgentCardWidget(LifecycleWidgetMixin, Static):
     }
     """
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def __init__(
         self,
         card_view: Optional[AgentCardView] = None,
@@ -46,6 +53,7 @@ class AgentCardWidget(LifecycleWidgetMixin, Static):
         self.card_view = card_view
 
     def render(self) -> str:
+        err = self._c("state.error", "#f7768e")
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -61,7 +69,7 @@ class AgentCardWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} AgentCard Error: Agent metadata corrupted. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} AgentCard Error: Agent metadata corrupted. Press [Retry].[/bold {err}]"
 
         card = self.card_view
 

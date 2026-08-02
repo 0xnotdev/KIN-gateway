@@ -37,8 +37,17 @@ class QuickSwitcherWidget(LifecycleWidgetMixin, Static):
         self.candidates = candidates or []
         self.selected_index = selected_index
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
         state = self.lifecycle_state
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
 
         if state == WidgetLifecycleState.LOADING:
             glyph = get_glyph("◌")
@@ -50,7 +59,7 @@ class QuickSwitcherWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} QuickSwitcher Error: Candidate index corrupted. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} QuickSwitcher Error: Candidate index corrupted. Press [Retry].[/bold {err}]"
 
         filtered = [
             (target_id, title, category)
@@ -68,7 +77,7 @@ class QuickSwitcherWidget(LifecycleWidgetMixin, Static):
             prefix = "▶ " if is_selected else "  "
 
             if is_selected:
-                lines.append(f"[bold yellow]{prefix}[{category}] {title}[/bold yellow]")
+                lines.append(f"[bold {warn}]{prefix}[{category}] {title}[/bold {warn}]")
             else:
                 lines.append(f"{prefix}[dim][{category}][/dim] {title}")
 
@@ -113,9 +122,17 @@ class QuickSwitcherModal(ModalScreenWidget):
         self.selected_index = 0
         self.switcher_widget = QuickSwitcherWidget(candidates=candidates)
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def compose(self) -> ComposeResult:
+        accent = self._c("accent.primary", "#bb9af7")
         with Vertical(id="switcher-container"):
-            yield Static("[bold cyan]QUICK SWITCHER (Ctrl+P)[/bold cyan]", id="switcher-header")
+            yield Static(f"[bold {accent}]QUICK SWITCHER (Ctrl+P)[/bold {accent}]", id="switcher-header")
             yield Input(placeholder="Type workspace or agent...", id="switcher-input")
             yield self.switcher_widget
 

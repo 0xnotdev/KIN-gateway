@@ -24,6 +24,13 @@ class ProgressBarWidget(LifecycleWidgetMixin, Static):
     }
     """
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def __init__(
         self,
         progress: float = 0.0,
@@ -42,6 +49,9 @@ class ProgressBarWidget(LifecycleWidgetMixin, Static):
         self.refresh()
 
     def render(self) -> str:
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
+        accent = self._c("accent.primary", "#bb9af7")
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -53,11 +63,11 @@ class ProgressBarWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.DISABLED:
             reason = self.disabled_reason or "Progress paused"
-            return f"[dim]Progress Suspended | [yellow]Reason: {reason}[/yellow][/dim]"
+            return f"[dim]Progress Suspended | [{warn}]Reason: {reason}[/{warn}][/dim]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} Progress Error: Operation failed. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} Progress Error: Operation failed. Press [Retry].[/bold {err}]"
 
         pct = int(self.progress_value * 100)
 
@@ -71,4 +81,4 @@ class ProgressBarWidget(LifecycleWidgetMixin, Static):
 
         focus_mark = " [focus]" if state == WidgetLifecycleState.FOCUSED else ""
 
-        return f"[bold cyan][{bar_str}][/bold cyan] [bold]{pct}%[/bold] {self.label}{focus_mark}"
+        return f"[bold {accent}][{bar_str}][/bold {accent}] [bold]{pct}%[/bold] {self.label}{focus_mark}"

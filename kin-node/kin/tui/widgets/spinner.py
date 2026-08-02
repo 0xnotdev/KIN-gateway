@@ -47,29 +47,39 @@ class SpinnerWidget(LifecycleWidgetMixin, Static):
             return True
         return False
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
         state = self.lifecycle_state
+        accent = self._c("accent.primary", "#bb9af7")
+        warn = self._c("state.waiting", "#e0af68")
+        err = self._c("state.error", "#f7768e")
 
         if state == WidgetLifecycleState.LOADING or state == WidgetLifecycleState.NORMAL:
             glyph = self.spinner_frames[self.frame_index % len(self.spinner_frames)]
             time_str = self.last_updated_at.strftime("%H:%M:%S") if self.last_updated_at else "00:00:00"
             cancel_hint = " [Cancel: Esc]" if self.cancel_callback else ""
-            return f"[cyan]{glyph}[/cyan] [bold]{self.label}...[/bold] [dim]({time_str})[/dim]{cancel_hint}"
+            return f"[{accent}]{glyph}[/{accent}] [bold]{self.label}...[/bold] [dim]({time_str})[/dim]{cancel_hint}"
 
         if state == WidgetLifecycleState.EMPTY:
             return "[dim]Spinner Idle[/dim]"
 
         if state == WidgetLifecycleState.DISABLED:
             reason = self.disabled_reason or "Disabled by caller"
-            return f"[dim]Spinner Halted | [yellow]Reason: {reason}[/yellow][/dim]"
+            return f"[dim]Spinner Halted | [{warn}]Reason: {reason}[/{warn}][/dim]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} Spinner Error: Process stalled. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} Spinner Error: Process stalled. Press [Retry].[/bold {err}]"
 
         if state == WidgetLifecycleState.NARROW:
             return f"◌ {self.label[:10]}"
 
         # FOCUSED
         glyph = self.spinner_frames[0]
-        return f"[cyan]{glyph}[/cyan] [bold]{self.label}...[/bold] [focus]"
+        return f"[{accent}]{glyph}[/{accent}] [bold]{self.label}...[/bold] [focus]"

@@ -36,14 +36,14 @@
 .terminal-r2 { fill: #c5c8c6 }
 .terminal-r3 { fill: #e1e1e1 }
 .terminal-r4 { fill: #e1e1e1;font-weight: bold }
-.terminal-r5 { fill: #00ffff }
-.terminal-r6 { fill: #008000 }
+.terminal-r5 { fill: #bb9af7 }
+.terminal-r6 { fill: #73daca }
 .terminal-r7 { fill: #9e9e9e }
-.terminal-r8 { fill: #008000;font-weight: bold }
-.terminal-r9 { fill: #00ffff;font-weight: bold }
-.terminal-r10 { fill: #0000ff;font-weight: bold }
-.terminal-r11 { fill: #ffff00;font-weight: bold }
-.terminal-r12 { fill: #ffff00 }
+.terminal-r8 { fill: #73daca;font-weight: bold }
+.terminal-r9 { fill: #bb9af7;font-weight: bold }
+.terminal-r10 { fill: #7aa2f7;font-weight: bold }
+.terminal-r11 { fill: #e0af68;font-weight: bold }
+.terminal-r12 { fill: #e0af68 }
     </style>
 
     <defs>

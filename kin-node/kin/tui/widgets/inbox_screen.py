@@ -316,7 +316,19 @@ class InboxScreenWidget(LifecycleWidgetMixin, Static):
                 self.handle_always_allow_bounded()
                 event.stop()
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> Table | Panel:
+        accent = self._c("accent.primary", "#bb9af7")
+        ok = self._c("state.live", "#73daca")
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
+
         if self.lifecycle_state == WidgetLifecycleState.LOADING:
             return Panel("[dim]Loading Inbox & Approvals...[/dim]", title="Inbox", border_style="cyan")
 
@@ -324,11 +336,11 @@ class InboxScreenWidget(LifecycleWidgetMixin, Static):
 
         if len(needs_you) == 0 and len(approvals) == 0:
             return Panel(
-                "[bold green]ALL CLEAR — NO ACTION REQUIRED[/bold green]\n\n"
+                f"[bold {ok}]ALL CLEAR — NO ACTION REQUIRED[/bold {ok}]\n\n"
                 "Your Inbox and Approval Queues are currently empty.\n"
                 "When sessions require clarification or agents request policy approvals, they will appear here.\n\n"
                 "[dim]Press [H] to return to Home dashboard.[/dim]",
-                title="[bold cyan]Inbox / Needs You[/bold cyan]",
+                title=f"[bold {accent}]Inbox / Needs You[/bold {accent}]",
                 border_style="green",
             )
 
@@ -340,14 +352,14 @@ class InboxScreenWidget(LifecycleWidgetMixin, Static):
         is_ny_active = (self.active_lane == "needs_you")
         ny_border = "cyan" if is_ny_active else "dim"
         ny_table = Table(
-            title=f"[bold yellow]NEEDS YOU ({len(needs_you)})[/bold yellow]" + (" [focused]" if is_ny_active else ""),
+            title=f"[bold {warn}]NEEDS YOU ({len(needs_you)})[/bold {warn}]" + (" [focused]" if is_ny_active else ""),
             expand=True,
             show_edge=True,
             border_style=ny_border,
         )
-        ny_table.add_column("Kind", style="cyan", width=12)
+        ny_table.add_column("Kind", style=accent, width=12)
         ny_table.add_column("Reason / Action", style="bold white")
-        ny_table.add_column("Urgency", style="bold red", width=10)
+        ny_table.add_column("Urgency", style=f"bold {err}", width=10)
 
         for idx, item in enumerate(needs_you):
             is_sel = (is_ny_active and idx == self.selected_index)
@@ -363,7 +375,7 @@ class InboxScreenWidget(LifecycleWidgetMixin, Static):
         app_border = "cyan" if is_app_active else "dim"
         app_panel = Table.grid(expand=True)
         app_panel.add_row(
-            f"[bold red]APPROVAL QUEUE ({len(approvals)})[/bold red]" + (" [focused]" if is_app_active else "")
+            f"[bold {err}]APPROVAL QUEUE ({len(approvals)})[/bold {err}]" + (" [focused]" if is_app_active else "")
         )
 
         for idx, app_view in enumerate(approvals):
@@ -371,7 +383,7 @@ class InboxScreenWidget(LifecycleWidgetMixin, Static):
             card_w = ApprovalCardWidget(approval_view=app_view)
             card_render = card_w.render()
             if is_sel:
-                card_render = f"[bold cyan]▶ {card_render}[/bold cyan]"
+                card_render = f"[bold {accent}]▶ {card_render}[/bold {accent}]"
             app_panel.add_row(card_render)
 
         layout_table.add_row(ny_table, app_panel)

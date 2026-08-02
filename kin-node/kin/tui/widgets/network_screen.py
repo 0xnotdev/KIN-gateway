@@ -62,7 +62,21 @@ class NetworkScreenWidget(LifecycleWidgetMixin, Static):
             return self._contacts_override
         return get_local_contacts_summaries(self.profile_dir, self.profile_name)
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> Panel | Table:
+        accent = self._c("accent.primary", "#bb9af7")
+        ok = self._c("state.live", "#73daca")
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
+        accent2 = self._c("accent.secondary", "#9d7cd8")
+        hl = self._c("accent.highlight", "#7aa2f7")
+
         if self.lifecycle_state == WidgetLifecycleState.LOADING:
             return Panel("[dim]Loading Trusted Contacts...[/dim]", title="Network", border_style="cyan")
 
@@ -71,26 +85,26 @@ class NetworkScreenWidget(LifecycleWidgetMixin, Static):
         # Unpaired State (§14.6 Phase D2.3)
         if len(contacts) == 0:
             return Panel(
-                "[bold yellow]ZERO PAIRED TRUSTED CONTACTS[/bold yellow]\n\n"
+                f"[bold {warn}]ZERO PAIRED TRUSTED CONTACTS[/bold {warn}]\n\n"
                 "You currently have no paired contacts in your network.\n"
                 "To pair a contact:\n"
-                " • Run [bold cyan]kin pair <code>[/bold cyan] in your terminal\n"
+                f" • Run [bold {accent}]kin pair <code>[/bold {accent}] in your terminal\n"
                 " • Or complete First Flight's guided pairing step.\n\n"
                 "[dim]Next Action: Pair a contact via CLI to begin peer collaboration.[/dim]",
-                title="[bold green]Network & Trusted Contacts[/bold green]",
+                title=f"[bold {ok}]Network & Trusted Contacts[/bold {ok}]",
                 border_style="yellow",
             )
 
         table = Table(
-            title=f"[bold green]PAIRED TRUSTED CONTACTS ({len(contacts)})[/bold green]",
+            title=f"[bold {ok}]PAIRED TRUSTED CONTACTS ({len(contacts)})[/bold {ok}]",
             expand=True,
             show_edge=True,
         )
         table.add_column("Contact", style="bold white")
-        table.add_column("Autonomy", style="cyan")
-        table.add_column("Fingerprint", style="bold yellow")
-        table.add_column("Reachability (Cached)", style="blue")
-        table.add_column("Peer Cards Alert", style="bold green")
+        table.add_column("Autonomy", style=accent)
+        table.add_column("Fingerprint", style=f"bold {warn}")
+        table.add_column("Reachability (Cached)", style=hl)
+        table.add_column("Peer Cards Alert", style=f"bold {ok}")
 
         for c in contacts:
             recency = get_peer_capabilities_recency(self.profile_dir, c.username)

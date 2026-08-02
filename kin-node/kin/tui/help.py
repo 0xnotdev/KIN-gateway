@@ -71,10 +71,18 @@ class HelpOverlayScreen(ModalScreen[None]):
         ("question_mark", "dismiss_help", "Close Help"),
     ]
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def compose(self) -> ComposeResult:
+        accent = self._c("accent.primary", "#bb9af7")
         md_text = generate_help_markdown()
         with Vertical(id="help-container"):
-            yield Static("[bold cyan]KIN Keyboard Reference & Help (?)[/bold cyan]", id="help-header")
+            yield Static(f"[bold {accent}]KIN Keyboard Reference & Help (?)[/bold {accent}]", id="help-header")
             with ScrollableContainer(id="help-scroll"):
                 yield Static(md_text, id="help-content")
             yield Static("[dim]Press ESC or ? to close[/dim]", id="help-footer")

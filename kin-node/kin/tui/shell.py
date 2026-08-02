@@ -455,6 +455,13 @@ class MainCanvas(Vertical):
             )
         return self.session_arena_widgets[sid]
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def compose(self):
         if self.active_tab_kind == "home":
             yield self.home_widget
@@ -469,8 +476,9 @@ class MainCanvas(Vertical):
         elif self.active_tab_kind == "session":
             yield self.get_session_arena_widget()
         else:
+            accent = self._c("accent.primary", "#bb9af7")
             yield Static(
-                f"[bold cyan]{self.active_tab_kind.upper()} WORKSPACE[/bold cyan]\n"
+                f"[bold {accent}]{self.active_tab_kind.upper()} WORKSPACE[/bold {accent}]\n"
                 f"[dim]Screen arriving in Phase E/T5/T6.[/dim]\n",
                 id="canvas-content",
             )
@@ -636,10 +644,18 @@ class ConfirmationModal(ModalScreenWidget):
     Extends foundation ModalScreenWidget to guarantee unified keyboard handling (y/n/escape) and button consistency.
     """
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def __init__(self, action_name: str, target_name: str, **kwargs) -> None:
+        accent = self._c("accent.primary", "#bb9af7")
         super().__init__(
             title="CONFIRMATION REQUIRED",
-            body_text=f"Are you sure you want to execute '[bold]{action_name}[/bold]' on [cyan]{target_name}[/cyan]?",
+            body_text=f"Are you sure you want to execute '[bold]{action_name}[/bold]' on [{accent}]{target_name}[/{accent}]?",
             confirm_label="Confirm (y)",
             cancel_label="Cancel (n)",
             variant="error",

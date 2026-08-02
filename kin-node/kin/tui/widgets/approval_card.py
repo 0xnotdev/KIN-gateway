@@ -22,6 +22,13 @@ class ApprovalCardWidget(LifecycleWidgetMixin, Static):
     and visibly distinct risk-level styling (LOW, MEDIUM, HIGH, CRITICAL).
     """
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     can_focus = True
 
     DEFAULT_CSS = """
@@ -69,6 +76,9 @@ class ApprovalCardWidget(LifecycleWidgetMixin, Static):
         self.refresh()
 
     def render(self) -> str:
+        warn = self._c("state.waiting", "#e0af68")
+        err = self._c("state.error", "#f7768e")
+
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -84,7 +94,7 @@ class ApprovalCardWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} ApprovalCard Error: Approval request expired or invalid. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} ApprovalCard Error: Approval request expired or invalid. Press [Retry].[/bold {err}]"
 
         app_v = self.approval_view
         req = app_v.request
@@ -109,6 +119,6 @@ class ApprovalCardWidget(LifecycleWidgetMixin, Static):
         return (
             f"[{style}]{glyph} RISK: {risk}[/{style}]{focus_mark}\n"
             f"Action: [bold]{summary}[/bold] [dim]({action_class})[/dim]\n"
-            f"Requester: {agent_id} | Time Remaining: [yellow]{time_str}[/yellow]\n"
+            f"Requester: {agent_id} | Time Remaining: [{warn}]{time_str}[/{warn}]\n"
             f"Reason: [dim]{reason}[/dim]"
         )

@@ -85,13 +85,27 @@ class AgentsScreenWidget(LifecycleWidgetMixin, Static):
         self.selected_agent_id = agent_id
         self.refresh()
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> RenderableType:
+        accent = self._c("accent.primary", "#bb9af7")
+        ok = self._c("state.live", "#73daca")
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
+        accent2 = self._c("accent.secondary", "#9d7cd8")
+        hl = self._c("accent.highlight", "#7aa2f7")
+
         if self.lifecycle_state == WidgetLifecycleState.LOADING:
             return Panel("[dim]Loading Agent Roster...[/dim]", title="Agents", border_style="cyan")
 
         if self.lifecycle_state == WidgetLifecycleState.RECOVERABLE_ERROR and self.recoverable_error:
             return Panel(
-                f"[bold red]Agents Screen Error[/bold red]\n{self.recoverable_error.what_happened}",
+                f"[bold {err}]Agents Screen Error[/bold {err}]\n{self.recoverable_error.what_happened}",
                 title="Error",
                 border_style="red",
             )
@@ -117,23 +131,23 @@ class AgentsScreenWidget(LifecycleWidgetMixin, Static):
         # Check unpaired / empty states
         if len(all_agents) == 0:
             return Panel(
-                "[bold yellow]NO AGENTS CONFIGURED[/bold yellow]\n\n"
+                f"[bold {warn}]NO AGENTS CONFIGURED[/bold {warn}]\n\n"
                 "Your local agent roster is empty. You can:\n"
                 " • Import a local agent YAML card file\n"
                 " • Or pair contacts in the Network screen to discover peer agents.\n\n"
                 "[dim]Press [I] or run /import to connect an agent card file.[/dim]",
-                title="[bold green]Agents Workspace[/bold green]",
+                title=f"[bold {ok}]Agents Workspace[/bold {ok}]",
                 border_style="yellow",
             )
 
         # Unpaired state check (§14.6 Phase C)
         if len(peer_agents) == 0 and len(contacts) == 0 and len(local_agents) > 0 and self.filter_tag == "peer":
             return Panel(
-                "[bold cyan]UNPAIRED STATE — NO PEER AGENTS VISIBLE[/bold cyan]\n\n"
+                f"[bold {accent}]UNPAIRED STATE — NO PEER AGENTS VISIBLE[/bold {accent}]\n\n"
                 "You currently have zero paired trusted contacts.\n"
                 "Peer agents are only visible after pairing trusted contacts in the Network screen.\n\n"
                 "[dim]Next Action: Pair a contact in the Network tab to view peer cards.[/dim]",
-                title="[bold magenta]Peer Agents[/bold magenta]",
+                title=f"[bold {accent2}]Peer Agents[/bold {accent2}]",
                 border_style="cyan",
             )
 
@@ -153,20 +167,20 @@ class AgentsScreenWidget(LifecycleWidgetMixin, Static):
 
         # Left Roster Table
         roster_table = Table(
-            title=f"[bold green]AGENTS ROSTER ({len(filtered_agents)} / {len(all_agents)})[/bold green]",
+            title=f"[bold {ok}]AGENTS ROSTER ({len(filtered_agents)} / {len(all_agents)})[/bold {ok}]",
             expand=True,
             show_edge=True,
         )
-        roster_table.add_column("Sel", style="bold yellow", width=3)
+        roster_table.add_column("Sel", style=f"bold {warn}", width=3)
         roster_table.add_column("Agent ID / Name", style="bold white")
-        roster_table.add_column("Kind", style="cyan")
-        roster_table.add_column("Status", style="bold green")
-        roster_table.add_column("Capabilities", style="blue")
+        roster_table.add_column("Kind", style=accent)
+        roster_table.add_column("Status", style=f"bold {ok}")
+        roster_table.add_column("Capabilities", style=hl)
 
         for ag in filtered_agents:
             sel_mark = "▶" if ag.agent_id == self.selected_agent_id else " "
             kind_str = "PEER" if ag.is_peer else "LOCAL"
-            status_style = "bold green" if ag.availability == "active" or ag.availability == "ready" else "bold yellow"
+            status_style = f"bold {ok}" if ag.availability == "active" or ag.availability == "ready" else f"bold {warn}"
             
             # Capability chips via Badge representation
             caps_str = ", ".join(ag.capabilities_tags[:3]) if ag.capabilities_tags else "general"
@@ -187,10 +201,10 @@ class AgentsScreenWidget(LifecycleWidgetMixin, Static):
             # Render Stale Card Review Banner if applicable (§14.6 Phase C)
             if selected_card_view.is_peer and selected_card_view.readiness_reason and "updated" in selected_card_view.readiness_reason.lower():
                 stale_banner = Panel(
-                    "[bold yellow]⚠️ PEER CARD UPDATED — REVIEW REQUIRED[/bold yellow]\n"
+                    f"[bold {warn}]⚠️ PEER CARD UPDATED — REVIEW REQUIRED[/bold {warn}]\n"
                     "This peer agent has published an updated card specification.\n"
                     "Review capabilities and press [Acknowledge Review] to mark fresh.",
-                    title="[bold yellow]Stale Review[/bold yellow]",
+                    title=f"[bold {warn}]Stale Review[/bold {warn}]",
                     border_style="yellow",
                 )
                 detail_panel = Table.grid(expand=True)

@@ -36,6 +36,13 @@ class OutcomeCardWidget(LifecycleWidgetMixin, Static):
     }
     """
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def __init__(
         self,
         session_summary: Optional[SessionSummary] = None,
@@ -48,6 +55,8 @@ class OutcomeCardWidget(LifecycleWidgetMixin, Static):
         self.command_result = command_result
 
     def render(self) -> str:
+        ok = self._c("state.live", "#73daca")
+        err = self._c("state.error", "#f7768e")
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -63,13 +72,13 @@ class OutcomeCardWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} OutcomeCard Error: Session result telemetry unreadable. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} OutcomeCard Error: Session result telemetry unreadable. Press [Retry].[/bold {err}]"
 
         sess = self.session_summary
         res = self.command_result
 
         success = res.success if res else (sess.status in ("completed", "success", "done"))
-        badge = "[bold green]✔ SUCCESS[/bold green]" if success else "[bold red]✖ FAILED[/bold red]"
+        badge = f"[bold {ok}]✔ SUCCESS[/bold {ok}]" if success else f"[bold {err}]✖ FAILED[/bold {err}]"
 
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
 
@@ -77,7 +86,7 @@ class OutcomeCardWidget(LifecycleWidgetMixin, Static):
             return f"{badge} {sess.session_id[:8]} ({sess.current_turn} turns)"
 
         scrubbed_err = redact_ui_text(res.error_message) if (res and res.error_message) else ""
-        err_str = f"\nError: [bold red]{scrubbed_err}[/bold red]" if scrubbed_err else ""
+        err_str = f"\nError: [bold {err}]{scrubbed_err}[/bold {err}]" if scrubbed_err else ""
 
         return (
             f"{badge} [bold]Session Outcome[/bold]{focus_mark}\n"

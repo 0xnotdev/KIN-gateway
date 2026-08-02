@@ -71,8 +71,18 @@ class SessionMapWidget(LifecycleWidgetMixin, Static):
             self.cursor_up()
             event.stop()
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
         state = self.lifecycle_state
+        err = self._c("state.error", "#f7768e")
+        ok = self._c("state.live", "#73daca")
+        hl = self._c("accent.highlight", "#7aa2f7")
 
         if state == WidgetLifecycleState.LOADING:
             glyph = get_glyph("◌")
@@ -87,9 +97,9 @@ class SessionMapWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} SessionMap Error: Session index unreadable. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} SessionMap Error: Session index unreadable. Press [Retry].[/bold {err}]"
 
-        lines = ["[bold green]Session Map Overview:[/bold green]"]
+        lines = [f"[bold {ok}]Session Map Overview:[/bold {ok}]"]
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
 
         for idx, sess in enumerate(self.sessions):
@@ -100,8 +110,8 @@ class SessionMapWidget(LifecycleWidgetMixin, Static):
             rec_user = redact_ui_text(sess.receiver_username or "peer")
             obj_clean = redact_ui_text(sess.objective or "No objective")
 
-            status_color = "green" if sess.status == "active" else ("blue" if sess.status == "completed" else "red")
-            state_badge = f"[{status_color}][{sess.status.upper()}][/{status_color}]"
+            status_color = ok if sess.status == "active" else (hl if sess.status == "completed" else err)
+            state_badge = f"[{status_color}][{sess.status.upper()}][/]"
 
             if state == WidgetLifecycleState.NARROW:
                 lines.append(f"{prefix}● [bold]{sess.session_id[:8]}[/bold] @{init_user}→@{rec_user} {state_badge}")

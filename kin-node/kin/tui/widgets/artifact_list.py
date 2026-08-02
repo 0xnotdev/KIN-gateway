@@ -76,7 +76,17 @@ class ArtifactListWidget(LifecycleWidgetMixin, Static):
             self.cursor_up()
             event.stop()
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
+        accent = self._c("accent.primary", "#bb9af7")
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -92,7 +102,7 @@ class ArtifactListWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} ArtifactList Error: Vault index corrupted. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} ArtifactList Error: Vault index corrupted. Press [Retry].[/bold {err}]"
 
         lines = ["[bold]Vault Artifacts:[/bold]"]
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
@@ -109,11 +119,11 @@ class ArtifactListWidget(LifecycleWidgetMixin, Static):
             else:
                 line = (
                     f"{prefix}[bold]{meta.artifact_id}[/bold] [dim]({art.display_size})[/dim] "
-                    f"{prev_badge} digest=[yellow]{digest_str}[/yellow]"
+                    f"{prev_badge} digest=[{warn}]{digest_str}[/{warn}]"
                 )
 
             if is_selected:
-                lines.append(f"[bold cyan]{line}[/bold cyan]")
+                lines.append(f"[bold {accent}]{line}[/bold {accent}]")
             else:
                 lines.append(line)
 

@@ -83,8 +83,18 @@ class TimelineWidget(LifecycleWidgetMixin, Static):
             self.window_offset = max(0, len(self.items) - self.visible_items_window)
         self.refresh()
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
         state = self.lifecycle_state
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
+        accent = self._c("accent.primary", "#bb9af7")
 
         if state == WidgetLifecycleState.LOADING:
             glyph = get_glyph("◌")
@@ -100,7 +110,7 @@ class TimelineWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} Timeline Error: Event stream lost. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} Timeline Error: Event stream lost. Press [Retry].[/bold {err}]"
 
         if state == WidgetLifecycleState.NARROW:
             return f"[bold]Timeline ({len(self.items)} events)[/bold] | Latest: {self.items[-1].title[:15]}"
@@ -122,12 +132,12 @@ class TimelineWidget(LifecycleWidgetMixin, Static):
             body_part = f" - {item.body}" if item.body else ""
 
             if is_selected:
-                lines.append(f"[bold yellow]{prefix}[{ts}] {glyph} {title}{body_part}[/bold yellow]")
+                lines.append(f"[bold {warn}]{prefix}[{ts}] {glyph} {title}{body_part}[/bold {warn}]")
             else:
                 lines.append(f"{prefix}[{ts}] {glyph} {title}{body_part}")
 
-        scroll_lock_indicator = " [bold red][SCROLL LOCK ACTIVE][/bold red]" if self.user_scrolled_up else ""
+        scroll_lock_indicator = f" [bold {err}][SCROLL LOCK ACTIVE][/bold {err}]" if self.user_scrolled_up else ""
         focus_mark = " [focus]" if state == WidgetLifecycleState.FOCUSED else ""
 
-        header = f"[bold cyan]Timeline ({len(self.items)} events)[/bold cyan]{scroll_lock_indicator}{focus_mark}"
+        header = f"[bold {accent}]Timeline ({len(self.items)} events)[/bold {accent}]{scroll_lock_indicator}{focus_mark}"
         return f"{header}\n" + "\n".join(lines)

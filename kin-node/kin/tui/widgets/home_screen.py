@@ -99,14 +99,27 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
             return self._health_override
         return query_health_snapshot(self.profile_name, self.profile_dir, client=self.client)
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> RenderableType:
+        accent = self._c("accent.primary", "#bb9af7")
+        ok = self._c("state.live", "#73daca")
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
+        accent2 = self._c("accent.secondary", "#9d7cd8")
+        highlight = self._c("accent.highlight", "#7aa2f7")
 
         if self.lifecycle_state == WidgetLifecycleState.LOADING:
             return Panel("[dim]Loading Home Dashboard...[/dim]", title="Home", border_style="cyan")
 
         if self.lifecycle_state == WidgetLifecycleState.RECOVERABLE_ERROR and self.recoverable_error:
             return Panel(
-                f"[bold red]Home Dashboard Error[/bold red]\n{self.recoverable_error.what_happened}",
+                f"[bold {err}]Home Dashboard Error[/bold {err}]\n{self.recoverable_error.what_happened}",
                 title="Error",
                 border_style="red",
             )
@@ -120,19 +133,19 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
 
         # 1. Health & Status Banner
         if health.identity_ok and health.relay_reachable:
-            status_label, status_code, health_color = "HEALTHY", 100, "green"
+            status_label, status_code, health_color, health_hex = "HEALTHY", 100, "green", ok
             detail = f"Profile '{self.profile_name}' online • Relay connected"
         elif health.identity_ok:
-            status_label, status_code, health_color = "DEGRADED", 50, "yellow"
+            status_label, status_code, health_color, health_hex = "DEGRADED", 50, "yellow", warn
             detail = health.degraded_reason or f"Profile '{self.profile_name}' local only • Relay offline"
         else:
-            status_label, status_code, health_color = "NO_IDENTITY", 0, "red"
+            status_label, status_code, health_color, health_hex = "NO_IDENTITY", 0, "red", err
             detail = health.degraded_reason or "No local identity initialized • Run First Flight setup"
 
         header_panel = Panel(
-            f"[{health_color}][bold]{status_label}[/bold] ({status_code}/100)[/{health_color}] — {detail}\n"
+            f"[{health_hex}][bold]{status_label}[/bold] ({status_code}/100)[/{health_hex}] — {detail}\n"
             f"[dim]Profile: {self.profile_name} | Agents: {len(agents)} | Contacts: {len(contacts)} | Needs You: {len(self.approvals)} | Sessions: {len(self.sessions)}[/dim]",
-            title="[bold cyan]KIN V1.1 HOME DASHBOARD[/bold cyan]",
+            title=f"[bold {accent}]KIN V1.1 HOME DASHBOARD[/bold {accent}]",
             border_style=health_color,
         )
         layout_table.add_row(header_panel)
@@ -140,7 +153,7 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
         # 5-Second Discovery Affordance for brand-new empty profiles (§14.6 Phase B)
         if len(agents) == 0 and len(contacts) == 0:
             discovery_panel = Panel(
-                "[bold yellow]🚀 FIRST FLIGHT ONBOARDING RECOMMENDED[/bold yellow]\n\n"
+                f"[bold {warn}]🚀 FIRST FLIGHT ONBOARDING RECOMMENDED[/bold {warn}]\n\n"
                 "Welcome to KIN V1.1! Your profile is empty. To get started:\n"
                 " • Run First Flight wizard to initialize identity, connect agents & relay.\n"
                 " • Or press [Ctrl+P] / type [bold]/init[/bold] in command bar.\n\n"
@@ -152,10 +165,10 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
 
         # 2. Needs You Approval Queue Section
         if self.approvals:
-            approval_table = Table(title="[bold yellow]⚠️ Needs You (Pending Approvals)[/bold yellow]", expand=True, show_edge=True)
-            approval_table.add_column("Agent / Requester", style="cyan")
+            approval_table = Table(title=f"[bold {warn}]⚠️ Needs You (Pending Approvals)[/bold {warn}]", expand=True, show_edge=True)
+            approval_table.add_column("Agent / Requester", style=accent)
             approval_table.add_column("Action / Reason", style="white")
-            approval_table.add_column("Risk", style="bold red")
+            approval_table.add_column("Risk", style=f"bold {err}")
 
             for app_v in self.approvals[:5]:  # Bounded top 5
                 req = app_v.request
@@ -171,11 +184,11 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
             layout_table.add_row(approval_table)
 
         # 3. Agent Roster Preview Section (Bounded rendering for scale performance)
-        agent_table = Table(title=f"[bold green]Agent Roster Preview ({len(agents)} Total)[/bold green]", expand=True, show_edge=True)
+        agent_table = Table(title=f"[bold {ok}]Agent Roster Preview ({len(agents)} Total)[/bold {ok}]", expand=True, show_edge=True)
         agent_table.add_column("ID / Name", style="bold white")
         agent_table.add_column("Description", style="dim")
-        agent_table.add_column("Status", style="bold cyan")
-        agent_table.add_column("Capabilities", style="blue")
+        agent_table.add_column("Status", style=f"bold {accent}")
+        agent_table.add_column("Capabilities", style=highlight)
 
         visible_agents = agents[: self.max_visible_agents]
         for ag in visible_agents:
@@ -195,11 +208,11 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
         layout_table.add_row(agent_table)
 
         # 4. Network Summary Section (Contacts)
-        network_table = Table(title=f"[bold magenta]Network Summary ({len(contacts)} Paired Contacts)[/bold magenta]", expand=True, show_edge=True)
+        network_table = Table(title=f"[bold {accent2}]Network Summary ({len(contacts)} Paired Contacts)[/bold {accent2}]", expand=True, show_edge=True)
         network_table.add_column("Contact", style="bold white")
-        network_table.add_column("Endpoint", style="cyan")
+        network_table.add_column("Endpoint", style=accent)
         network_table.add_column("Fingerprint", style="dim")
-        network_table.add_column("Autonomy", style="green")
+        network_table.add_column("Autonomy", style=ok)
 
         if contacts:
             for c in contacts[:5]:  # Bounded top 5
@@ -214,10 +227,10 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
         layout_table.add_row(network_table)
 
         # 5. Live & Recent Sessions Section (Bounded rendering for virtualization scale)
-        session_table = Table(title=f"[bold blue]Live & Recent Sessions ({len(self.sessions)} Total)[/bold blue]", expand=True, show_edge=True)
+        session_table = Table(title=f"[bold {highlight}]Live & Recent Sessions ({len(self.sessions)} Total)[/bold {highlight}]", expand=True, show_edge=True)
         session_table.add_column("Session ID", style="bold white")
         session_table.add_column("Participants", style="white")
-        session_table.add_column("Status", style="bold yellow")
+        session_table.add_column("Status", style=f"bold {warn}")
         session_table.add_column("Last Activity", style="dim")
 
         visible_sessions = self.sessions[: self.max_visible_sessions]

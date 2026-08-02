@@ -30,6 +30,13 @@ from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
 class ContactPickerModal(LifecycleWidgetMixin, ModalScreen[Optional[ContactSummary]]):
     """ModalScreen overlay for selecting a peer contact (§14.7 Phase C)."""
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     can_focus = True
 
     DEFAULT_CSS = """
@@ -100,16 +107,19 @@ class ContactPickerModal(LifecycleWidgetMixin, ModalScreen[Optional[ContactSumma
             event.stop()
 
     def render(self) -> str:
+        ok = self._c("state.live", "#73daca")
+        accent = self._c("accent.primary", "#bb9af7")
+
         if not self.contacts:
             return "[dim]ContactPicker: No peer contacts available.[/dim]"
 
-        lines = [f"[bold green]{self.prompt}[/bold green]"]
+        lines = [f"[bold {ok}]{self.prompt}[/bold {ok}]"]
         for idx, contact in enumerate(self.contacts):
             is_selected = (idx == self.selected_index)
             prefix = "▶ " if is_selected else "  "
             name = redact_ui_text(contact.display_name or contact.username)
             line = f"{prefix}● [bold]@{contact.username}[/bold] ({name}) [dim]{contact.endpoint}[/dim]"
-            lines.append(f"[cyan]{line}[/cyan]" if is_selected else line)
+            lines.append(f"[{accent}]{line}[/{accent}]" if is_selected else line)
 
         lines.append("\n[dim]j/k: navigate | Enter: select peer | Esc: cancel[/dim]")
         return "\n".join(lines)
@@ -117,6 +127,13 @@ class ContactPickerModal(LifecycleWidgetMixin, ModalScreen[Optional[ContactSumma
 
 class DispatchWizardWidget(LifecycleWidgetMixin, Static):
     """DispatchWizard domain widget for 7-step session dispatching (§14.7 Phase C)."""
+
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
 
     can_focus = True
 
@@ -484,6 +501,12 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
             event.stop()
 
     def render(self) -> str:
+        ok = self._c("state.live", "#73daca")
+        err = self._c("state.error", "#f7768e")
+        accent = self._c("accent.primary", "#bb9af7")
+        warn = self._c("state.waiting", "#e0af68")
+        text = self._c("text.primary", "#e1e2e7")
+
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -497,7 +520,7 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
             detail = self.last_dispatch_error.technical_detail if self.last_dispatch_error else "Workflow state invalid."
-            return f"[bold red]{glyph} Dispatch Error: {detail}[/bold red]"
+            return f"[bold {err}]{glyph} Dispatch Error: {detail}[/bold {err}]"
 
         step_title = self.STEPS[self.step_index]
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
@@ -508,8 +531,8 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
 
         if self.is_submitted:
             return (
-                f"[bold green]✔ DISPATCH DRAFT READY[/bold green]{focus_mark}\n"
-                f"Peer: [bold]@{draft.peer_username or 'alice'}[/bold] | Mode: [bold cyan]{draft.session_type.upper()}[/bold cyan]\n"
+                f"[bold {ok}]✔ DISPATCH DRAFT READY[/bold {ok}]{focus_mark}\n"
+                f"Peer: [bold]@{draft.peer_username or 'alice'}[/bold] | Mode: [bold {accent}]{draft.session_type.upper()}[/bold {accent}]\n"
                 f"Sender: {draft.sender_agent_id} → Receiver: {draft.receiver_agent_id}\n"
                 f"Goal: {scrubbed_prompt}\n"
                 f"[dim]Status: {scrubbed_status}[/dim]"
@@ -518,8 +541,8 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
         if self.is_sending:
             glyph = get_glyph("◌")
             return (
-                f"[bold cyan]{glyph} Sending Session Request...[/bold cyan]{focus_mark}\n"
-                f"Progressive Status: [yellow]{scrubbed_status}[/yellow]\n"
+                f"[bold {accent}]{glyph} Sending Session Request...[/bold {accent}]{focus_mark}\n"
+                f"Progressive Status: [{warn}]{scrubbed_status}[/{warn}]\n"
                 f"[dim]UI responsive — worker executing off-main-thread.[/dim]"
             )
 
@@ -528,7 +551,7 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
 
         pantry_count = len(draft.pantry_items)
         lines = [
-            f"[bold cyan]Dispatch Wizard - {step_title}[/bold cyan]{focus_mark}",
+            f"[bold {accent}]Dispatch Wizard - {step_title}[/bold {accent}]{focus_mark}",
             f"Step {self.step_index + 1}/{len(self.STEPS)}: Peer=@{draft.peer_username or '(unselected)'} | Mode={draft.session_type}",
             f"Sender={draft.sender_agent_id} → Receiver={draft.receiver_agent_id}",
         ]
@@ -537,13 +560,13 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
             mode_strs = []
             for m in VALID_SESSION_TYPES:
                 if m == draft.session_type:
-                    mode_strs.append(f"[bold cyan]▶ [{m.upper()}][/bold cyan]")
+                    mode_strs.append(f"[bold {accent}]▶ [{m.upper()}][/bold {accent}]")
                 else:
                     mode_strs.append(f"[dim]{m}[/dim]")
             lines.append(f"Session Modes: {'  '.join(mode_strs)}")
             lines.append("[dim]Use ↑/k or ↓/j to cycle session type mode[/dim]")
         elif self.controller.current_step == DispatchStep.GOAL_INPUT:
-            lines.append(f"Goal Input: [bold white]{scrubbed_prompt}[/bold white]_")
+            lines.append(f"Goal Input: [bold {text}]{scrubbed_prompt}[/bold {text}]_")
             lines.append("[dim]Type goal text directly | Backspace to edit[/dim]")
         elif self.controller.current_step == DispatchStep.CONTEXT_PANTRY:
             lines.append(f"Pantry Items ({pantry_count}):")
@@ -553,5 +576,5 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
         else:
             lines.append(f"Goal: [dim]{scrubbed_prompt or '(empty)'}[/dim] | Pantry Items: {pantry_count}")
 
-        lines.append("[yellow]Press [Right/n] Next, [Left/p] Prev, [Enter] Select/Confirm[/yellow]")
+        lines.append(f"[{warn}]Press [Right/n] Next, [Left/p] Prev, [Enter] Select/Confirm[/{warn}]")
         return "\n".join(lines)

@@ -44,9 +44,17 @@ class DenyReasonModal(ModalScreen[Optional[str]]):
         super().__init__(**kwargs)
         self.approval_id = approval_id
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def compose(self) -> ComposeResult:
+        err = self._c("state.error", "#f7768e")
         with Vertical(id="deny-container"):
-            yield Static(f"[bold red]DENY APPROVAL REQUEST [{self.approval_id[:8]}][/bold red]")
+            yield Static(f"[bold {err}]DENY APPROVAL REQUEST [{self.approval_id[:8]}][/bold {err}]")
             yield Static("Enter a mandatory reason for denying this request:")
             yield Input(placeholder="Reason for denial (required)...", id="deny-reason-input")
             yield Static("", id="deny-error-label")
@@ -55,11 +63,12 @@ class DenyReasonModal(ModalScreen[Optional[str]]):
                 yield Button("Cancel (n)", id="btn-cancel", variant="default")
 
     def submit_reason(self) -> None:
+        err_color = self._c("state.error", "#f7768e")
         inp = self.query_one("#deny-reason-input", Input)
         err = self.query_one("#deny-error-label", Static)
         reason = inp.value.strip()
         if not reason:
-            err.update("[bold red]Denial reason is required and cannot be empty.[/bold red]")
+            err.update(f"[bold {err_color}]Denial reason is required and cannot be empty.[/bold {err_color}]")
             inp.focus()
             return
         self.dismiss(reason)
@@ -108,9 +117,17 @@ class EditConstraintsModal(ModalScreen[Optional[dict]]):
         self.approval_id = approval_id
         self.initial_json = initial_json
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def compose(self) -> ComposeResult:
+        accent = self._c("accent.primary", "#bb9af7")
         with Vertical(id="constraints-container"):
-            yield Static(f"[bold cyan]EDIT CONSTRAINTS [{self.approval_id[:8]}][/bold cyan]")
+            yield Static(f"[bold {accent}]EDIT CONSTRAINTS [{self.approval_id[:8]}][/bold {accent}]")
             yield Static('Enter flat JSON constraints (e.g. {"max_turn_limit": 5}):')
             yield Input(value=self.initial_json, placeholder='{"key": "value"}', id="constraints-json-input")
             yield Static("", id="json-error-label")
@@ -119,20 +136,21 @@ class EditConstraintsModal(ModalScreen[Optional[dict]]):
                 yield Button("Cancel (n)", id="btn-cancel", variant="default")
 
     def submit_constraints(self) -> None:
+        err_color = self._c("state.error", "#f7768e")
         inp = self.query_one("#constraints-json-input", Input)
         err = self.query_one("#json-error-label", Static)
         val = inp.value.strip()
         if not val:
-            err.update("[bold red]Constraints JSON cannot be empty.[/bold red]")
+            err.update(f"[bold {err_color}]Constraints JSON cannot be empty.[/bold {err_color}]")
             return
         try:
             parsed = json.loads(val)
             if not isinstance(parsed, dict):
-                err.update("[bold red]Constraints must be a JSON object ({...}).[/bold red]")
+                err.update(f"[bold {err_color}]Constraints must be a JSON object ({{...}}).[/bold {err_color}]")
                 return
             self.dismiss(parsed)
         except Exception as exc:
-            err.update(f"[bold red]Invalid JSON: {exc}[/bold red]")
+            err.update(f"[bold {err_color}]Invalid JSON: {exc}[/bold {err_color}]")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-confirm":
@@ -171,9 +189,17 @@ class ApproveConfirmModal(ModalScreen[bool]):
         self.modal_title = title
         self.modal_description = description
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def compose(self) -> ComposeResult:
+        ok = self._c("state.live", "#73daca")
         with Vertical(id="approve-container"):
-            yield Static(f"[bold green]{self.modal_title}[/bold green]")
+            yield Static(f"[bold {ok}]{self.modal_title}[/bold {ok}]")
             yield Static(self.modal_description)
             with Horizontal():
                 yield Button("Confirm (y)", id="btn-confirm", variant="success")
@@ -226,20 +252,31 @@ class PatchApplyConfirmModal(ModalScreen[bool]):
         self.relative_target_path = relative_target_path
         self.unified_diff = unified_diff
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def compose(self) -> ComposeResult:
+        warn = self._c("state.waiting", "#e0af68")
+        accent = self._c("accent.primary", "#bb9af7")
+        ok = self._c("state.live", "#73daca")
+        err = self._c("state.error", "#f7768e")
         with Vertical(id="patch-container"):
-            yield Static(f"[bold yellow]CONFIRM WORKSPACE PATCH APPLY [{self.artifact_id[:8]}][/bold yellow]")
-            yield Static(f"Target File: [bold cyan]{self.relative_target_path}[/bold cyan]")
+            yield Static(f"[bold {warn}]CONFIRM WORKSPACE PATCH APPLY [{self.artifact_id[:8]}][/bold {warn}]")
+            yield Static(f"Target File: [bold {accent}]{self.relative_target_path}[/bold {accent}]")
             
             # Format diff lines with syntax highlighting
             diff_lines = []
             for line in self.unified_diff.splitlines():
                 if line.startswith("+") and not line.startswith("+++"):
-                    diff_lines.append(f"[green]{line}[/green]")
+                    diff_lines.append(f"[{ok}]{line}[/{ok}]")
                 elif line.startswith("-") and not line.startswith("---"):
-                    diff_lines.append(f"[red]{line}[/red]")
+                    diff_lines.append(f"[{err}]{line}[/{err}]")
                 elif line.startswith("@"):
-                    diff_lines.append(f"[cyan]{line}[/cyan]")
+                    diff_lines.append(f"[{accent}]{line}[/{accent}]")
                 else:
                     diff_lines.append(f"[dim]{line}[/dim]")
             

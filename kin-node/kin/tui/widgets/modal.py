@@ -32,6 +32,13 @@ class ModalWidget(LifecycleWidgetMixin, Static):
     }
     """
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def __init__(
         self,
         title: str = "Modal Dialog",
@@ -51,11 +58,14 @@ class ModalWidget(LifecycleWidgetMixin, Static):
         self.on_cancel = on_cancel
 
     def render(self) -> str:
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
+        accent = self._c("accent.primary", "#bb9af7")
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
             glyph = get_glyph("◌")
-            return f"[bold cyan]{glyph} Loading Dialog...[/bold cyan]"
+            return f"[bold {accent}]{glyph} Loading Dialog...[/bold {accent}]"
 
         scrubbed_title = redact_ui_text(self.title)
         scrubbed_body = redact_ui_text(self.body_text)
@@ -65,20 +75,20 @@ class ModalWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.DISABLED:
             reason = self.disabled_reason or "Action disabled"
-            return f"[dim][bold]{scrubbed_title}[/bold] (DISABLED)[/dim]\n[yellow]Reason: {reason}[/yellow]"
+            return f"[dim][bold]{scrubbed_title}[/bold] (DISABLED)[/dim]\n[{warn}]Reason: {reason}[/{warn}]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} Modal Error: Action failed. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} Modal Error: Action failed. Press [Retry].[/bold {err}]"
 
         if state == WidgetLifecycleState.NARROW:
             return f"[bold]{scrubbed_title}[/bold] | {scrubbed_body[:20]}"
 
         focus_mark = " [focus]" if state == WidgetLifecycleState.FOCUSED else ""
         return (
-            f"[bold red]{scrubbed_title}[/bold red]{focus_mark}\n"
+            f"[bold {err}]{scrubbed_title}[/bold {err}]{focus_mark}\n"
             f"{scrubbed_body}\n\n"
-            f"[bold cyan][{self.confirm_label}][/bold cyan]  [dim][{self.cancel_label}][/dim]"
+            f"[bold {accent}][{self.confirm_label}][/bold {accent}]  [dim][{self.cancel_label}][/dim]"
         )
 
 
@@ -108,6 +118,13 @@ class ModalScreenWidget(ModalScreen[bool]):
     }
     """
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def __init__(
         self,
         title: str = "Modal Dialog",
@@ -125,8 +142,9 @@ class ModalScreenWidget(ModalScreen[bool]):
         self.variant = variant
 
     def compose(self) -> ComposeResult:
+        err = self._c("state.error", "#f7768e")
         with Vertical(id="modal-container"):
-            yield Static(f"[bold red]{self.title}[/bold red]", id="modal-header")
+            yield Static(f"[bold {err}]{self.title}[/bold {err}]", id="modal-header")
             yield Static(self.body_text, id="modal-body")
             with Horizontal(id="modal-buttons"):
                 yield Button(self.confirm_label, id="btn-confirm", variant=self.variant)

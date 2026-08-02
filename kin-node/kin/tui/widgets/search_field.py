@@ -97,8 +97,17 @@ class SearchFieldWidget(LifecycleWidgetMixin, Static):
             self.set_query(self.query + event.character)
             event.stop()
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
         state = self.lifecycle_state
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
 
         if state == WidgetLifecycleState.LOADING:
             glyph = get_glyph("◌")
@@ -113,11 +122,11 @@ class SearchFieldWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} Search Error: Index corrupted. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} Search Error: Index corrupted. Press [Retry].[/bold {err}]"
 
         match_str = ""
         if self.match_count is not None:
-            match_str = f" [bold yellow][{self.match_count} matches][/bold yellow]"
+            match_str = f" [bold {warn}][{self.match_count} matches][/bold {warn}]"
 
         if state == WidgetLifecycleState.NARROW:
             q = self.query or self.placeholder
@@ -127,4 +136,4 @@ class SearchFieldWidget(LifecycleWidgetMixin, Static):
         focus_mark = " [focus]" if is_focused else ""
         query_display = self.query if self.query else f"[dim]{self.placeholder}[/dim]"
 
-        return f"[bold yellow]/[/bold yellow] {query_display}{match_str}{focus_mark}"
+        return f"[bold {warn}]/[/bold {warn}] {query_display}{match_str}{focus_mark}"

@@ -25,6 +25,13 @@ class BadgeWidget(LifecycleWidgetMixin, Static):
     }
     """
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def __init__(
         self,
         value: Union[int, str] = 0,
@@ -39,6 +46,8 @@ class BadgeWidget(LifecycleWidgetMixin, Static):
         self.label = label
 
     def render(self) -> str:
+        err = self._c("state.error", "#f7768e")
+        warn = self._c("state.waiting", "#e0af68")
         state = self.lifecycle_state
 
         if state == WidgetLifecycleState.LOADING:
@@ -52,7 +61,7 @@ class BadgeWidget(LifecycleWidgetMixin, Static):
             return f"[dim](DISABLED: {reason})[/dim]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
-            return "[bold red]![Err][/bold red]"
+            return f"[bold {err}]![Err][/bold {err}]"
 
         if state == WidgetLifecycleState.NARROW:
             return f"● {self.value}"
@@ -61,4 +70,4 @@ class BadgeWidget(LifecycleWidgetMixin, Static):
         lbl_str = f" {self.label}" if self.label else ""
         focus_mark = " [focus]" if state == WidgetLifecycleState.FOCUSED else ""
 
-        return f"[bold yellow]({val_str}{lbl_str}){focus_mark}[/bold yellow]"
+        return f"[bold {warn}]({val_str}{lbl_str}){focus_mark}[/bold {warn}]"

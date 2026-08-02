@@ -124,8 +124,18 @@ class SidebarTreeWidget(LifecycleWidgetMixin, Static):
             self.section_collapse[node.section] = not self.section_collapse.get(node.section, False)
             self.refresh()
 
+    def _c(self, role: str, fallback: str) -> str:
+        """Resolve a theme color by role, falling back when app is unavailable."""
+        try:
+            return self.app.theme_tokens.get_role_color(role)
+        except Exception:
+            return fallback
+
     def render(self) -> str:
         state = self.lifecycle_state
+        err = self._c("state.error", "#f7768e")
+        accent = self._c("accent.primary", "#bb9af7")
+        warn = self._c("state.waiting", "#e0af68")
 
         if state == WidgetLifecycleState.LOADING:
             glyph = get_glyph("◌")
@@ -137,7 +147,7 @@ class SidebarTreeWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold red]{glyph} Sidebar Error: Navigation node lost. Press [Retry].[/bold red]"
+            return f"[bold {err}]{glyph} Sidebar Error: Navigation node lost. Press [Retry].[/bold {err}]"
 
         if self.collapsed:
             return "●\n✓\n!\n→\n(1)"
@@ -162,11 +172,11 @@ class SidebarTreeWidget(LifecycleWidgetMixin, Static):
                 arrow = "›" if is_col else "▼"
                 lbl = f"[bold dim]{arrow} {node.title}[/bold dim]"
             else:
-                badge_str = f" [cyan]({node.badge})[/cyan]" if node.badge else ""
+                badge_str = f" [{accent}]({node.badge})[/{accent}]" if node.badge else ""
                 lbl = f"{node.title}{badge_str}"
 
             if is_selected:
-                lines.append(f"[bold yellow]{prefix}{lbl}[/bold yellow]")
+                lines.append(f"[bold {warn}]{prefix}{lbl}[/bold {warn}]")
             else:
                 lines.append(f"{prefix}{lbl}")
 
