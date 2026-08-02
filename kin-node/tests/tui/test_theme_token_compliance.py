@@ -19,6 +19,7 @@ from kin.tui.tokens import (
     _THEME_REGISTRY,
     RECOGNIZED_THEME_NAMES,
     REQUIRED_ROLES,
+    compute_wcag_contrast_ratio,
     validate_theme,
 )
 
@@ -163,4 +164,41 @@ def test_render_methods_use_theme_resolved_colors_not_bare_names():
         f"Found {len(violations)} bare Rich color names in widget code "
         f"(should use theme-resolved hex via _c() or get_role_color()):\n"
         + "\n".join(violations)
+    )
+
+
+FG_BG_ROLE_PAIRINGS = [
+    ("text.primary", "surface.base", 4.5),
+    ("text.secondary", "surface.base", 3.0),
+    ("text.muted", "surface.base", 3.0),
+    ("text.inverse", "accent.highlight", 4.5),
+    ("text.inverse", "accent.primary", 4.5),
+    ("state.error", "surface.base", 4.5),
+    ("state.waiting", "surface.base", 3.0),
+    ("state.live", "surface.base", 3.0),
+    ("accent.primary", "surface.base", 3.0),
+    ("accent.secondary", "surface.base", 3.0),
+    ("accent.highlight", "surface.base", 3.0),
+    ("surface.raised", "surface.base", 1.1),
+]
+
+
+@pytest.mark.parametrize("theme_name", sorted(list(RECOGNIZED_THEME_NAMES)))
+@pytest.mark.parametrize("fg_role,bg_role,min_ratio", FG_BG_ROLE_PAIRINGS)
+def test_wcag_contrast_across_theme_fg_bg_pairings(theme_name: str, fg_role: str, bg_role: str, min_ratio: float):
+    """Parametrized WCAG 2.1 contrast scanner across all 6 spec themes and widget fg/bg role pairs.
+
+    Asserts that every foreground/background token pair used in widgets meets or exceeds its
+    required contrast threshold (WCAG AA 4.5:1 / 3.0:1, and WCAG AAA 7.0:1 for high-contrast).
+    """
+    theme = _THEME_REGISTRY[theme_name]
+    fg_color = theme.get_role_color(fg_role)
+    bg_color = theme.get_role_color(bg_role)
+
+    ratio = compute_wcag_contrast_ratio(fg_color, bg_color)
+    target_threshold = 7.0 if theme_name == "high-contrast" and min_ratio >= 3.0 else min_ratio
+
+    assert ratio >= target_threshold, (
+        f"Theme '{theme_name}' failed WCAG contrast check for {fg_role} ({fg_color}) on {bg_role} ({bg_color}): "
+        f"contrast ratio is {ratio:.2f}:1, required >= {target_threshold:.1f}:1"
     )
