@@ -76,10 +76,12 @@ def dual_profile_setup(tmp_path):
     alice_conn.close()
     bob_conn.close()
 
+    from kin.identity.storage import get_or_create_vault_key
     return {
         "alice_dir": alice_dir,
         "bob_dir": bob_dir,
         "alice_ed_pub": alice_ed_pub,
+        "bob_vault_key": get_or_create_vault_key("bob"),
     }
 
 
@@ -91,6 +93,7 @@ def test_compose_human_message_end_to_end_transmission(dual_profile_setup, monke
     alice_dir = dual_profile_setup["alice_dir"]
     bob_dir = dual_profile_setup["bob_dir"]
     alice_ed_pub = dual_profile_setup["alice_ed_pub"]
+    bob_vault_key = dual_profile_setup["bob_vault_key"]
 
     # Mock HTTP client to route direct transport post from Alice to Bob's ingest_envelope
     def mock_post(url, json=None, **kwargs):
@@ -102,7 +105,7 @@ def test_compose_human_message_end_to_end_transmission(dual_profile_setup, monke
                 if un == "alice":
                     return alice_ed_pub
                 return None
-            ack = ingest_envelope(bob_conn, b"01234567890123456789012345678901", json, get_public_key_fn=get_bob_pubkey)
+            ack = ingest_envelope(bob_conn, bob_vault_key, json, get_public_key_fn=get_bob_pubkey)
             bob_conn.close()
             mock_resp = httpx.Response(200, json={"status": ack.status})
             return mock_resp
@@ -126,9 +129,63 @@ def test_compose_human_message_end_to_end_transmission(dual_profile_setup, monke
     # Assert Bob's local SQLite database received, decrypted, and stored the message end-to-end
     from kin.tui.local_state import get_session_events
 
-    bob_events = get_session_events(bob_dir, "sess-comp-1")
+    bob_events = get_session_events(bob_dir, "sess-comp-1", profile_name="bob")
     assert len(bob_events) == 1
     assert bob_events[0].kind == MessageKind.QUESTION.value
+    assert bob_events[0].content == "Need review on Section 4"
+
+
+def test_compose_human_message_redaction_on_recipient_side(dual_profile_setup, monkeypatch):
+    """Assert free-form human message containing sensitive patterns is redacted on recipient side (§14.8 Step 5/6)."""
+    import httpx
+    from kin.transport.v11 import ingest_envelope
+    from kin.tui.widgets.inspector import InspectorWidget
+    from kin.tui.local_state import get_session_events
+
+    alice_dir = dual_profile_setup["alice_dir"]
+    bob_dir = dual_profile_setup["bob_dir"]
+    alice_ed_pub = dual_profile_setup["alice_ed_pub"]
+    bob_vault_key = dual_profile_setup["bob_vault_key"]
+
+    def mock_post(url, json=None, **kwargs):
+        if "sessions" in url:
+            from kin.storage.db import get_connection
+
+            bob_conn = get_connection(bob_dir / "kin.db")
+            def get_bob_pubkey(un: str):
+                if un == "alice":
+                    return alice_ed_pub
+                return None
+            ack = ingest_envelope(bob_conn, bob_vault_key, json, get_public_key_fn=get_bob_pubkey)
+            bob_conn.close()
+            return httpx.Response(200, json={"status": ack.status})
+        return httpx.Response(404)
+
+    client = httpx.Client()
+    monkeypatch.setattr(client, "post", mock_post)
+
+    secret_msg = "Please check key: sk-live-abcdef1234567890123456789012"
+    ok, res, err = send_human_message_to_session_action(
+        profile_name="alice",
+        session_id="sess-comp-1",
+        message_text=secret_msg,
+        profile_dir=alice_dir,
+        http_client=client,
+    )
+
+    assert ok is True
+
+    # Retrieve Bob's events
+    bob_events = get_session_events(bob_dir, "sess-comp-1", profile_name="bob")
+    assert len(bob_events) == 1
+    assert "sk-live-abcdef1234567890123456789012" not in bob_events[0].content
+    assert "REDACTED" in bob_events[0].content
+
+    # Inspect rendered output in InspectorWidget
+    insp = InspectorWidget(selected_event=bob_events[0])
+    rendered = insp.render()
+    assert "sk-live-abcdef1234567890123456789012" not in rendered
+    assert "REDACTED" in rendered
 
 
 def test_compose_human_message_unreachable_peer_failure_path(dual_profile_setup, monkeypatch):

@@ -83,12 +83,13 @@ class InspectorWidget(LifecycleWidgetMixin, Static):
             p_class = evt.presentation_class
 
             p_color = "green" if p_class in ("message", "checkpoint") else ("red" if p_class == "security" else "yellow")
+            content_line = f"\n[bold]Content:[/bold] {redact_ui_text(evt.content)}" if evt.content else ""
             
             return (
                 f"[bold cyan]🔍 INSPECT EVENT: {evt.event_id[:12]}[/bold cyan]\n"
                 f"[bold]Class:[/bold] [{p_color}]{p_class.upper()}[/{p_color}] | [bold]Kind:[/bold] {kind_clean}\n"
                 f"[bold]Actor:[/bold] @{actor} | [bold]Created:[/bold] {ts}\n"
-                f"[bold]Session ID:[/bold] {evt.session_id}\n\n"
+                f"[bold]Session ID:[/bold] {evt.session_id}{content_line}\n\n"
                 f"[dim]───── Detailed Inspection Payload (Read-Only) ─────[/dim]\n"
                 f"Event Kind: {kind_clean}\n"
                 f"Presentation Class: {p_class}\n"

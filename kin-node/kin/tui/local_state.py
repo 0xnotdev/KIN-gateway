@@ -1147,6 +1147,46 @@ def get_session_detail(
         conn.close()
 
 
+def _parse_payload_content(payload_json_val: Optional[str], vault_key: Optional[bytes] = None) -> Optional[str]:
+    """Parse and decrypt payload_json, extracting human-readable message text and redacting it (§14.8 Step 5/6)."""
+    if not payload_json_val:
+        return None
+
+    raw_json_str = payload_json_val
+    if vault_key:
+        try:
+            from kin.storage.vault import decrypt_field
+            decrypted = decrypt_field(vault_key, payload_json_val)
+            if decrypted:
+                raw_json_str = decrypted
+        except Exception:
+            pass
+
+    try:
+        import json
+        data = json.loads(raw_json_str)
+        raw_text = None
+        if isinstance(data, dict):
+            raw_text = (
+                data.get("message")
+                or data.get("question")
+                or data.get("reason")
+                or data.get("content")
+                or data.get("goal")
+                or data.get("outcome")
+            )
+        elif isinstance(data, str):
+            raw_text = data
+
+        if raw_text and isinstance(raw_text, str):
+            from kin.tui.redaction import redact_ui_text
+            return redact_ui_text(raw_text)
+    except Exception:
+        pass
+
+    return None
+
+
 def get_session_events(
     profile_dir: Path,
     session_id: str,
@@ -1163,6 +1203,14 @@ def get_session_events(
     conn = ensure_profile_db(db_path)
     events: List[UiEvent] = []
     seen = seen_event_ids or set()
+    
+    vault_key = None
+    try:
+        from kin.identity.storage import get_or_create_vault_key
+        vault_key = get_or_create_vault_key(profile_name)
+    except Exception:
+        pass
+
     try:
         cur = conn.cursor()
 
@@ -1170,7 +1218,7 @@ def get_session_events(
         if after_event_order is not None:
             cur.execute(
                 """
-                SELECT event_id, session_id, kind, created_at, actor_username, event_order
+                SELECT event_id, session_id, kind, created_at, actor_username, event_order, payload_json
                 FROM session_events
                 WHERE session_id = ? AND event_order > ?
                 ORDER BY event_order ASC
@@ -1180,7 +1228,7 @@ def get_session_events(
         else:
             cur.execute(
                 """
-                SELECT event_id, session_id, kind, created_at, actor_username, event_order
+                SELECT event_id, session_id, kind, created_at, actor_username, event_order, payload_json
                 FROM session_events
                 WHERE session_id = ?
                 ORDER BY event_order ASC
@@ -1188,7 +1236,7 @@ def get_session_events(
                 (session_id,),
             )
         for row in cur.fetchall():
-            e_id, s_id, kind_str, c_at, actor, e_ord = row
+            e_id, s_id, kind_str, c_at, actor, e_ord, p_json = row
             if e_id in seen:
                 continue
 
@@ -1197,6 +1245,8 @@ def get_session_events(
             except ValueError:
                 # Unrecognized event kind fallback: surface safely under security presentation class rather than dropping
                 p_class = "security"
+
+            content_str = _parse_payload_content(p_json, vault_key)
 
             events.append(
                 UiEvent(
@@ -1207,6 +1257,7 @@ def get_session_events(
                     actor_username=actor,
                     presentation_class=p_class,
                     event_order=e_ord,
+                    content=content_str,
                 )
             )
 

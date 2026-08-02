@@ -211,10 +211,31 @@ class UiEvent:
     actor_username: Optional[str]
     presentation_class: PresentationClass
     event_order: Optional[int] = None
+    content: Optional[str] = None
 
     @classmethod
     def from_session_event(cls, event: SessionEvent) -> "UiEvent":
+        from kin.tui.redaction import redact_ui_text
+
         p_class = map_event_kind_to_presentation_class(event.kind)
+        
+        # Extract human-readable text payload if available
+        raw_text = None
+        payload = event.payload or {}
+        if isinstance(payload, dict):
+            raw_text = (
+                payload.get("message")
+                or payload.get("question")
+                or payload.get("reason")
+                or payload.get("content")
+                or payload.get("goal")
+                or payload.get("outcome")
+            )
+        elif isinstance(payload, str):
+            raw_text = payload
+
+        redacted_content = redact_ui_text(raw_text) if raw_text and isinstance(raw_text, str) else None
+
         return cls(
             event_id=event.event_id,
             session_id=event.session_id,
@@ -222,6 +243,7 @@ class UiEvent:
             created_at=event.created_at,
             actor_username=event.actor_username,
             presentation_class=p_class,
+            content=redacted_content,
         )
 
     @classmethod

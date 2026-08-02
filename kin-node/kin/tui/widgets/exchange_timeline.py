@@ -359,9 +359,10 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
 
         # 1. MESSAGE: provenance-rich showing actor, timestamp, and content
         if p_class == "message":
+            body_line = f"\n   [italic]\"{redact_ui_text(evt.content)}\"[/italic]" if evt.content else ""
             return (
                 f"{prefix}[bold green]💬 MESSAGE[/bold green] [dim]@{actor} at {ts}[/dim]{select_tag}{pulse_badge}\n"
-                f"   [bold]Kind:[/bold] {kind_clean}\n"
+                f"   [bold]Kind:[/bold] {kind_clean}{body_line}\n"
                 f"   Event ID: {evt.event_id}"
             )
 
