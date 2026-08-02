@@ -26,6 +26,9 @@ from kin.tui.persistence import (
 from kin.tui.shell import ConfirmationModal, Inspector, MainCanvas, Sidebar, StatusBar, WorkspaceTabBar
 from kin.tui.tokens import resolve_theme
 from kin.tui.widgets import WidgetLifecycleState
+from kin.tui.widgets.compose_modal import ComposeMessageModal
+from kin.tui.widgets.session_arena import SessionArenaWidget
+from kin.tui.local_state import send_human_message_to_session_action
 from kin.tui.workspace import WorkspaceTabManager
 
 
@@ -117,6 +120,21 @@ class KinApp(App[None]):
         active = self.tab_manager.get_active_tab()
         self.tab_bar.active_tab = active.title
         self.tab_bar.refresh()
+
+        session_id = active.tab_id
+        if session_id.startswith("tab:"):
+            session_id = session_id[4:]
+        elif session_id.startswith("view:"):
+            session_id = session_id[5:]
+        elif session_id.startswith("open:"):
+            session_id = session_id[5:]
+
+        self.canvas.set_active_tab_kind(
+            active.kind,
+            session_id=session_id,
+            profile_dir=self.profile_dir,
+            profile_name=self.profile_name,
+        )
 
     def on_resize(self, event: Resize) -> None:
         """Handle terminal geometry changes and classify breakpoint tiers (§3.2)."""
@@ -366,11 +384,14 @@ class KinApp(App[None]):
     # ═══════════════════════════════════════════════════════════════════
     # Arena Keybinding Action Handlers (§5.3, §14.8 Phase D)
     # ═══════════════════════════════════════════════════════════════════
-    def _get_active_arena_widget(self):
-        try:
-            return self.query_one("SessionArenaWidget")
-        except Exception:
+    def _get_active_arena_widget(self) -> Optional[SessionArenaWidget]:
+        active_tab = self.tab_manager.get_active_tab()
+        if active_tab.kind != "session":
             return None
+        try:
+            return self.canvas.query_one(SessionArenaWidget)
+        except Exception:
+            return self.canvas.get_session_arena_widget()
 
     def action_action_lane_focus(self) -> None:
         arena = self._get_active_arena_widget()
@@ -413,8 +434,43 @@ class KinApp(App[None]):
             self.status_bar.refresh()
 
     def action_action_compose_message(self) -> None:
-        self.status_bar.status_message = "Compose message not yet available (Phase D2)."
-        self.status_bar.refresh()
+        arena = self._get_active_arena_widget()
+        if not arena:
+            self.status_bar.status_message = "Compose message requires an active Session Arena tab."
+            self.status_bar.refresh()
+            return
+
+        session_id = arena.session_id
+        peer_username = ""
+        if arena.session_summary:
+            peer_username = (
+                arena.session_summary.receiver_username
+                if arena.session_summary.initiator_username == self.profile_name
+                else arena.session_summary.initiator_username
+            )
+
+        def handle_composed_message(msg_text: Optional[str]) -> None:
+            if not msg_text:
+                self.status_bar.status_message = "Cancelled compose message."
+                self.status_bar.refresh()
+                return
+
+            ok, result_dict, err = send_human_message_to_session_action(
+                profile_name=self.profile_name,
+                session_id=session_id,
+                message_text=msg_text,
+                profile_dir=self.profile_dir,
+            )
+            if ok:
+                self.status_bar.status_message = f"Message sent to session {session_id}."
+                arena.load_arena_data()
+            elif err:
+                self.status_bar.status_message = f"Failed to send message: {err.user_message}"
+            else:
+                self.status_bar.status_message = "Failed to send message."
+            self.status_bar.refresh()
+
+        self.push_screen(ComposeMessageModal(session_id=session_id, peer_username=peer_username), handle_composed_message)
 
     def action_action_session_state_menu(self) -> None:
         arena = self._get_active_arena_widget()

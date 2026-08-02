@@ -43,23 +43,24 @@ def sample_artifacts() -> list[ArtifactView]:
 # 1. Keymap Completeness Test (§14.4, §14.8 Phase D)
 # -----------------------------------------------------------------------------
 def test_all_default_keymap_specs_have_callable_handlers_on_kin_app():
-    """Assert every single KeyBindingSpec in DEFAULT_KEYMAP maps to a real, callable action method on KinApp (§14.4, §14.8)."""
+    """Assert every single KeyBindingSpec in DEFAULT_KEYMAP maps to a real, callable action method on KinApp or SessionArenaWidget (§14.4, §14.8)."""
     app = KinApp()
+    arena = SessionArenaWidget()
     missing_handlers = []
 
     for spec in DEFAULT_KEYMAP:
+        target_obj = arena if spec.scope == "arena" else app
         action_name = spec.action
-        # Textual maps action="foo" to action_foo if explicit, or action_action_foo
         expected_handler_1 = f"action_{action_name}"
         expected_handler_2 = f"action_action_{action_name}"
 
-        has_h1 = hasattr(app, expected_handler_1) and callable(getattr(app, expected_handler_1))
-        has_h2 = hasattr(app, expected_handler_2) and callable(getattr(app, expected_handler_2))
+        has_h1 = hasattr(target_obj, expected_handler_1) and callable(getattr(target_obj, expected_handler_1))
+        has_h2 = hasattr(target_obj, expected_handler_2) and callable(getattr(target_obj, expected_handler_2))
 
         if not (has_h1 or has_h2):
-            missing_handlers.append((spec.key, spec.action, spec.section))
+            missing_handlers.append((spec.key, spec.action, spec.scope))
 
-    assert missing_handlers == [], f"Missing action handler methods on KinApp for specs: {missing_handlers}"
+    assert missing_handlers == [], f"Missing action handler methods for specs: {missing_handlers}"
 
 
 # -----------------------------------------------------------------------------

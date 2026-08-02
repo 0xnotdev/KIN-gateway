@@ -37,6 +37,7 @@ from kin.tui.widgets.approval_card import ApprovalCardWidget
 from kin.tui.widgets.approval_modals import ApproveConfirmModal, DenyReasonModal, EditConstraintsModal, PatchApplyConfirmModal
 from kin.tui.widgets.artifact_list import ArtifactListWidget
 from kin.tui.widgets.compose_modal import ComposeMessageModal
+from kin.tui.keymap import build_arena_bindings
 from kin.tui.widgets.exchange_timeline import ExchangeTimelineWidget
 from kin.tui.widgets.inspector import InspectorWidget
 from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
@@ -46,22 +47,10 @@ from kin.tui.widgets.trust_strip import TrustStripWidget
 
 
 class SessionArenaWidget(LifecycleWidgetMixin, Static):
-    """Session Arena domain widget composing header, session map, exchange timeline, activity feed, artifacts, and inspector (§14.8 Phase D).
-
-    Supports Focus/Cockpit modes and 5 active lane views (§5.3, §7.1, §14.8):
-    - Cockpit mode: breakpoint-driven multi-lane composition (wide 3-column, standard 2-column, compact/minimal stacked).
-    - Focus mode (z key): full-bleed active lane view hiding session map and inspector.
-    - Lanes:
-      - Transcript lane (t): ExchangeTimelineWidget with DEFAULT_ALLOWED_CLASSES.
-      - Activity lane (e): ActivityFeedWidget with activity/security events.
-      - Outputs lane (o): ArtifactListWidget with session artifacts.
-      - Decisions lane (c): ExchangeTimelineWidget filtered to checkpoints.
-      - Needs-you lane (u): Pending approval cards with interactive [a]pprove, [d]eny, [e]dit, [b]ounded actions.
-    - Inspector toggle (i): toggles Arena-local inspector panel.
-    - Session State Menu (s): opens pause/resume/cancel modal surface with disabled hand-back option.
-    """
+    """Session Arena domain widget composing header, session map, exchange timeline, activity feed, artifacts, and inspector (§14.8 Phase D)."""
 
     can_focus = True
+    BINDINGS = build_arena_bindings()
 
     DEFAULT_CSS = """
     SessionArenaWidget {
@@ -470,6 +459,65 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self.breakpoint = classify_breakpoint(event.size.width, event.size.height)
         self.refresh()
 
+    def action_lane_focus(self) -> None:
+        self.toggle_focus_mode()
+
+    def action_lane_transcript(self) -> None:
+        self.switch_lane("transcript")
+
+    def action_lane_activity(self) -> None:
+        if self.active_lane == "needs_you":
+            self.handle_approval_key("e")
+        else:
+            self.switch_lane("activity")
+
+    def action_lane_outputs(self) -> None:
+        self.switch_lane("outputs")
+
+    def action_lane_decisions(self) -> None:
+        self.switch_lane("decisions")
+
+    def action_lane_needs_you(self) -> None:
+        self.open_needs_you_lane()
+
+    def action_toggle_inspector_arena(self) -> None:
+        self.toggle_inspector()
+
+    def action_replay_item(self) -> None:
+        if self.events:
+            if self.is_replay_mode:
+                self.exit_replay_mode()
+            else:
+                self.enter_replay_mode()
+            self.refresh()
+
+    def action_session_state_menu(self) -> None:
+        self.open_session_state_menu()
+
+    def action_compose_message(self) -> None:
+        if self.is_mounted and hasattr(self, "app") and self.app:
+            is_clarification = (self.session_summary.status in ("peer_review", "needs_clarification")) if self.session_summary else False
+            def _handle_compose_result(content: Optional[str]) -> None:
+                if content and content.strip():
+                    self._dispatch_compose_message(content.strip())
+            self.app.push_screen(ComposeMessageModal(self.session_id, is_clarification=is_clarification), _handle_compose_result)
+
+    def action_approve_item(self) -> None:
+        if self.active_lane == "needs_you":
+            self.handle_approval_key("a")
+
+    def action_deny_item(self) -> None:
+        if self.active_lane == "needs_you":
+            self.handle_approval_key("d")
+
+    def action_edit_constraints(self) -> None:
+        if self.active_lane == "needs_you":
+            self.handle_approval_key("e")
+
+    def action_bounded_approval(self) -> None:
+        if self.active_lane == "needs_you":
+            self.handle_approval_key("b")
+
     def on_key(self, event: Key) -> None:
         if self.lifecycle_state == WidgetLifecycleState.DISABLED:
             return
@@ -513,20 +561,10 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             self.open_session_state_menu()
             event.stop()
         elif k == "m":
-            if self.is_mounted and hasattr(self, "app") and self.app:
-                is_clarification = (self.session_summary.status in ("peer_review", "needs_clarification")) if self.session_summary else False
-                def _handle_compose_result(content: Optional[str]) -> None:
-                    if content and content.strip():
-                        self._dispatch_compose_message(content.strip())
-                self.app.push_screen(ComposeMessageModal(self.session_id, is_clarification=is_clarification), _handle_compose_result)
+            self.action_compose_message()
             event.stop()
         elif k == "r":
-            if self.events:
-                if self.is_replay_mode:
-                    self.exit_replay_mode()
-                else:
-                    self.enter_replay_mode()
-            self.refresh()
+            self.action_replay_item()
             event.stop()
         elif k in ("down", "j"):
             if self.active_lane in ("transcript", "decisions"):

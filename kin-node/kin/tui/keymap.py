@@ -25,6 +25,7 @@ class KeyBindingSpec:
     priority: bool
     suppressed_when_text_focused: bool
     section: Literal["global", "collection", "arena"] = "global"
+    scope: Literal["app", "arena"] = "app"
     consequential: bool = False
     justification: str = ""
     explicit_action: Optional[str] = None
@@ -49,6 +50,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=True,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Global system interrupt signal.",
         explicit_action="quit",
     ),
@@ -59,6 +61,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=True,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Global system shortcut; Ctrl modifier safely bypasses text fields.",
     ),
     KeyBindingSpec(
@@ -68,6 +71,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=True,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Global navigation shortcut; Ctrl modifier safely bypasses text fields.",
     ),
     KeyBindingSpec(
@@ -77,6 +81,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="global",
+        scope="app",
         justification="Printable letter 'd'; must yield to text input fields when focused.",
     ),
     KeyBindingSpec(
@@ -86,6 +91,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="global",
+        scope="app",
         justification="Printable letter 'a'; must yield to text input fields when focused.",
     ),
     KeyBindingSpec(
@@ -95,15 +101,17 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="global",
+        scope="app",
         justification="Printable letter 'n'; must yield to text input fields when focused.",
     ),
     KeyBindingSpec(
         key="i",
         action="open_inbox",
-        label="Open Inbox / Toggle Inspector",
+        label="Open Inbox",
         priority=False,
         suppressed_when_text_focused=True,
         section="global",
+        scope="app",
         justification="Printable letter 'i'; must yield to text input fields when focused.",
     ),
     KeyBindingSpec(
@@ -113,15 +121,17 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="global",
+        scope="app",
         justification="Printable letter 'p'; must yield to text input fields when focused.",
     ),
     KeyBindingSpec(
         key="question_mark",  # ? in Textual
         action="toggle_help",
-        label="Contextual Help",
-        priority=False,
-        suppressed_when_text_focused=True,
+        label="Contextual Help Overlay",
+        priority=True,
+        suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Printable symbol '?'; must yield to text input fields when focused.",
     ),
     KeyBindingSpec(
@@ -131,6 +141,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="global",
+        scope="app",
         justification="Printable symbol '/'; must yield to text input fields when focused.",
     ),
     KeyBindingSpec(
@@ -140,6 +151,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=True,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Global escape key; priority required to trigger Esc priority chain.",
     ),
     KeyBindingSpec(
@@ -149,6 +161,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Standard focus navigation key.",
     ),
     KeyBindingSpec(
@@ -158,6 +171,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Standard focus navigation key.",
     ),
     KeyBindingSpec(
@@ -167,6 +181,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=True,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Global tab cycle shortcut.",
     ),
     KeyBindingSpec(
@@ -176,6 +191,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=True,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Global tab cycle shortcut.",
     ),
     KeyBindingSpec(
@@ -185,6 +201,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=True,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Global workspace tab close shortcut.",
     ),
     KeyBindingSpec(
@@ -194,6 +211,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=True,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Global tab reopen shortcut.",
     ),
     KeyBindingSpec(
@@ -203,6 +221,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=True,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Global draft save shortcut.",
     ),
     KeyBindingSpec(
@@ -212,6 +231,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="global",
+        scope="app",
         justification="Printable letter 'q'; must yield to text input fields when focused.",
     ),
     # T1 Shell Geometry Controls (§3.3, §5.1)
@@ -222,6 +242,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=True,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Alt+[ modifier shortcut for sidebar resize.",
         explicit_action="decrease_sidebar_width",
     ),
@@ -232,6 +253,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=True,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Alt+] modifier shortcut for sidebar resize.",
         explicit_action="increase_sidebar_width",
     ),
@@ -242,6 +264,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=True,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Alt+{ modifier shortcut for inspector resize.",
         explicit_action="decrease_inspector_width",
     ),
@@ -252,6 +275,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=True,
         suppressed_when_text_focused=False,
         section="global",
+        scope="app",
         justification="Alt+} modifier shortcut for inspector resize.",
         explicit_action="increase_inspector_width",
     ),
@@ -262,6 +286,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="global",
+        scope="app",
         justification="Printable symbol '['; must yield to text input fields when focused.",
         explicit_action="toggle_sidebar",
     ),
@@ -272,6 +297,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="global",
+        scope="app",
         justification="Printable symbol ']'; must yield to text input fields when focused.",
         explicit_action="toggle_inspector",
     ),
@@ -284,6 +310,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
             priority=True,
             suppressed_when_text_focused=False,
             section="global",
+            scope="app",
             justification=f"Alt+{idx} tab jump shortcut.",
         )
         for idx in range(1, 10)
@@ -296,6 +323,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="collection",
+        scope="app",
         justification="Vim-style navigation key; yields to text input fields.",
     ),
     KeyBindingSpec(
@@ -305,6 +333,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="collection",
+        scope="app",
         justification="Vim-style navigation key; yields to text input fields.",
     ),
     KeyBindingSpec(
@@ -314,6 +343,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="collection",
+        scope="app",
         justification="Vim-style navigation key; yields to text input fields.",
     ),
     KeyBindingSpec(
@@ -323,6 +353,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="collection",
+        scope="app",
         justification="Vim-style navigation key; yields to text input fields.",
     ),
     KeyBindingSpec(
@@ -332,6 +363,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=False,
         section="collection",
+        scope="app",
         justification="Standard activation key.",
     ),
     KeyBindingSpec(
@@ -341,6 +373,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="collection",
+        scope="app",
         justification="Printable space character; yields to text input fields.",
     ),
     KeyBindingSpec(
@@ -350,6 +383,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="collection",
+        scope="app",
         justification="Printable letter 'o'; yields to text input fields.",
     ),
     KeyBindingSpec(
@@ -359,6 +393,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="collection",
+        scope="app",
         justification="Printable letter 'r'; yields to text input fields.",
     ),
     KeyBindingSpec(
@@ -368,6 +403,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="collection",
+        scope="app",
         justification="Printable letter 'f'; yields to text input fields.",
     ),
     KeyBindingSpec(
@@ -377,6 +413,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="collection",
+        scope="app",
         justification="Printable dot '.'; yields to text input fields.",
     ),
     KeyBindingSpec(
@@ -386,6 +423,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="collection",
+        scope="app",
         consequential=True,
         justification="Printable letter 'x'; yields to text input fields. Requires confirmation gate.",
     ),
@@ -397,6 +435,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="arena",
+        scope="arena",
         justification="Printable letter 'z'; yields to text input fields.",
     ),
     KeyBindingSpec(
@@ -406,6 +445,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="arena",
+        scope="arena",
         justification="Printable letter 't'; yields to text input fields.",
     ),
     KeyBindingSpec(
@@ -415,7 +455,18 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="arena",
+        scope="arena",
         justification="Printable letter 'e'; yields to text input fields.",
+    ),
+    KeyBindingSpec(
+        key="o",
+        action="lane_outputs",
+        label="Outputs Lane",
+        priority=False,
+        suppressed_when_text_focused=True,
+        section="arena",
+        scope="arena",
+        justification="Printable letter 'o'; yields to text input fields.",
     ),
     KeyBindingSpec(
         key="c",
@@ -424,6 +475,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="arena",
+        scope="arena",
         justification="Printable letter 'c'; yields to text input fields.",
     ),
     KeyBindingSpec(
@@ -433,7 +485,29 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="arena",
+        scope="arena",
         justification="Printable letter 'u'; yields to text input fields.",
+    ),
+    KeyBindingSpec(
+        key="i",
+        action="toggle_inspector_arena",
+        label="Toggle Arena Inspector",
+        priority=False,
+        suppressed_when_text_focused=True,
+        section="arena",
+        scope="arena",
+        justification="Printable letter 'i'; yields to text input fields.",
+        explicit_action="action_toggle_inspector_arena",
+    ),
+    KeyBindingSpec(
+        key="r",
+        action="replay_item",
+        label="Replay Scrubber",
+        priority=False,
+        suppressed_when_text_focused=True,
+        section="arena",
+        scope="arena",
+        justification="Printable letter 'r'; yields to text input fields.",
     ),
     KeyBindingSpec(
         key="m",
@@ -442,6 +516,7 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="arena",
+        scope="arena",
         justification="Printable letter 'm'; yields to text input fields.",
     ),
     KeyBindingSpec(
@@ -451,7 +526,38 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         priority=False,
         suppressed_when_text_focused=True,
         section="arena",
+        scope="arena",
         justification="Printable letter 's'; yields to text input fields.",
+    ),
+    KeyBindingSpec(
+        key="a",
+        action="approve_item",
+        label="Approve Item (Needs-you)",
+        priority=False,
+        suppressed_when_text_focused=True,
+        section="arena",
+        scope="arena",
+        justification="Printable letter 'a' in Needs-you lane; yields to text input fields.",
+    ),
+    KeyBindingSpec(
+        key="d",
+        action="deny_item",
+        label="Deny Item (Needs-you)",
+        priority=False,
+        suppressed_when_text_focused=True,
+        section="arena",
+        scope="arena",
+        justification="Printable letter 'd' in Needs-you lane; yields to text input fields.",
+    ),
+    KeyBindingSpec(
+        key="b",
+        action="bounded_approval",
+        label="Bounded Approval (Needs-you)",
+        priority=False,
+        suppressed_when_text_focused=True,
+        section="arena",
+        scope="arena",
+        justification="Printable letter 'b' in Needs-you lane; yields to text input fields.",
     ),
 ]
 
@@ -459,26 +565,27 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
 def validate_keymap_registry(bindings: Optional[List[KeyBindingSpec]] = None) -> None:
     """Validate binding registry for collisions at startup/test time (§14.4).
 
-    Enforces a FLAT namespace check across ALL bindings attached to the app.
-    Raises KeymapCollisionError if two bindings share the exact same key.
+    Enforces a scoped namespace check across bindings attached to the app/arena.
+    Raises KeymapCollisionError if two bindings share the exact same key in the same scope.
     """
     target_bindings = bindings if bindings is not None else DEFAULT_KEYMAP
-    seen: Dict[str, KeyBindingSpec] = {}
+    seen: Dict[Tuple[str, str], KeyBindingSpec] = {}
 
     for b in target_bindings:
-        if b.key in seen:
-            prev = seen[b.key]
+        key_tuple = (b.key, b.scope)
+        if key_tuple in seen:
+            prev = seen[key_tuple]
             raise KeymapCollisionError(
-                f"Keybinding collision detected on key '{b.key}': "
-                f"action '{b.action}' in section '{b.section}' collides with action '{prev.action}' in section '{prev.section}'."
+                f"Keybinding collision detected on key '{b.key}' (scope '{b.scope}'): "
+                f"action '{b.action}' collides with action '{prev.action}'."
             )
-        seen[b.key] = b
+        seen[key_tuple] = b
 
 
-def build_textual_bindings(bindings: Optional[List[KeyBindingSpec]] = None) -> List[Binding]:
+def build_textual_bindings(bindings: Optional[List[KeyBindingSpec]] = None, scope: str = "app") -> List[Binding]:
     """Programmatically convert DEFAULT_KEYMAP specs into Textual Binding objects (§14.4).
 
-    Guarantees KinApp.BINDINGS is 100% driven directly by keymap.py definitions.
+    Guarantees KinApp.BINDINGS is 100% driven directly by keymap.py definitions for specified scope.
     """
     target = bindings if bindings is not None else DEFAULT_KEYMAP
     return [
@@ -490,7 +597,13 @@ def build_textual_bindings(bindings: Optional[List[KeyBindingSpec]] = None) -> L
             priority=b.priority,
         )
         for b in target
+        if b.scope == scope
     ]
+
+
+def build_arena_bindings(bindings: Optional[List[KeyBindingSpec]] = None) -> List[Binding]:
+    """Build Textual Binding objects for SessionArenaWidget (scope='arena')."""
+    return build_textual_bindings(bindings=bindings, scope="arena")
 
 
 # Run validation on import to fail fast on startup

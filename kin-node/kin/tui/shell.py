@@ -387,24 +387,55 @@ class MainCanvas(Vertical):
     def __init__(
         self,
         active_tab_kind: str = "home",
+        active_session_id: Optional[str] = None,
+        profile_dir: Optional[Path] = None,
+        profile_name: str = "default",
         home_widget: Optional[HomeScreenWidget] = None,
         agents_widget: Optional[AgentsScreenWidget] = None,
         network_widget: Optional[NetworkScreenWidget] = None,
         inbox_widget: Optional[InboxScreenWidget] = None,
         dispatch_widget: Optional[DispatchWizardWidget] = None,
+        session_arena_widgets: Optional[Dict[str, Widget]] = None,
         **kwargs,
     ) -> None:
         super().__init__(id="main-canvas", **kwargs)
         self.active_tab_kind = active_tab_kind
-        self.home_widget = home_widget or HomeScreenWidget()
-        self.agents_widget = agents_widget or AgentsScreenWidget()
-        self.network_widget = network_widget or NetworkScreenWidget()
-        self.inbox_widget = inbox_widget or InboxScreenWidget()
-        self.dispatch_widget = dispatch_widget or DispatchWizardWidget()
+        self.active_session_id = active_session_id
+        self.profile_dir = profile_dir
+        self.profile_name = profile_name
+        self.home_widget = home_widget or HomeScreenWidget(profile_dir=profile_dir, profile_name=profile_name)
+        self.agents_widget = agents_widget or AgentsScreenWidget(profile_dir=profile_dir, profile_name=profile_name)
+        self.network_widget = network_widget or NetworkScreenWidget(profile_dir=profile_dir, profile_name=profile_name)
+        self.inbox_widget = inbox_widget or InboxScreenWidget(profile_dir=profile_dir, profile_name=profile_name)
+        self.dispatch_widget = dispatch_widget or DispatchWizardWidget(profile_dir=profile_dir, profile_name=profile_name)
+        self.session_arena_widgets: Dict[str, Widget] = session_arena_widgets or {}
 
-    def set_active_tab_kind(self, tab_kind: str) -> None:
+    def set_active_tab_kind(
+        self,
+        tab_kind: str,
+        session_id: Optional[str] = None,
+        profile_dir: Optional[Path] = None,
+        profile_name: Optional[str] = None,
+    ) -> None:
         self.active_tab_kind = tab_kind
+        if session_id:
+            self.active_session_id = session_id
+        if profile_dir:
+            self.profile_dir = profile_dir
+        if profile_name:
+            self.profile_name = profile_name
         self.refresh(recompose=True)
+
+    def get_session_arena_widget(self, session_id: Optional[str] = None) -> Widget:
+        sid = session_id or self.active_session_id or "default-session"
+        if sid not in self.session_arena_widgets:
+            from kin.tui.widgets.session_arena import SessionArenaWidget
+            self.session_arena_widgets[sid] = SessionArenaWidget(
+                session_id=sid,
+                profile_name=self.profile_name,
+                profile_dir=self.profile_dir,
+            )
+        return self.session_arena_widgets[sid]
 
     def compose(self):
         if self.active_tab_kind == "home":
@@ -417,6 +448,8 @@ class MainCanvas(Vertical):
             yield self.inbox_widget
         elif self.active_tab_kind == "dispatch":
             yield self.dispatch_widget
+        elif self.active_tab_kind == "session":
+            yield self.get_session_arena_widget()
         else:
             yield Static(
                 f"[bold cyan]{self.active_tab_kind.upper()} WORKSPACE[/bold cyan]\n"

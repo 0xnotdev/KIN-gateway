@@ -42,6 +42,8 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
     Implements bounded rendering for 100-sessions / 20-agents scale performance.
     """
 
+    can_focus = True
+
     DEFAULT_CSS = """
     HomeScreenWidget {
         width: 100%;

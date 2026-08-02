@@ -322,6 +322,7 @@ async def test_home_screen_counters_update_in_place_stress_test(tmp_path: Path):
         inp = app.query_one("#active-text-input", Input)
         inp.focus()
         inp.value = "User active input string"
+        await pilot.pause()
         inp.cursor_position = 10
 
         # Inject 100 counter updates
