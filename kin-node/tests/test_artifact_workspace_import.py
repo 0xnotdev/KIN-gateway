@@ -137,7 +137,12 @@ def test_path_traversal_rejection(tmp_path: Path):
     dangerous_inputs = [
         "../../../etc/passwd",
         "/etc/passwd",
+        "/var/log/syslog",
         "C:\\Windows\\System32\\cmd.exe",
+        "C:/Windows/System32/cmd.exe",
+        "D:\\Data\\secret.txt",
+        "\\\\server\\share\\file.txt",
+        "\\\\127.0.0.1\\c$\\secret.txt",
         "subdir/with\x00null/file.txt",
         "",
         "   ",

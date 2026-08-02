@@ -58,7 +58,7 @@ def resolve_safe_workspace_path(workspace_root: str | Path, relative_path: str) 
     Rejects:
     - Empty or whitespace-only paths
     - Null bytes (\x00)
-    - Absolute paths (e.g. /etc/passwd, C:\\Windows)
+    - Absolute paths cross-platform (e.g. /etc/passwd, C:\\Windows, \\\\server\\share)
     - Paths whose resolved target is not relative to resolved workspace_root
     """
     if not relative_path or not relative_path.strip():
@@ -67,12 +67,19 @@ def resolve_safe_workspace_path(workspace_root: str | Path, relative_path: str) 
     if "\x00" in relative_path:
         raise UnsafeWorkspacePathError("Null bytes are forbidden in workspace paths.")
 
-    rel_obj = Path(relative_path)
-    if rel_obj.is_absolute():
+    raw = relative_path.strip()
+    # Cross-platform absolute path checks: native Path.is_absolute(), leading slash/backslash, Windows drive letter, UNC
+    if (
+        Path(raw).is_absolute()
+        or raw.startswith("/")
+        or raw.startswith("\\")
+        or bool(re.match(r"^[A-Za-z]:[\\/]", raw))
+        or raw.startswith("\\\\")
+    ):
         raise UnsafeWorkspacePathError(f"Absolute paths are forbidden: '{relative_path}'.")
 
     root_resolved = Path(workspace_root).resolve()
-    candidate_resolved = (root_resolved / rel_obj).resolve()
+    candidate_resolved = (root_resolved / Path(raw)).resolve()
 
     if not candidate_resolved.is_relative_to(root_resolved):
         raise UnsafeWorkspacePathError(
