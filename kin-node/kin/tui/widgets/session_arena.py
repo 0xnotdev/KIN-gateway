@@ -505,6 +505,8 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
     def action_approve_item(self) -> None:
         if self.active_lane == "needs_you":
             self.handle_approval_key("a")
+        elif self.active_lane == "outputs":
+            self.handle_artifact_key("a")
 
     def action_deny_item(self) -> None:
         if self.active_lane == "needs_you":
@@ -517,6 +519,10 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
     def action_bounded_approval(self) -> None:
         if self.active_lane == "needs_you":
             self.handle_approval_key("b")
+
+    def action_import_artifact(self) -> None:
+        if self.active_lane == "outputs":
+            self.handle_artifact_key("v")
 
     def on_key(self, event: Key) -> None:
         if self.lifecycle_state == WidgetLifecycleState.DISABLED:

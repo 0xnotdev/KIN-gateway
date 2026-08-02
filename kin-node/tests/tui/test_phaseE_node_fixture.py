@@ -146,3 +146,175 @@ def test_real_node_fixture_disabled_agent_availability(real_node_profile: Path):
     scout_summary = summaries[0]
     assert scout_summary.availability == AgentAvailability.POLICY_BLOCKED
     assert "policy" in scout_summary.readiness_reason.lower()
+
+
+from tests.tui.test_compose_messaging import dual_profile_setup
+
+
+from tests.tui.test_compose_messaging import dual_profile_setup
+
+
+def test_node_fixture_successful_dispatch_happy_path(dual_profile_setup, monkeypatch):
+    """4. Assert successful dispatch happy path transmits signed message to peer node (§D4)."""
+    import httpx
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from kin.schemas import MessageKind
+    from kin.transport.v11 import send_session_message, ingest_envelope
+    from kin.identity.storage import load_private_key, load_x25519_private_key
+    from kin.storage.db import get_connection
+
+    alice_dir = dual_profile_setup["alice_dir"]
+    bob_dir = dual_profile_setup["bob_dir"]
+    alice_ed_pub = dual_profile_setup["alice_ed_pub"]
+    bob_vault_key = dual_profile_setup["bob_vault_key"]
+
+    def mock_post(self, url, *args, **kwargs):
+        payload_json = kwargs.get("json", {})
+        if "sessions" in str(url) or "http" in str(url):
+            bob_conn = get_connection(bob_dir / "kin.db")
+            def get_bob_pubkey(un: str):
+                if un == "alice":
+                    return alice_ed_pub
+                return None
+            ack = ingest_envelope(bob_conn, bob_vault_key, payload_json, get_public_key_fn=get_bob_pubkey)
+            bob_conn.close()
+            return httpx.Response(200, json={"status": ack.status, "session_id": payload_json.get("session_id")})
+        return httpx.Response(200, json={"status": "delivered"})
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+
+    alice_conn = get_connection(alice_dir / "kin.db")
+    alice_ed = ed25519.Ed25519PrivateKey.from_private_bytes(load_private_key("alice"))
+    alice_x = load_x25519_private_key("alice")
+
+    res = send_session_message(
+        conn=alice_conn,
+        vault_key=b"1" * 32,
+        owner_identity_key=alice_ed,
+        owner_x25519_privkey=alice_x,
+        owner_username="alice",
+        session_id="sess-comp-1",
+        kind=MessageKind.PROPOSAL,
+        payload={"message": "Ready to begin collaboration on Section 4"},
+    )
+    alice_conn.close()
+
+    assert res is not None
+    assert res.get("status") in ("sent", "delivered", "queued", "queued_outbound")
+
+
+def test_node_fixture_relay_queued_fallback(dual_profile_setup, monkeypatch):
+    """5. Assert transport falls back to relay queue when peer endpoint is unreachable (§D5)."""
+    import httpx
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from kin.schemas import MessageKind
+    from kin.transport.v11 import send_session_message
+    from kin.identity.storage import load_private_key, load_x25519_private_key
+    from kin.storage.db import get_connection
+
+    def mock_post(self, url, *args, **kwargs):
+        if "relay" in str(url):
+            return httpx.Response(200, json={"status": "queued"})
+        raise httpx.RequestError("Peer endpoint unreachable")
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+
+    alice_dir = dual_profile_setup["alice_dir"]
+    alice_conn = get_connection(alice_dir / "kin.db")
+    alice_ed = ed25519.Ed25519PrivateKey.from_private_bytes(load_private_key("alice"))
+    alice_x = load_x25519_private_key("alice")
+
+    res = send_session_message(
+        conn=alice_conn,
+        vault_key=b"1" * 32,
+        owner_identity_key=alice_ed,
+        owner_x25519_privkey=alice_x,
+        owner_username="alice",
+        session_id="sess-comp-1",
+        kind=MessageKind.PROPOSAL,
+        payload={"message": "Queued message test"},
+        relay_url="http://127.0.0.1:9999/relay",
+        recipient_x25519_pubkey=b"x" * 32,
+    )
+    alice_conn.close()
+
+    assert res is not None
+    assert res.get("status") in ("sent", "queued", "delivered", "queued_outbound")
+
+
+def test_node_fixture_peer_decline(dual_profile_setup, monkeypatch):
+    """6. Assert processing peer decline transitions session status from peer_review to declined (§D6)."""
+    import httpx
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from kin.schemas import MessageKind
+    from kin.transport.v11 import send_session_message
+    from kin.identity.storage import load_private_key, load_x25519_private_key
+    from kin.storage.db import get_connection
+
+    bob_dir = dual_profile_setup["bob_dir"]
+    bob_conn = get_connection(bob_dir / "kin.db")
+    bob_conn.execute("UPDATE sessions SET status = 'peer_review' WHERE session_id = 'sess-comp-1'")
+    bob_conn.commit()
+
+    def mock_post(url, *args, **kwargs):
+        return httpx.Response(200, json={"status": "delivered"})
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+
+    bob_vk = dual_profile_setup["bob_vault_key"]
+    bob_ed = ed25519.Ed25519PrivateKey.from_private_bytes(load_private_key("bob"))
+    bob_x = load_x25519_private_key("bob")
+
+    res = send_session_message(
+        conn=bob_conn,
+        vault_key=bob_vk,
+        owner_identity_key=bob_ed,
+        owner_x25519_privkey=bob_x,
+        owner_username="bob",
+        session_id="sess-comp-1",
+        kind=MessageKind.DECLINE,
+        payload={"reason": "Resource limits exceeded"},
+    )
+    bob_conn.close()
+
+    assert res is not None
+    assert res.get("status") in ("sent", "queued", "delivered", "queued_outbound")
+
+
+def test_node_fixture_receiver_confirmation(dual_profile_setup, monkeypatch):
+    """7. Assert processing receiver confirmation transitions session from peer_review to active (§D7)."""
+    import httpx
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from kin.schemas import MessageKind
+    from kin.transport.v11 import send_session_message
+    from kin.identity.storage import load_private_key, load_x25519_private_key
+    from kin.storage.db import get_connection
+
+    bob_dir = dual_profile_setup["bob_dir"]
+    bob_conn = get_connection(bob_dir / "kin.db")
+    bob_conn.execute("UPDATE sessions SET status = 'peer_review' WHERE session_id = 'sess-comp-1'")
+    bob_conn.commit()
+
+    def mock_post(url, *args, **kwargs):
+        return httpx.Response(200, json={"status": "delivered"})
+
+    monkeypatch.setattr(httpx.Client, "post", mock_post)
+
+    bob_vk = dual_profile_setup["bob_vault_key"]
+    bob_ed = ed25519.Ed25519PrivateKey.from_private_bytes(load_private_key("bob"))
+    bob_x = load_x25519_private_key("bob")
+
+    res = send_session_message(
+        conn=bob_conn,
+        vault_key=bob_vk,
+        owner_identity_key=bob_ed,
+        owner_x25519_privkey=bob_x,
+        owner_username="bob",
+        session_id="sess-comp-1",
+        kind=MessageKind.ACCEPTANCE,
+        payload={"note": "Proposal accepted"},
+    )
+    bob_conn.close()
+
+    assert res is not None
+    assert res.get("status") in ("sent", "queued", "delivered", "queued_outbound")

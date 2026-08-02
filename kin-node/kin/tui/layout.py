@@ -46,3 +46,8 @@ def clamp_sidebar_width(width: int) -> int:
 def clamp_inspector_width(width: int) -> int:
     """Clamp inspector width to valid range [30, 52]."""
     return max(INSPECTOR_MIN_WIDTH, min(width, INSPECTOR_MAX_WIDTH))
+
+
+def is_minimal_breakpoint(cols: int, rows: int) -> bool:
+    """Check if terminal dimensions classify as minimal breakpoint tier (<90 cols or <28 rows)."""
+    return classify_breakpoint(cols, rows) == "minimal"

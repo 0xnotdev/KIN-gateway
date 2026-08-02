@@ -74,6 +74,10 @@ class KinApp(App[None]):
         self.has_shown_resize_hint: bool = False
         self.prefs: UiStatePreferences = UiStatePreferences()
 
+        # Motion & Hysteresis Controls (§14.9 Phase D)
+        self.transient_reduced_motion: bool = False
+        self.latency_breach_count: int = 0
+
         # Command Palette candidate index (§5.4)
         self.command_index: List[CommandItem] = [
             CommandItem("dispatch", "Dispatch a collaboration", "Actions", "d", recent=True),
@@ -86,6 +90,45 @@ class KinApp(App[None]):
             CommandItem("theme_graphite", "Change theme: KIN Graphite", "Settings"),
             CommandItem("cancel_archive", "Cancel / Archive active work", "Actions", "x", consequential=True),
         ]
+
+    @property
+    def is_reduced_motion_active(self) -> bool:
+        """Effective reduced motion state combining persisted setting and transient overrides."""
+        return bool(self.prefs.reduced_motion or self.transient_reduced_motion)
+
+    def set_theme(self, theme_name: str) -> None:
+        """Live non-teardown theme transition preserving widget DOM, focus, and scroll state (§14.9 Phase B)."""
+        resolution = resolve_theme(theme_name)
+        self.theme_tokens = resolution.theme
+        self.requested_theme = resolution.requested_name
+        self.is_theme_fallback = resolution.is_fallback
+        self.prefs.theme = theme_name
+        save_ui_preferences(self.profile_name, self.prefs)
+
+        # Non-teardown refresh on all mounted regions
+        self.canvas.refresh(layout=False)
+        self.sidebar.refresh(layout=False)
+        self.status_bar.refresh(layout=False)
+        self.inspector.refresh(layout=False)
+        self.tab_bar.refresh(layout=False)
+
+    def on_app_blur(self) -> None:
+        """Handle terminal window blur — enable transient reduced motion."""
+        self.transient_reduced_motion = True
+
+    def on_app_focus(self) -> None:
+        """Handle terminal window focus — restore normal motion."""
+        self.transient_reduced_motion = False
+
+    def record_latency_sample(self, latency_ms: float) -> None:
+        """Record a render latency sample; 3 consecutive breaches (>100ms) trigger transient reduced motion."""
+        if latency_ms > 100.0:
+            self.latency_breach_count += 1
+            if self.latency_breach_count >= 3:
+                self.transient_reduced_motion = True
+        else:
+            self.latency_breach_count = 0
+            self.transient_reduced_motion = False
 
     def compose(self) -> ComposeResult:
         """Compose the five persistent stable regions (§3.1)."""

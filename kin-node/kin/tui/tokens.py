@@ -123,10 +123,172 @@ KIN_GRAPHITE_THEME = Theme(
     diff_context="#565f89",
 )
 
+KIN_NIGHT_THEME = Theme(
+    name="kin-night",
+    surface_base="#0d0e15",
+    surface_raised="#13141f",
+    surface_selected="#1f2335",
+    text_primary="#a9b1d6",
+    text_secondary="#9aa5ce",
+    text_muted="#565f89",
+    text_inverse="#0d0e15",
+    border_subtle="#1a1b26",
+    border_focus="#9d7cd8",
+    border_strong="#7aa2f7",
+    state_live="#41a6b5",
+    state_waiting="#0db9d7",
+    state_approval="#ff9e64",
+    state_error="#f7768e",
+    accent_primary="#9d7cd8",
+    accent_secondary="#7aa2f7",
+    accent_highlight="#7dcfff",
+    diff_add="#41a6b5",
+    diff_remove="#f7768e",
+    diff_context="#565f89",
+)
+
+NORD_THEME = Theme(
+    name="nord",
+    surface_base="#2e3440",
+    surface_raised="#3b4252",
+    surface_selected="#434c5e",
+    text_primary="#eceff4",
+    text_secondary="#e5e9f0",
+    text_muted="#d8dee9",
+    text_inverse="#2e3440",
+    border_subtle="#4c566a",
+    border_focus="#88c0d0",
+    border_strong="#81a1c1",
+    state_live="#a3be8c",
+    state_waiting="#ebcb8b",
+    state_approval="#d08770",
+    state_error="#bf616a",
+    accent_primary="#88c0d0",
+    accent_secondary="#81a1c1",
+    accent_highlight="#5e81ac",
+    diff_add="#a3be8c",
+    diff_remove="#bf616a",
+    diff_context="#4c566a",
+)
+
+DRACULA_THEME = Theme(
+    name="dracula",
+    surface_base="#282a36",
+    surface_raised="#44475a",
+    surface_selected="#6272a4",
+    text_primary="#f8f8f2",
+    text_secondary="#bfbfbf",
+    text_muted="#6272a4",
+    text_inverse="#282a36",
+    border_subtle="#44475a",
+    border_focus="#bd93f9",
+    border_strong="#ff79c6",
+    state_live="#50fa7b",
+    state_waiting="#f1fa8c",
+    state_approval="#ffb86c",
+    state_error="#ff5555",
+    accent_primary="#bd93f9",
+    accent_secondary="#ff79c6",
+    accent_highlight="#8be9fd",
+    diff_add="#50fa7b",
+    diff_remove="#ff5555",
+    diff_context="#6272a4",
+)
+
+CATPPUCCIN_MOCHA_THEME = Theme(
+    name="catppuccin-mocha",
+    surface_base="#1e1e2e",
+    surface_raised="#181825",
+    surface_selected="#313244",
+    text_primary="#cdd6f4",
+    text_secondary="#bac2de",
+    text_muted="#6c7086",
+    text_inverse="#11111b",
+    border_subtle="#45475a",
+    border_focus="#cba6f7",
+    border_strong="#89b4fa",
+    state_live="#a6e3a1",
+    state_waiting="#f9e2af",
+    state_approval="#fab387",
+    state_error="#f38ba8",
+    accent_primary="#cba6f7",
+    accent_secondary="#89b4fa",
+    accent_highlight="#89dceb",
+    diff_add="#a6e3a1",
+    diff_remove="#f38ba8",
+    diff_context="#6c7086",
+)
+
+HIGH_CONTRAST_THEME = Theme(
+    name="high-contrast",
+    surface_base="#000000",
+    surface_raised="#121212",
+    surface_selected="#242424",
+    text_primary="#ffffff",
+    text_secondary="#e0e0e0",
+    text_muted="#a0a0a0",
+    text_inverse="#000000",
+    border_subtle="#808080",
+    border_focus="#ffff00",
+    border_strong="#ffffff",
+    state_live="#00ff00",
+    state_waiting="#ffff00",
+    state_approval="#ff8000",
+    state_error="#ff0000",
+    accent_primary="#ffff00",
+    accent_secondary="#00ffff",
+    accent_highlight="#ffffff",
+    diff_add="#00ff00",
+    diff_remove="#ff0000",
+    diff_context="#808080",
+)
+
 # Registry of implemented themes
 _THEME_REGISTRY: Dict[str, Theme] = {
     "kin-graphite": KIN_GRAPHITE_THEME,
+    "kin-night": KIN_NIGHT_THEME,
+    "nord": NORD_THEME,
+    "dracula": DRACULA_THEME,
+    "catppuccin-mocha": CATPPUCCIN_MOCHA_THEME,
+    "high-contrast": HIGH_CONTRAST_THEME,
 }
+
+
+def get_textual_theme_variables(theme: Theme) -> Dict[str, str]:
+    """Map all 20 semantic roles to Textual CSS variable names (e.g. $surface-base)."""
+    role_map = theme.get_role_map()
+    return {
+        f"${role.replace('.', '-')}": color
+        for role, color in role_map.items()
+    }
+
+
+def compute_relative_luminance(hex_color: str) -> float:
+    """Compute WCAG 2.1 relative luminance for a hex color string."""
+    clean_hex = hex_color.lstrip("#")
+    if len(clean_hex) == 3:
+        clean_hex = "".join([c * 2 for c in clean_hex])
+    r_255 = int(clean_hex[0:2], 16) / 255.0
+    g_255 = int(clean_hex[2:4], 16) / 255.0
+    b_255 = int(clean_hex[4:6], 16) / 255.0
+
+    def convert_c(c: float) -> float:
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    r_lum = convert_c(r_255)
+    g_lum = convert_c(g_255)
+    b_lum = convert_c(b_255)
+
+    return 0.2126 * r_lum + 0.7152 * g_lum + 0.0722 * b_lum
+
+
+def compute_wcag_contrast_ratio(fg_hex: str, bg_hex: str) -> float:
+    """Compute WCAG 2.1 contrast ratio between two hex colors (1.0 to 21.0)."""
+    l1 = compute_relative_luminance(fg_hex)
+    l2 = compute_relative_luminance(bg_hex)
+    lighter = max(l1, l2)
+    darker = min(l1, l2)
+    return (lighter + 0.05) / (darker + 0.05)
 
 
 @dataclass
@@ -140,26 +302,14 @@ class ThemeResolutionResult:
 
 
 def resolve_theme(theme_name: str) -> ThemeResolutionResult:
-    """Resolve a theme by name.
-
-    If theme_name is recognized but not implemented yet (kin-night, nord, dracula,
-    catppuccin-mocha, high-contrast), falls back to kin-graphite and records requested_name.
-    """
+    """Resolve a theme by name."""
     if theme_name in _THEME_REGISTRY:
         return ThemeResolutionResult(
             theme=_THEME_REGISTRY[theme_name],
             requested_name=theme_name,
             is_fallback=False,
         )
-    elif theme_name in RECOGNIZED_THEME_NAMES:
-        return ThemeResolutionResult(
-            theme=KIN_GRAPHITE_THEME,
-            requested_name=theme_name,
-            is_fallback=True,
-            fallback_reason=f"Theme '{theme_name}' is recognized but deferred to T7; fell back to kin-graphite.",
-        )
     else:
-        # Unknown theme name falls back to kin-graphite with fallback flag set
         return ThemeResolutionResult(
             theme=KIN_GRAPHITE_THEME,
             requested_name=theme_name,

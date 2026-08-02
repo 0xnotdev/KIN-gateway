@@ -8,9 +8,11 @@ import pytest
 from kin.tui.tokens import (
     GLYPH_REGISTRY,
     KIN_GRAPHITE_THEME,
+    HIGH_CONTRAST_THEME,
     RECOGNIZED_THEME_NAMES,
     REQUIRED_ROLES,
     Theme,
+    _THEME_REGISTRY,
     get_glyph,
     resolve_theme,
     validate_theme,
@@ -60,17 +62,21 @@ def test_missing_role_theme_is_rejected_by_validator():
 
 
 def test_unimplemented_theme_name_falls_back_to_kin_graphite():
-    """Assert requesting recognized unimplemented themes falls back to kin-graphite without raising."""
-    unimplemented_names = RECOGNIZED_THEME_NAMES - {"kin-graphite"}
-    assert len(unimplemented_names) == 5
-
-    for theme_name in unimplemented_names:
+    """Assert all 6 recognized themes resolve directly; unknown names fall back to kin-graphite."""
+    # All 6 recognized themes are now implemented in T7
+    assert len(_THEME_REGISTRY) == 6
+    for theme_name in RECOGNIZED_THEME_NAMES:
         res = resolve_theme(theme_name)
-        assert res.theme == KIN_GRAPHITE_THEME
         assert res.requested_name == theme_name
-        assert res.is_fallback is True
-        assert res.fallback_reason is not None
-        assert "deferred to T7" in res.fallback_reason
+        assert res.is_fallback is False
+        assert res.theme.name == theme_name
+
+    # Truly unknown theme falls back
+    res = resolve_theme("nonexistent-theme")
+    assert res.theme == KIN_GRAPHITE_THEME
+    assert res.is_fallback is True
+    assert res.fallback_reason is not None
+    assert "unrecognized" in res.fallback_reason
 
 
 def test_widget_role_consumption_validator():
@@ -127,8 +133,8 @@ def test_theme_glyph_semantic_snapshots_kin_graphite_and_ascii_fallback():
     assert unicode_rendered == ["●", "✓", "!", "→", "○", "◌", "✖", "▲"]
     assert ascii_rendered == ["*", "OK", "!", "->", "o", ".", "X", "^"]
 
-    # Verify fallback behavior for deferred theme names (high-contrast, monochrome, etc.)
+    # Verify high-contrast theme resolves to its own theme (now implemented in T7)
     res = resolve_theme("high-contrast")
-    assert res.is_fallback is True
-    assert res.theme == KIN_GRAPHITE_THEME
+    assert res.is_fallback is False
+    assert res.theme == HIGH_CONTRAST_THEME
 
