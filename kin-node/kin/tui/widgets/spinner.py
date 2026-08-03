@@ -44,6 +44,18 @@ class SpinnerWidget(LifecycleWidgetMixin, Static):
         self.max_fps = SPINNER_MAX_FPS
         self.frame_interval_seconds = 1.0 / SPINNER_MAX_FPS
 
+    def advance_frame(self) -> None:
+        """Advance spinner animation frame and trigger local refresh."""
+        self.frame_index = (self.frame_index + 1) % len(self.spinner_frames)
+        self.refresh()
+
+    def on_mount(self) -> None:
+        """Schedule periodic frame updates bounded by 8-12 FPS frame_interval_seconds (§14.5, §14.9 step 3)."""
+        try:
+            self.set_interval(self.frame_interval_seconds, self.advance_frame)
+        except Exception:
+            pass
+
     def trigger_cancel(self) -> bool:
         """Trigger safe cancellation callback (§14.5)."""
         if self.cancel_callback:

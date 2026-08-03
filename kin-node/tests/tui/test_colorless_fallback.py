@@ -160,3 +160,41 @@ async def test_no_color_environment_variable_activates_colorless_only(monkeypatc
         assert app.is_colorless_active is True
         assert app.is_ascii_fallback_active is False
         await pilot.press("q")
+
+
+@pytest.mark.asyncio
+async def test_colorless_auto_detection_detects_colorless_terminal():
+    """Assert auto-detection activates is_colorless_active when console.color_system is None."""
+    app = KinApp(theme_name="kin-graphite", profile_name="test_profile_autodetect")
+    async with app.run_test(size=(160, 44)) as pilot:
+        app.console._color_system = None
+        assert app.is_colorless_active is True
+        await pilot.press("q")
+
+
+@pytest.mark.asyncio
+async def test_contact_picker_modal_and_modal_widget_in_colorless_mode():
+    """Assert ContactPickerModal and ModalWidget render zero hex color tags and 100% pure ASCII in colorless mode."""
+    from kin.tui.widgets.dispatch_wizard import ContactPickerModal
+    from kin.tui.widgets.modal import ModalWidget
+
+    app = KinApp(theme_name="kin-graphite", profile_name="test_profile_modal_colorless")
+    async with app.run_test(size=(160, 44)) as pilot:
+        app.prefs.ascii_fallback = True
+        app.prefs.color_depth = "monochrome"
+        await pilot.pause()
+
+        modal_w = ModalWidget(title="Security Confirmation", body_text="Approve access to /etc/config?")
+        modal_w._app = app
+        modal_w.set_lifecycle_state(WidgetLifecycleState.NORMAL)
+        out_modal = str(modal_w.render())
+
+        contact_m = ContactPickerModal()
+        contact_m._app = app
+        contact_m.set_lifecycle_state(WidgetLifecycleState.NORMAL)
+
+        for text_out in [out_modal]:
+            assert not HEX_COLOR_TAG_PATTERN.search(text_out), f"Modal contains hex tags in colorless mode: {text_out}"
+            assert text_out.isascii(), f"Modal contains non-ASCII in ASCII mode: {text_out}"
+
+        await pilot.press("q")

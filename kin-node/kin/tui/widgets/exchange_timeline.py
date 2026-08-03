@@ -393,7 +393,7 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
             elapsed_sec = (now_dt - self.live_appended_at_map[evt.event_id]).total_seconds()
             pulse_window_sec = EVENT_PULSE_MS / 1000.0
             if (not self.reduced_motion) and (0.0 <= elapsed_sec < pulse_window_sec):
-                is_pulsing = True
+                is_pulsing = self.pulse_tracker.trigger_pulse(evt.event_id)
 
         pulse_badge = f" [bold{ok_tag}]⚡ [TAIL PULSE][/bold{ok_tag}]" if is_pulsing else ""
         dot_glyph = self._g("●")

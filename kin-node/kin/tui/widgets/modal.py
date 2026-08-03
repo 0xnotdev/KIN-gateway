@@ -34,11 +34,15 @@ class ModalWidget(LifecycleWidgetMixin, Static):
     """
 
     def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
+        app = self._get_app_instance()
+        if app is not None and getattr(app, "is_colorless_active", False):
+            return ""
+        if app is not None and hasattr(app, "theme_tokens"):
+            try:
+                return app.theme_tokens.get_role_color(role)
+            except Exception:
+                pass
+        return fallback if app is None else ""
 
     def __init__(
         self,

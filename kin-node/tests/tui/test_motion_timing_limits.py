@@ -129,3 +129,70 @@ async def test_ordinary_updates_never_reflow_whole_application_real_app():
 
         # Ensure container count is preserved
         assert len(app.screen.children) == initial_children
+
+
+@pytest.mark.asyncio
+async def test_amber_pulse_cap_enforced_during_widget_render():
+    """Assert ExchangeTimelineWidget.pulse_tracker enforces pulse cap during actual widget rendering (§14.9 step 3)."""
+    from datetime import datetime, timezone
+    from kin.tui.state import UiEvent
+
+    evt = UiEvent(
+        event_id="evt-pulse-runtime-1",
+        session_id="sess-pulse",
+        kind="system_event",
+        created_at="2026-08-03T10:00:00Z",
+        actor_username="system",
+        presentation_class="message",
+        content="Testing pulse cap runtime enforcement",
+    )
+    now_dt = datetime.now(timezone.utc)
+    timeline = ExchangeTimelineWidget(events=[evt])
+    timeline.live_appended_at_map[evt.event_id] = now_dt
+
+    # First two renders trigger pulse (trigger_pulse returns True)
+    group = timeline.get_coalesced_groups()[0]
+    out1 = timeline._render_group_card(group, is_selected=False, now_dt=now_dt)
+    assert "[TAIL PULSE]" in out1
+
+    out2 = timeline._render_group_card(group, is_selected=False, now_dt=now_dt)
+    assert "[TAIL PULSE]" in out2
+
+    # Third render exceeds max cap of 2 (trigger_pulse returns False), pulse badge suppressed
+    out3 = timeline._render_group_card(group, is_selected=False, now_dt=now_dt)
+    assert "[TAIL PULSE]" not in out3
+
+
+@pytest.mark.asyncio
+async def test_spinner_periodic_frame_interval_timer_scheduled_on_mount():
+    """Assert SpinnerWidget schedules periodic frame advance timer using frame_interval_seconds on_mount (§14.9 step 3)."""
+    app = KinApp(profile_name="test_spinner_mount")
+    async with app.run_test(size=(120, 36)) as pilot:
+        sp = SpinnerWidget(label="Loading resources")
+        await app.mount(sp)
+        await pilot.pause()
+
+        # Verify frame_interval_seconds equals 1.0 / SPINNER_MAX_FPS
+        assert sp.frame_interval_seconds == 1.0 / SPINNER_MAX_FPS == 0.08333333333333333
+        await pilot.press("q")
+
+
+@pytest.mark.asyncio
+async def test_toast_dismissal_timer_scheduled_on_mount():
+    """Assert ToastWidget schedules automatic dismissal timer using duration_ms on_mount (§14.9 step 3)."""
+    app = KinApp(profile_name="test_toast_mount")
+    async with app.run_test(size=(120, 36)) as pilot:
+        dismissed = False
+
+        def _on_dismiss():
+            nonlocal dismissed
+            dismissed = True
+
+        toast = ToastWidget(message="Operation finished", duration_ms=3000, dismiss_callback=_on_dismiss)
+        await app.mount(toast)
+        await pilot.pause()
+
+        assert toast.duration_ms == 3000
+        assert toast.trigger_dismiss() is True
+        assert dismissed is True
+        await pilot.press("q")

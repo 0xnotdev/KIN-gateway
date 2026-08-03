@@ -59,6 +59,13 @@ class ToastWidget(LifecycleWidgetMixin, Static):
         req_duration = duration_ms if duration_ms is not None else 4000
         self.duration_ms = min(TOAST_MAX_VISIBLE_MS, max(TOAST_MIN_VISIBLE_MS, req_duration))
 
+    def on_mount(self) -> None:
+        """Schedule automatic dismissal timer using self.duration_ms (§14.5, §14.9 step 3)."""
+        try:
+            self.set_timer(self.duration_ms / 1000.0, self.trigger_dismiss)
+        except Exception:
+            pass
+
     def trigger_dismiss(self) -> bool:
         """Trigger optional dismiss callback (§14.5)."""
         if self.dismiss_callback:
