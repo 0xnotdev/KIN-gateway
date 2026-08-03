@@ -552,6 +552,10 @@ class StatusBar(LifecycleWidgetMixin, Static):
         )
         self.profile_name = profile_name
         self.status_message = status_message
+        # A newly mounted status bar has not received a health update yet.
+        # Keep the initial shell deterministic; update_health() stamps it.
+        if now is None:
+            self._last_updated_at = None
 
     def update_health(
         self,
