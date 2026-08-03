@@ -5,6 +5,7 @@ Spec authority: KIN-V1.1-TUI-SYSTEM.md §3.1, §3.2, §3.3, §5, §14.3
 
 from pathlib import Path
 import pytest
+from rich.console import ColorSystem
 
 from kin.tui.app import KinApp
 from kin.tui.layout import (
@@ -15,6 +16,18 @@ from kin.tui.layout import (
 )
 from kin.tui.persistence import UiStatePreferences, save_ui_preferences
 from kin.tui.state import HealthSnapshot
+
+
+def _snapshot_app(monkeypatch, **kwargs) -> KinApp:
+    """Build a shell snapshot app with terminal rendering pinned to truecolor UTF-8."""
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    app = KinApp(**kwargs)
+    app.prefs.ascii_fallback = False
+    app.prefs.color_depth = "auto"
+    monkeypatch.setattr(type(app.console), "encoding", property(lambda _console: "utf-8"))
+    monkeypatch.setattr(app.console, "_color_system", ColorSystem.TRUECOLOR)
+    return app
 
 
 @pytest.fixture
@@ -206,29 +219,29 @@ async def test_100_health_updates_focus_and_cursor_stability(mock_profile_dir):
 
 
 # Golden Snapshots at 4 Breakpoints using pytest-textual-snapshot
-def test_blank_shell_snapshot_160x44(snap_compare):
+def test_blank_shell_snapshot_160x44(snap_compare, monkeypatch):
     """Wide breakpoint (160x44) golden snapshot (§14.3)."""
-    assert snap_compare(KinApp(), terminal_size=(160, 44))
+    assert snap_compare(_snapshot_app(monkeypatch), terminal_size=(160, 44))
 
 
-def test_blank_shell_snapshot_120x36(snap_compare):
+def test_blank_shell_snapshot_120x36(snap_compare, monkeypatch):
     """Standard breakpoint (120x36) golden snapshot (§14.3)."""
-    assert snap_compare(KinApp(), terminal_size=(120, 36))
+    assert snap_compare(_snapshot_app(monkeypatch), terminal_size=(120, 36))
 
 
-def test_blank_shell_snapshot_90x28(snap_compare):
+def test_blank_shell_snapshot_90x28(snap_compare, monkeypatch):
     """Compact breakpoint (90x28) golden snapshot (§14.3)."""
-    assert snap_compare(KinApp(), terminal_size=(90, 28))
+    assert snap_compare(_snapshot_app(monkeypatch), terminal_size=(90, 28))
 
 
-def test_blank_shell_snapshot_80x24(snap_compare):
+def test_blank_shell_snapshot_80x24(snap_compare, monkeypatch):
     """Minimal breakpoint (80x24) golden snapshot (§14.3)."""
-    assert snap_compare(KinApp(), terminal_size=(80, 24))
+    assert snap_compare(_snapshot_app(monkeypatch), terminal_size=(80, 24))
 
 
-def test_degraded_health_snapshot_160x44(snap_compare):
+def test_degraded_health_snapshot_160x44(snap_compare, monkeypatch):
     """Degraded relay and keychain health golden snapshot (§14.3)."""
-    app = KinApp()
+    app = _snapshot_app(monkeypatch)
     app.status_bar.health = HealthSnapshot(
         keychain_ok=False,
         identity_ok=True,
@@ -242,7 +255,7 @@ def test_degraded_health_snapshot_160x44(snap_compare):
     assert snap_compare(app, terminal_size=(160, 44))
 
 
-def test_long_profile_name_snapshot_120x36(snap_compare):
+def test_long_profile_name_snapshot_120x36(snap_compare, monkeypatch):
     """Long profile name golden snapshot (§14.3)."""
-    app = KinApp(profile_name="production-engineer-profile-alpha-v1")
+    app = _snapshot_app(monkeypatch, profile_name="production-engineer-profile-alpha-v1")
     assert snap_compare(app, terminal_size=(120, 36))
