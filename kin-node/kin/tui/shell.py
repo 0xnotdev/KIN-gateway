@@ -32,7 +32,7 @@ from kin.tui.widgets.dispatch_wizard import DispatchWizardWidget
 from kin.tui.widgets.home_screen import HomeScreenWidget
 from kin.tui.widgets.inbox_screen import InboxScreenWidget
 from kin.tui.widgets.network_screen import NetworkScreenWidget
-from kin.tui.widgets.lifecycle import WidgetLifecycleState
+from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
 from kin.tui.widgets.search_field import SearchFieldWidget
 
 
@@ -50,7 +50,7 @@ class SidebarNode:
     target_tab_id: Optional[str] = None
 
 
-class WorkspaceTabBar(Static):
+class WorkspaceTabBar(LifecycleWidgetMixin, Static):
     """Workspace tab bar region (#workspace-tab-bar) per §3.1, §4.2."""
 
     DEFAULT_CSS = """
@@ -69,13 +69,6 @@ class WorkspaceTabBar(Static):
         self.tabs = ["home"]
         self.active_tab = "home"
 
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
-
     def render(self) -> str:
         accent = self._c("accent.primary", "#bb9af7")
         res = []
@@ -87,7 +80,7 @@ class WorkspaceTabBar(Static):
         return " | ".join(res)
 
 
-class Sidebar(Static):
+class Sidebar(LifecycleWidgetMixin, Static):
     """Sidebar region (#sidebar) per §3.1, §3.3, §4.3.
 
     Supports interactive tree navigation (j/k, g/G, Enter, Space, h/l, /),
@@ -343,13 +336,6 @@ class Sidebar(Static):
         self.refresh()
         return True, msg
 
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
-
     def render(self) -> str:
         if self.collapsed:
             return "●\n✓\n!\n→\n(1)"
@@ -387,7 +373,7 @@ class Sidebar(Static):
         return "\n".join(lines)
 
 
-class MainCanvas(Vertical):
+class MainCanvas(LifecycleWidgetMixin, Vertical):
     """Main Canvas region (#main-canvas) per §3.1, §3.3.
 
     Renders active workspace view content or tab placeholders (§14.6 Phase B).
@@ -455,13 +441,6 @@ class MainCanvas(Vertical):
             )
         return self.session_arena_widgets[sid]
 
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
-
     def compose(self):
         if self.active_tab_kind == "home":
             yield self.home_widget
@@ -485,7 +464,7 @@ class MainCanvas(Vertical):
         yield Input(placeholder="Type command or query...", id="command-input")
 
 
-class Inspector(Static):
+class Inspector(LifecycleWidgetMixin, Static):
     """Inspector panel region (#inspector) per §3.1, §3.3.
 
     Default width: 38; Min: 30; Max: 52.
@@ -541,7 +520,7 @@ class Inspector(Static):
         return f"[bold]{self.preview_title}[/bold]\n{self.preview_content}"
 
 
-class StatusBar(Static):
+class StatusBar(LifecycleWidgetMixin, Static):
     """Status bar region (#status-bar) per §3.1, §5.
 
     Renders HealthSnapshot status in-place using tokens.py glyphs.
@@ -564,73 +543,58 @@ class StatusBar(Static):
         health: Optional[HealthSnapshot] = None,
         profile_name: str = "default",
         status_message: Optional[str] = None,
+        now: Optional[Union[datetime, str, float]] = None,
         **kwargs,
     ) -> None:
-        super().__init__(id="status-bar", **kwargs)
+        super().__init__(id="status-bar", now=now, **kwargs)
         self.health = health or HealthSnapshot(
             keychain_ok=True, identity_ok=True, relay_reachable=True, node_reachable=True, pending_inbox_count=0
         )
         self.profile_name = profile_name
         self.status_message = status_message
-        self.last_updated_at: Optional[datetime] = None
 
     def update_health(
         self,
         health: HealthSnapshot,
         status_message: Optional[str] = None,
-        now: Optional[Union[datetime, str]] = None,
+        now: Optional[Union[datetime, str, float]] = None,
     ) -> None:
         """Update status bar in-place without disturbing focus or cursor position."""
         self.health = health
         if status_message is not None:
             self.status_message = status_message
-
-        if now is not None:
-            if isinstance(now, datetime):
-                self.last_updated_at = now
-            elif isinstance(now, str):
-                try:
-                    self.last_updated_at = datetime.fromisoformat(now)
-                except ValueError:
-                    self.last_updated_at = datetime.now(timezone.utc)
-        else:
-            self.last_updated_at = datetime.now(timezone.utc)
-
+        self.update_clock(now)
         self.refresh()
-
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
 
     def render(self) -> str:
         ok_color = self._c("state.live", "#73daca")
         err_color = self._c("state.error", "#f7768e")
         warn_color = self._c("state.waiting", "#e0af68")
 
-        glyph_ok = get_glyph("✓", ascii_fallback=False)
-        glyph_warn = get_glyph("!", ascii_fallback=False)
-        glyph_live = get_glyph("●", ascii_fallback=False)
+        glyph_ok = self._g("✓")
+        glyph_warn = self._g("!")
+        glyph_live = self._g("●")
 
-        keychain_str = f"[{ok_color}]{glyph_ok} key[/{ok_color}]" if self.health.keychain_ok else f"[{err_color}]{glyph_warn} KEY[/{err_color}]"
-        identity_str = f"[{ok_color}]{glyph_ok} id[/{ok_color}]" if self.health.identity_ok else f"[{err_color}]{glyph_warn} ID[/{err_color}]"
-        relay_str = f"[{ok_color}]{glyph_live} relay[/{ok_color}]" if self.health.relay_reachable else f"[{warn_color}]{glyph_warn} RELAY[/{warn_color}]"
-        node_str = f"[{ok_color}]{glyph_live} node[/{ok_color}]" if self.health.node_reachable else f"[{warn_color}]{glyph_warn} NODE[/{warn_color}]"
+        def _wrap(text_str: str, col: str) -> str:
+            return f"[{col}]{text_str}[/{col}]" if col else text_str
+
+        keychain_str = _wrap(f"{glyph_ok} key", ok_color) if self.health.keychain_ok else _wrap(f"{glyph_warn} KEY", err_color)
+        identity_str = _wrap(f"{glyph_ok} id", ok_color) if self.health.identity_ok else _wrap(f"{glyph_warn} ID", err_color)
+        relay_str = _wrap(f"{glyph_live} relay", ok_color) if self.health.relay_reachable else _wrap(f"{glyph_warn} RELAY", warn_color)
+        node_str = _wrap(f"{glyph_live} node", ok_color) if self.health.node_reachable else _wrap(f"{glyph_warn} NODE", warn_color)
 
         inbox_str = f"inbox:{self.health.pending_inbox_count}"
 
         if self.health.degraded_reason:
-            msg = f" | [{warn_color}]({self.health.degraded_reason})[/{warn_color}]"
+            msg = f" | {_wrap(f'({self.health.degraded_reason})', warn_color)}"
         elif self.status_message:
             msg = f" | [dim]{self.status_message}[/dim]"
         else:
             msg = ""
 
         time_str = ""
-        if self.last_updated_at:
-            time_str = f" | [dim]{self.last_updated_at.strftime('%H:%M:%S')}[/dim]"
+        if self._last_updated_at:
+            time_str = f" | [dim]{self._last_updated_at.strftime('%H:%M:%S')}[/dim]"
 
         return f"profile:{self.profile_name} | {keychain_str} {identity_str} {relay_str} {node_str} | {inbox_str}{msg}{time_str}"
 
@@ -643,13 +607,6 @@ class ConfirmationModal(ModalScreenWidget):
 
     Extends foundation ModalScreenWidget to guarantee unified keyboard handling (y/n/escape) and button consistency.
     """
-
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
 
     def __init__(self, action_name: str, target_name: str, **kwargs) -> None:
         accent = self._c("accent.primary", "#bb9af7")

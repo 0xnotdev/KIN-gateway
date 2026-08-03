@@ -15,10 +15,12 @@ from kin.tui.tokens import KIN_GRAPHITE_THEME, DRACULA_THEME
 
 
 @pytest.mark.asyncio
-async def test_live_theme_switch_changes_rendered_output():
+async def test_live_theme_switch_changes_rendered_output(monkeypatch):
     """Mount KinApp, render StatusBar under kin-graphite, switch to dracula, assert colors changed."""
+    monkeypatch.setattr(KinApp, "is_colorless_active", property(lambda self: False))
     app = KinApp(theme_name="kin-graphite")
     async with app.run_test(size=(160, 44)) as pilot:
+        app.console._color_system = "truecolor"
         # Capture rendered output under kin-graphite
         status_bar = app.status_bar
         graphite_output = status_bar.render()

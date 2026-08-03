@@ -14,6 +14,8 @@ from textual.containers import Container, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
+from kin.tui.widgets.lifecycle import LifecycleWidgetMixin
+
 
 class GuidePage(NamedTuple):
     title: str
@@ -66,7 +68,7 @@ def render_guide_markdown() -> str:
     return "\n".join(lines)
 
 
-class GuideOverlayScreen(ModalScreen[None]):
+class GuideOverlayScreen(LifecycleWidgetMixin, ModalScreen[None]):
     """Interactive modal screen displaying searchable kin guide pages (§5.9)."""
 
     DEFAULT_CSS = """
@@ -92,13 +94,6 @@ class GuideOverlayScreen(ModalScreen[None]):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.search_query: str = ""
-
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
 
     def compose(self) -> ComposeResult:
         accent = self._c("accent.primary", "#bb9af7")

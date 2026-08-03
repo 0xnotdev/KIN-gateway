@@ -11,6 +11,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Static
 
 from kin.tui.keymap import DEFAULT_KEYMAP, KeyBindingSpec
+from kin.tui.widgets.lifecycle import LifecycleWidgetMixin
 
 
 def generate_help_markdown(bindings: Optional[List[KeyBindingSpec]] = None) -> str:
@@ -45,7 +46,7 @@ def generate_help_markdown(bindings: Optional[List[KeyBindingSpec]] = None) -> s
     return "\n".join(lines)
 
 
-class HelpOverlayScreen(ModalScreen[None]):
+class HelpOverlayScreen(LifecycleWidgetMixin, ModalScreen[None]):
     """Contextual Help Overlay Screen (?) generated from keymap registry (§5.1)."""
 
     DEFAULT_CSS = """
@@ -70,13 +71,6 @@ class HelpOverlayScreen(ModalScreen[None]):
         ("escape", "dismiss_help", "Close Help"),
         ("question_mark", "dismiss_help", "Close Help"),
     ]
-
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
 
     def compose(self) -> ComposeResult:
         accent = self._c("accent.primary", "#bb9af7")

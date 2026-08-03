@@ -11,6 +11,8 @@ Validates the theme infrastructure is complete and correct:
 """
 
 import ast
+import importlib
+import inspect
 import re
 from pathlib import Path
 import pytest
@@ -202,3 +204,26 @@ def test_wcag_contrast_across_theme_fg_bg_pairings(theme_name: str, fg_role: str
         f"Theme '{theme_name}' failed WCAG contrast check for {fg_role} ({fg_color}) on {bg_role} ({bg_color}): "
         f"contrast ratio is {ratio:.2f}:1, required >= {target_threshold:.1f}:1"
     )
+
+
+def test_every_color_resolving_widget_uses_canonical_lifecycle_c():
+    """Every class that resolves colors must inherit LifecycleWidgetMixin._c().
+
+    This catches both dangerous cases: a local copy-pasted override and a
+    class that calls ``self._c`` without inheriting any implementation.
+    """
+    from kin.tui.widgets.lifecycle import LifecycleWidgetMixin
+
+    for py_file in KIN_TUI_DIR.rglob("*.py"):
+        module_suffix = ".".join(py_file.relative_to(KIN_TUI_DIR.parent).with_suffix("").parts)
+        module = importlib.import_module(f"kin.{module_suffix}")
+        for _, cls in inspect.getmembers(module, inspect.isclass):
+            if cls.__module__ != module.__name__:
+                continue
+            if "self._c(" not in inspect.getsource(cls):
+                continue
+            resolved = getattr(cls, "_c", None)
+            assert resolved is LifecycleWidgetMixin._c, (
+                f"{cls.__module__}.{cls.__name__}._c does not resolve to "
+                "LifecycleWidgetMixin._c (it is overridden or missing)."
+            )

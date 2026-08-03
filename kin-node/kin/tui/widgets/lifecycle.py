@@ -5,7 +5,7 @@ Spec authority: KIN-V1.1-TUI-SYSTEM.md §14.5 (build step 4)
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Tuple, Union
 
 from kin.tui.layout import Breakpoint, classify_breakpoint
 
@@ -48,16 +48,32 @@ class LifecycleWidgetMixin:
         return app
 
     def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, returning fallback if app is unavailable or empty string if colorless mode active."""
+        """Resolve a theme color by role, returning fallback if role unmapped, or 'default' if colorless mode active."""
         app = self._get_app_instance()
         if app is not None and getattr(app, "is_colorless_active", False):
-            return ""
+            return "default"
         if app is not None and hasattr(app, "theme_tokens"):
             try:
-                return app.theme_tokens.get_role_color(role)
+                col = app.theme_tokens.get_role_color(role)
+                if col:
+                    return col
             except Exception:
                 pass
-        return fallback if app is None else ""
+        return fallback
+
+    def _tag(self, role: str, fallback: str) -> Tuple[str, str]:
+        """Return opening and closing Rich style tags formatted cleanly, returning empty strings if colorless or empty color."""
+        col = self._c(role, fallback)
+        if col:
+            return f"[{col}]", f"[/{col}]"
+        return "", ""
+
+    def _bold(self, role: str, fallback: str) -> Tuple[str, str]:
+        """Return opening and closing bold style tags formatted cleanly without invalid empty style markup."""
+        col = self._c(role, fallback)
+        if col:
+            return f"[bold {col}]", f"[/bold {col}]"
+        return "[bold]", "[/bold]"
 
     def _g(self, symbol: str) -> str:
         """Resolve a glyph symbol, using ASCII fallback if app.is_ascii_fallback_active is True."""

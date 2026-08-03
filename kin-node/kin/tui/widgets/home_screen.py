@@ -99,13 +99,6 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
             return self._health_override
         return query_health_snapshot(self.profile_name, self.profile_dir, client=self.client)
 
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
-
     def render(self) -> RenderableType:
         accent = self._c("accent.primary", "#bb9af7")
         ok = self._c("state.live", "#73daca")
@@ -134,19 +127,24 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
 
         # 1. Health & Status Banner
         if health.identity_ok and health.relay_reachable:
-            status_label, status_code, health_color, health_hex = "HEALTHY", 100, "green", ok
+            status_label, status_code, health_color = "HEALTHY", 100, "green"
+            h_tag, h_close = self._tag("state.live", ok)
             detail = f"Profile '{self.profile_name}' online • Relay connected"
         elif health.identity_ok:
-            status_label, status_code, health_color, health_hex = "DEGRADED", 50, "yellow", warn
+            status_label, status_code, health_color = "DEGRADED", 50, "yellow"
+            h_tag, h_close = self._tag("state.waiting", warn)
             detail = health.degraded_reason or f"Profile '{self.profile_name}' local only • Relay offline"
         else:
-            status_label, status_code, health_color, health_hex = "NO_IDENTITY", 0, "red", err
+            status_label, status_code, health_color = "NO_IDENTITY", 0, "red"
+            h_tag, h_close = self._tag("state.error", err)
             detail = health.degraded_reason or "No local identity initialized • Run First Flight setup"
 
+        title_o, title_c = self._bold("accent.primary", accent)
+
         header_panel = Panel(
-            f"[{health_hex}][bold]{status_label}[/bold] ({status_code}/100)[/{health_hex}] — {detail}\n"
+            f"{h_tag}[bold]{status_label}[/bold] ({status_code}/100){h_close} — {detail}\n"
             f"[dim]Profile: {self.profile_name} | Agents: {len(agents)} | Contacts: {len(contacts)} | Needs You: {len(self.approvals)} | Sessions: {len(self.sessions)}[/dim]",
-            title=f"[bold {accent}]KIN V1.1 HOME DASHBOARD[/bold {accent}]",
+            title=f"{title_o}KIN V1.1 HOME DASHBOARD{title_c}",
             border_style=health_color,
         )
         layout_table.add_row(header_panel)

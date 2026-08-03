@@ -10,8 +10,10 @@ from textual.containers import Grid
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Static
 
+from kin.tui.widgets.lifecycle import LifecycleWidgetMixin
 
-class ComposeMessageModal(ModalScreen[Optional[str]]):
+
+class ComposeMessageModal(LifecycleWidgetMixin, ModalScreen[Optional[str]]):
     """Modal dialog for composing and reviewing human messages/clarifications before sending (§14.8 Step 5/6)."""
 
     DEFAULT_CSS = """
@@ -58,13 +60,6 @@ class ComposeMessageModal(ModalScreen[Optional[str]]):
             yield Static("Enter message text above then click Review & Send.", id="compose-preview")
             yield Button("Review & Send", variant="primary", id="btn-review")
             yield Button("Cancel", variant="default", id="btn-cancel")
-
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
 
     def on_input_changed(self, event: Input.Changed) -> None:
         accent = self._c("accent.primary", "#bb9af7")

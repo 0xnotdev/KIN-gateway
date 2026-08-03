@@ -31,13 +31,6 @@ class WorkspaceTabBarWidget(LifecycleWidgetMixin, Static):
         super().__init__(**kwargs)
         self.tab_manager = tab_manager
 
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
-
     def render(self) -> str:
         state = self.lifecycle_state
         err = self._c("state.error", "#f7768e")

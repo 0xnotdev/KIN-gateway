@@ -316,13 +316,6 @@ class InboxScreenWidget(LifecycleWidgetMixin, Static):
                 self.handle_always_allow_bounded()
                 event.stop()
 
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
-
     def render(self) -> Table | Panel:
         accent = self._c("accent.primary", "#bb9af7")
         ok = self._c("state.live", "#73daca")

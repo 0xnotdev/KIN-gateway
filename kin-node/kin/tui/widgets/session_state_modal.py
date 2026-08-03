@@ -15,8 +15,10 @@ from textual.events import Key
 from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
+from kin.tui.widgets.lifecycle import LifecycleWidgetMixin
 
-class SessionStateMenuModal(ModalScreen[Optional[str]]):
+
+class SessionStateMenuModal(LifecycleWidgetMixin, ModalScreen[Optional[str]]):
     """Modal dialog for session state transitions (pause/resume/cancel/hand back) (§5.3, §14.8 Phase D)."""
 
     DEFAULT_CSS = """
@@ -40,13 +42,6 @@ class SessionStateMenuModal(ModalScreen[Optional[str]]):
         super().__init__(**kwargs)
         self.session_id = session_id
         self.current_status = current_status
-
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
 
     def compose(self) -> ComposeResult:
         accent = self._c("accent.primary", "#bb9af7")

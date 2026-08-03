@@ -63,13 +63,6 @@ class SpinnerWidget(LifecycleWidgetMixin, Static):
             return True
         return False
 
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
-
     def render(self) -> str:
         state = self.lifecycle_state
         accent = self._c("accent.primary", "#bb9af7")

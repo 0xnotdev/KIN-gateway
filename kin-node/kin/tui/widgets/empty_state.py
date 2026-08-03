@@ -28,13 +28,6 @@ class EmptyStateWidget(LifecycleWidgetMixin, Static):
     }
     """
 
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
-
     def __init__(
         self,
         title: str = "No Items Available",

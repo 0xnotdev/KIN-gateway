@@ -15,8 +15,10 @@ from textual.events import Key
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Static
 
+from kin.tui.widgets.lifecycle import LifecycleWidgetMixin
 
-class DenyReasonModal(ModalScreen[Optional[str]]):
+
+class DenyReasonModal(LifecycleWidgetMixin, ModalScreen[Optional[str]]):
     """Modal dialog for DENY action requiring non-empty reason input (§3.1)."""
 
     DEFAULT_CSS = """
@@ -43,13 +45,6 @@ class DenyReasonModal(ModalScreen[Optional[str]]):
     def __init__(self, approval_id: str, **kwargs) -> None:
         super().__init__(**kwargs)
         self.approval_id = approval_id
-
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
 
     def compose(self) -> ComposeResult:
         err = self._c("state.error", "#f7768e")
@@ -88,7 +83,7 @@ class DenyReasonModal(ModalScreen[Optional[str]]):
             event.stop()
 
 
-class EditConstraintsModal(ModalScreen[Optional[dict]]):
+class EditConstraintsModal(LifecycleWidgetMixin, ModalScreen[Optional[dict]]):
     """Modal dialog for EDIT_CONSTRAINTS capturing a flat JSON object (§3.1)."""
 
     DEFAULT_CSS = """
@@ -116,13 +111,6 @@ class EditConstraintsModal(ModalScreen[Optional[dict]]):
         super().__init__(**kwargs)
         self.approval_id = approval_id
         self.initial_json = initial_json
-
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
 
     def compose(self) -> ComposeResult:
         accent = self._c("accent.primary", "#bb9af7")
@@ -167,7 +155,7 @@ class EditConstraintsModal(ModalScreen[Optional[dict]]):
             event.stop()
 
 
-class ApproveConfirmModal(ModalScreen[bool]):
+class ApproveConfirmModal(LifecycleWidgetMixin, ModalScreen[bool]):
     """Generic confirmation modal gating Approve Once / Always Allow Bounded (§3.1)."""
 
     DEFAULT_CSS = """
@@ -188,13 +176,6 @@ class ApproveConfirmModal(ModalScreen[bool]):
         super().__init__(**kwargs)
         self.modal_title = title
         self.modal_description = description
-
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
 
     def compose(self) -> ComposeResult:
         ok = self._c("state.live", "#73daca")
@@ -220,7 +201,7 @@ class ApproveConfirmModal(ModalScreen[bool]):
             event.stop()
 
 
-class PatchApplyConfirmModal(ModalScreen[bool]):
+class PatchApplyConfirmModal(LifecycleWidgetMixin, ModalScreen[bool]):
     """Confirmation modal for workspace patch application showing structured unified diff before confirming (§5.3, §14.8)."""
 
     DEFAULT_CSS = """
@@ -251,13 +232,6 @@ class PatchApplyConfirmModal(ModalScreen[bool]):
         self.artifact_id = artifact_id
         self.relative_target_path = relative_target_path
         self.unified_diff = unified_diff
-
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
 
     def compose(self) -> ComposeResult:
         warn = self._c("state.waiting", "#e0af68")

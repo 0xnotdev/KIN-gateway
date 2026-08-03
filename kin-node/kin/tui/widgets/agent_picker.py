@@ -20,13 +20,6 @@ from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
 class AgentPickerWidget(LifecycleWidgetMixin, ModalScreen[Optional[AgentCardView]]):
     """AgentPicker modal screen overlay for selecting an agent (§5.5, §14.7 Phase B)."""
 
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
-
     can_focus = True
 
     DEFAULT_CSS = """

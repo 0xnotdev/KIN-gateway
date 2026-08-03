@@ -136,18 +136,19 @@ class KinApp(App[None]):
         """Effective colorless/monochrome mode active flag.
 
         Evaluates user preference (color_depth == 'monochrome' or '1-bit'),
-        is_ascii_fallback_active, NO_COLOR environment variable, or console.color_system is None.
+        NO_COLOR environment variable, or console.color_system is None.
         """
         depth = getattr(self.prefs, "color_depth", "auto")
         if depth in ("monochrome", "1-bit"):
             return True
-        if self.is_ascii_fallback_active:
-            return True
         if "NO_COLOR" in os.environ:
             return True
         console_obj = getattr(self, "console", None)
-        if console_obj is not None and getattr(console_obj, "color_system", "auto") is None:
-            return True
+        if console_obj is not None:
+            if getattr(console_obj, "_color_system", None) is not None:
+                return False
+            if getattr(console_obj, "color_system", None) is None:
+                return True
         return False
 
     def set_preference(self, key: str, value: object) -> None:

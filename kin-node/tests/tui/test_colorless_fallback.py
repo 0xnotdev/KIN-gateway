@@ -24,6 +24,15 @@ from kin.tui.tokens import get_glyph
 HEX_COLOR_TAG_PATTERN = re.compile(r"#[0-9a-fA-F]{6}")
 
 
+@pytest.fixture(autouse=True)
+def isolate_test_profiles(tmp_path, monkeypatch):
+    """Isolate UI state preferences to temporary directory per test."""
+    profile_path = tmp_path / ".kin" / "profiles" / "test_profile"
+    monkeypatch.setattr("kin.tui.persistence.get_profile_dir", lambda name="default": profile_path)
+    monkeypatch.setattr("kin.tui.app.get_profile_dir", lambda name="default": profile_path)
+    return profile_path
+
+
 @pytest.mark.asyncio
 async def test_real_widgets_in_active_colorless_ascii_mode():
     """Mount KinApp with ascii_fallback=True and color_depth='monochrome', render 6 real widgets,
@@ -154,6 +163,8 @@ async def test_real_widgets_in_active_colorless_ascii_mode():
 async def test_no_color_environment_variable_activates_colorless_only(monkeypatch):
     """Assert NO_COLOR env var activates is_colorless_active, but NOT is_ascii_fallback_active (Correction 1)."""
     monkeypatch.setenv("NO_COLOR", "1")
+    # Isolate NO_COLOR from the independent TERM=dumb ASCII fallback.
+    monkeypatch.setenv("TERM", "xterm-256color")
     app = KinApp(theme_name="kin-graphite", profile_name="test_profile_nocolor")
     async with app.run_test(size=(160, 44)) as pilot:
         app.prefs.ascii_fallback = False
@@ -163,11 +174,11 @@ async def test_no_color_environment_variable_activates_colorless_only(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_colorless_auto_detection_detects_colorless_terminal():
+async def test_colorless_auto_detection_detects_colorless_terminal(monkeypatch):
     """Assert auto-detection activates is_colorless_active when console.color_system is None."""
     app = KinApp(theme_name="kin-graphite", profile_name="test_profile_autodetect")
     async with app.run_test(size=(160, 44)) as pilot:
-        app.console._color_system = None
+        monkeypatch.setattr(app.console, "_color_system", None)
         assert app.is_colorless_active is True
         await pilot.press("q")
 

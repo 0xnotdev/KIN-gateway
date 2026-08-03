@@ -36,15 +36,6 @@ class AgentCardWidget(LifecycleWidgetMixin, Static):
     }
     """
 
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable or empty string if colorless mode active."""
-        try:
-            if getattr(self.app, "is_colorless_active", False):
-                return ""
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
-
     def _g(self, symbol: str) -> str:
         """Resolve a glyph symbol using ASCII fallback if app.is_ascii_fallback_active is True."""
         try:

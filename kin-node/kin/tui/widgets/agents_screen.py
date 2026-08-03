@@ -85,13 +85,6 @@ class AgentsScreenWidget(LifecycleWidgetMixin, Static):
         self.selected_agent_id = agent_id
         self.refresh()
 
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
-
     def render(self) -> RenderableType:
         accent = self._c("accent.primary", "#bb9af7")
         ok = self._c("state.live", "#73daca")

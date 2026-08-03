@@ -30,17 +30,6 @@ from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
 class ContactPickerModal(LifecycleWidgetMixin, ModalScreen[Optional[ContactSummary]]):
     """ModalScreen overlay for selecting a peer contact (§14.7 Phase C)."""
 
-    def _c(self, role: str, fallback: str) -> str:
-        app = self._get_app_instance()
-        if app is not None and getattr(app, "is_colorless_active", False):
-            return ""
-        if app is not None and hasattr(app, "theme_tokens"):
-            try:
-                return app.theme_tokens.get_role_color(role)
-            except Exception:
-                pass
-        return fallback if app is None else ""
-
     can_focus = True
 
     DEFAULT_CSS = """
@@ -131,17 +120,6 @@ class ContactPickerModal(LifecycleWidgetMixin, ModalScreen[Optional[ContactSumma
 
 class DispatchWizardWidget(LifecycleWidgetMixin, Static):
     """DispatchWizard domain widget for 7-step session dispatching (§14.7 Phase C)."""
-
-    def _c(self, role: str, fallback: str) -> str:
-        app = self._get_app_instance()
-        if app is not None and getattr(app, "is_colorless_active", False):
-            return ""
-        if app is not None and hasattr(app, "theme_tokens"):
-            try:
-                return app.theme_tokens.get_role_color(role)
-            except Exception:
-                pass
-        return fallback if app is None else ""
 
     can_focus = True
 

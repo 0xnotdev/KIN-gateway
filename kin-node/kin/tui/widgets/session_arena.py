@@ -49,13 +49,6 @@ from kin.tui.widgets.trust_strip import TrustStripWidget
 class SessionArenaWidget(LifecycleWidgetMixin, Static):
     """Session Arena domain widget composing header, session map, exchange timeline, activity feed, artifacts, and inspector (§14.8 Phase D)."""
 
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
-
     can_focus = True
     BINDINGS = build_arena_bindings()
 

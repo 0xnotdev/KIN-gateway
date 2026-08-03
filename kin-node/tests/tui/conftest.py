@@ -33,6 +33,19 @@ def isolate_tui_network(monkeypatch):
     monkeypatch.setattr(httpx.Client, "get", smart_client_get)
 
 
+@pytest.fixture(autouse=True)
+def isolate_tui_profile_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Systemic autouse fixture isolating default user profile directory per test.
+
+    Guarantees that no test mutates persistent user profiles on disk (~/.kin/profiles/default),
+    preventing state leakage across snapshot tests in the full test suite.
+    """
+    fake_home = tmp_path / "home"
+    fake_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+
+
 @pytest.fixture
 def tui_test_profile_root(tmp_path: Path) -> Path:
     p = tmp_path / "profiles" / "test_user"

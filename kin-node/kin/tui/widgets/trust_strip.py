@@ -55,13 +55,6 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
         self.is_missing_peer: bool = is_missing_peer
         self.is_trust_unknown: bool = is_trust_unknown
 
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
-
     def render(self) -> str:
         state = self.lifecycle_state
         err = self._c("state.error", "#f7768e")
@@ -69,6 +62,11 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
         accent = self._c("accent.primary", "#bb9af7")
         ok = self._c("state.live", "#73daca")
         hl = self._c("accent.highlight", "#7aa2f7")
+
+        err_b_o, err_b_c = self._bold("state.error", "#f7768e")
+        warn_b_o, warn_b_c = self._bold("state.waiting", "#e0af68")
+        accent_b_o, accent_b_c = self._bold("accent.primary", "#bb9af7")
+        ok_b_o, ok_b_c = self._bold("state.live", "#73daca")
 
         if state == WidgetLifecycleState.LOADING:
             glyph = get_glyph("◌")
@@ -80,7 +78,7 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            return f"[bold {err}]{glyph} TrustStrip Error: Security state unreadable. Press [Retry].[/bold {err}]"
+            return f"{err_b_o}{glyph} TrustStrip Error: Security state unreadable. Press [Retry].{err_b_c}"
 
         # Mode A: Render Session Header / Trust Strip (§14.8 Step 1)
         if self.session_summary:
@@ -88,19 +86,23 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
             init_user = redact_ui_text(sess.initiator_username or "local_user")
             
             if self.is_trust_unknown:
-                peer_trust = f"[bold {err}][TRUST STATUS UNKNOWN / CHECK ERROR][/bold {err}]"
+                peer_trust = f"{err_b_o}[TRUST STATUS UNKNOWN / CHECK ERROR]{err_b_c}"
                 rec_user = f"@{redact_ui_text(sess.receiver_username or 'unknown')}"
             elif self.is_missing_peer:
-                rec_user = f"@{redact_ui_text(sess.receiver_username or 'unknown')} [bold {warn}][UNKNOWN PEER][/bold {warn}]"
-                peer_trust = f"[bold {err}][UNVERIFIED PEER][/bold {err}]"
+                rec_user = f"@{redact_ui_text(sess.receiver_username or 'unknown')} {warn_b_o}[UNKNOWN PEER]{warn_b_c}"
+                peer_trust = f"{err_b_o}[UNVERIFIED PEER]{err_b_c}"
             else:
                 rec_user = f"@{redact_ui_text(sess.receiver_username or 'peer')}"
-                peer_trust = f"[bold {accent}][PEER VERIFIED][/bold {accent}]"
+                peer_trust = f"{accent_b_o}[PEER VERIFIED]{accent_b_c}"
 
-            transport_badge = f"[bold {ok}][DIRECT TRANSPORT][/bold {ok}]" if self.is_direct_transport else f"[bold {warn}][RELAY TRANSPORT][/bold {warn}]"
-            stale_badge = f" [bold {err}][STALE PEER CARD][/bold {err}]" if self.is_stale_peer else ""
+            transport_badge = f"{ok_b_o}[DIRECT TRANSPORT]{ok_b_c}" if self.is_direct_transport else f"{warn_b_o}[RELAY TRANSPORT]{warn_b_c}"
+            stale_badge = f" {err_b_o}[STALE PEER CARD]{err_b_c}" if self.is_stale_peer else ""
 
             status_style = ok if sess.status == "active" else (hl if sess.status == "completed" else err)
+            status_tag = f"[{status_style}]" if status_style else ""
+            status_close = f"[/{status_style}]" if status_style else ""
+            accent_tag = f"[{accent}]" if accent else ""
+            accent_close = f"[/{accent}]" if accent else ""
             obj_clean = redact_ui_text(sess.objective or "No objective declared")
 
             if state == WidgetLifecycleState.NARROW:
@@ -109,7 +111,7 @@ class TrustStripWidget(LifecycleWidgetMixin, Static):
             focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
             return (
                 f"🔒 SESSION TRUST STRIP: {peer_trust} {transport_badge}{stale_badge}{focus_mark}\n"
-                f"Session ID: [bold]{sess.session_id}[/bold] | Type: [{accent}]{sess.type}[/{accent}] | Status: [{status_style}]{sess.status}[/]\n"
+                f"Session ID: [bold]{sess.session_id}[/bold] | Type: {accent_tag}{sess.type}{accent_close} | Status: {status_tag}{sess.status}{status_close}\n"
                 f"Participants: [bold]@{init_user}[/bold] (initiator) → [bold]{rec_user}[/bold]\n"
                 f"Objective: [dim]{obj_clean}[/dim]"
             )

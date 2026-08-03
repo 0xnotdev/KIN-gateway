@@ -26,13 +26,6 @@ class CommandPaletteWidget(LifecycleWidgetMixin, Static):
     }
     """
 
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
-
     def __init__(
         self,
         query: str = "",
@@ -103,13 +96,6 @@ class CommandPaletteModal(ModalScreenWidget):
         padding: 1 2;
     }
     """
-
-    def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
 
     def __init__(self, commands: List[CommandItem], active_tab: str = "home", **kwargs) -> None:
         super().__init__(
