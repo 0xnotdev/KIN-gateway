@@ -6,14 +6,23 @@ opens ComposeMessageModal, and isolates arena bindings from global navigation.
 
 from pathlib import Path
 import pytest
+from rich.console import Console
 from textual.widgets import Input, Static
 
 from kin.tui.app import KinApp
 from kin.tui.help import generate_help_markdown
 from kin.tui.local_state import ensure_profile_db
+from kin.tui.tokens import DRACULA_THEME, KIN_GRAPHITE_THEME
 from kin.tui.widgets.compose_modal import ComposeMessageModal
 from kin.tui.widgets.inbox_screen import InboxScreenWidget
 from kin.tui.widgets.session_arena import SessionArenaWidget
+
+
+def _render_to_svg(renderable) -> str:
+    """Render Rich output with truecolor preserved for theme assertions."""
+    console = Console(width=120, record=True, force_terminal=True, color_system="truecolor")
+    console.print(renderable)
+    return console.export_svg()
 
 
 def _seed_test_session(profile_dir: Path, session_id: str = "sess-real-100") -> None:
@@ -37,8 +46,7 @@ def _seed_test_session(profile_dir: Path, session_id: str = "sess-real-100") -> 
 @pytest.mark.asyncio
 async def test_real_app_mounts_session_arena_widget_not_placeholder(tmp_path, monkeypatch):
     """Assert real KinApp mounts SessionArenaWidget in MainCanvas and renders live Arena content (§14.8)."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    profile_dir = tmp_path / ".kin" / "profiles" / "default"
+    profile_dir = Path.home() / ".kin" / "profiles" / "default"
     profile_dir.mkdir(parents=True, exist_ok=True)
     _seed_test_session(profile_dir, "sess-real-100")
 
@@ -57,10 +65,47 @@ async def test_real_app_mounts_session_arena_widget_not_placeholder(tmp_path, mo
 
 
 @pytest.mark.asyncio
+async def test_live_theme_switch_rethemes_mounted_session_arena(tmp_path, monkeypatch):
+    """Real session-tab flow refreshes Arena content when the live theme changes."""
+    monkeypatch.setattr(KinApp, "is_colorless_active", property(lambda self: False))
+    profile_dir = Path.home() / ".kin" / "profiles" / "default"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    _seed_test_session(profile_dir, "sess-theme-100")
+
+    app = KinApp(theme_name="kin-graphite", profile_name="default", profile_dir=profile_dir)
+    async with app.run_test(size=(120, 36)) as pilot:
+        app.tab_manager.open_tab("tab:sess-theme-100", "Theme Session", "session")
+        app.sync_tab_bar()
+        await pilot.pause()
+
+        arena = app.canvas.query_one(SessionArenaWidget)
+        graphite_output = _render_to_svg(arena.render())
+        assert KIN_GRAPHITE_THEME.accent_primary in graphite_output
+
+        refresh_calls = 0
+        original_refresh = arena.refresh
+
+        def track_refresh(*args, **kwargs):
+            nonlocal refresh_calls
+            refresh_calls += 1
+            return original_refresh(*args, **kwargs)
+
+        monkeypatch.setattr(arena, "refresh", track_refresh)
+        app.set_theme("dracula")
+        await pilot.pause()
+
+        dracula_output = _render_to_svg(arena.render())
+        assert refresh_calls > 0, "Live theme switch must refresh mounted SessionArena content"
+        assert DRACULA_THEME.accent_primary in dracula_output
+        assert KIN_GRAPHITE_THEME.accent_primary not in dracula_output
+
+        await pilot.press("q")
+
+
+@pytest.mark.asyncio
 async def test_real_app_arena_key_sequence_drives_widget_state(tmp_path, monkeypatch):
     """Press t, e, o, c, u, z, i in sequence on real KinApp and assert arena state changes (§14.8)."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    profile_dir = tmp_path / ".kin" / "profiles" / "default"
+    profile_dir = Path.home() / ".kin" / "profiles" / "default"
     profile_dir.mkdir(parents=True, exist_ok=True)
     _seed_test_session(profile_dir, "sess-real-200")
 
@@ -111,8 +156,7 @@ async def test_real_app_arena_key_sequence_drives_widget_state(tmp_path, monkeyp
 @pytest.mark.asyncio
 async def test_real_app_press_m_opens_compose_message_modal(tmp_path, monkeypatch):
     """Press 'm' on active session tab in real KinApp and assert ComposeMessageModal is pushed (§14.8)."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    profile_dir = tmp_path / ".kin" / "profiles" / "default"
+    profile_dir = Path.home() / ".kin" / "profiles" / "default"
     profile_dir.mkdir(parents=True, exist_ok=True)
     _seed_test_session(profile_dir, "sess-real-300")
 
@@ -137,8 +181,7 @@ async def test_real_app_press_m_opens_compose_message_modal(tmp_path, monkeypatc
 @pytest.mark.asyncio
 async def test_arena_scoped_bindings_do_not_leak_outside_arena(tmp_path, monkeypatch):
     """Assert 'i' still opens Inbox and 'o' still opens new tab when active tab is Home (§14.4, §14.8)."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    profile_dir = tmp_path / ".kin" / "profiles" / "default"
+    profile_dir = Path.home() / ".kin" / "profiles" / "default"
     profile_dir.mkdir(parents=True, exist_ok=True)
 
     app = KinApp(profile_name="default", profile_dir=profile_dir)

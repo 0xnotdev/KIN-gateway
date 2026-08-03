@@ -62,11 +62,11 @@ class KinApp(App[None]):
     BINDINGS = build_textual_bindings()
 
     def __init__(self, theme_name: str = "kin-graphite", profile_name: str = "default", profile_dir: Optional[Path] = None, **kwargs) -> None:
-        super().__init__(**kwargs)
         resolution = resolve_theme(theme_name)
         self.theme_tokens = resolution.theme
         self.requested_theme = resolution.requested_name
         self.is_theme_fallback = resolution.is_fallback
+        super().__init__(**kwargs)
         self.profile_name = profile_name
         self.profile_dir = profile_dir or (Path.home() / ".kin" / "profiles" / profile_name)
 
@@ -151,6 +151,47 @@ class KinApp(App[None]):
                 return True
         return False
 
+    def get_css_variables(self) -> Dict[str, str]:
+        """Expose KIN semantic theme tokens to every Textual CSS variable in use.
+
+        Textual's built-in theme supplies the same variable names, but KIN owns
+        the visual palette.  Keep semantic role variables available alongside
+        the legacy Textual aliases used by existing ``DEFAULT_CSS`` blocks.
+        """
+        variables = super().get_css_variables()
+        roles = self.theme_tokens.get_role_map()
+        semantic_variables = {
+            role.replace(".", "-"): color
+            for role, color in roles.items()
+        }
+        aliases = {
+            "background": roles["surface.base"],
+            "surface": roles["surface.base"],
+            "surface-darken-1": roles["surface.raised"],
+            "primary": roles["accent.primary"],
+            "primary-lighten-1": roles["accent.highlight"],
+            "primary-darken-2": roles["border.strong"],
+            "accent": roles["accent.secondary"],
+            "text": roles["text.primary"],
+            "text-muted": roles["text.muted"],
+            "error": roles["state.error"],
+            "success": roles["state.live"],
+            "warning": roles["state.waiting"],
+        }
+        combined = {**variables, **semantic_variables, **aliases}
+        self.theme_variables = combined
+        return combined
+
+    def _refresh_theme_ui(self) -> None:
+        """Re-resolve CSS and refresh chrome plus currently mounted content."""
+        self.refresh_css(animate=False)
+        for widget in (self.canvas, self.sidebar, self.status_bar, self.inspector, self.tab_bar):
+            widget.refresh(layout=False)
+        # MainCanvas owns the active workspace.  Refreshing its mounted child
+        # makes a live theme switch reach SessionArena and future content views.
+        for child in self.canvas.children:
+            child.refresh(layout=False)
+
     def set_preference(self, key: str, value: object) -> None:
         """Update a UI preference, persist to disk, and refresh mounted regions live."""
         if hasattr(self.prefs, key):
@@ -159,11 +200,7 @@ class KinApp(App[None]):
             if key == "theme":
                 self.set_theme(str(value))
             else:
-                self.canvas.refresh(layout=False)
-                self.sidebar.refresh(layout=False)
-                self.status_bar.refresh(layout=False)
-                self.inspector.refresh(layout=False)
-                self.tab_bar.refresh(layout=False)
+                self._refresh_theme_ui()
 
     def set_theme(self, theme_name: str) -> None:
         """Live non-teardown theme transition preserving widget DOM, focus, and scroll state (§14.9 Phase B).
@@ -192,12 +229,7 @@ class KinApp(App[None]):
         self.prefs.theme = theme_name
         save_ui_preferences(self.prefs, self.profile_name)
 
-        # Non-teardown refresh on all mounted regions
-        self.canvas.refresh(layout=False)
-        self.sidebar.refresh(layout=False)
-        self.status_bar.refresh(layout=False)
-        self.inspector.refresh(layout=False)
-        self.tab_bar.refresh(layout=False)
+        self._refresh_theme_ui()
 
     def set_custom_theme(self, theme: Theme) -> None:
         """Live theme transition for a custom Theme object (§14.9 Phase A)."""
@@ -208,12 +240,7 @@ class KinApp(App[None]):
         self.prefs.theme = theme.name
         save_ui_preferences(self.prefs, self.profile_name)
 
-        # Non-teardown refresh on all mounted regions
-        self.canvas.refresh(layout=False)
-        self.sidebar.refresh(layout=False)
-        self.status_bar.refresh(layout=False)
-        self.inspector.refresh(layout=False)
-        self.tab_bar.refresh(layout=False)
+        self._refresh_theme_ui()
 
     def on_app_blur(self) -> None:
         """Handle terminal window blur — enable transient reduced motion."""

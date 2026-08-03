@@ -10,6 +10,7 @@ data structure level.
 """
 
 import pytest
+from textual.color import Color
 from kin.tui.app import KinApp
 from kin.tui.tokens import KIN_GRAPHITE_THEME, DRACULA_THEME
 
@@ -81,5 +82,29 @@ async def test_theme_switch_preserves_focus_and_scroll():
         assert focused_before == focused_after, (
             f"Focus changed from {focused_before} to {focused_after} after theme switch"
         )
+
+        await pilot.press("q")
+
+
+@pytest.mark.asyncio
+async def test_live_theme_switch_updates_css_driven_widget_styles(monkeypatch):
+    """A live switch updates CSS-backed sidebar background and border colors."""
+    monkeypatch.setattr(KinApp, "is_colorless_active", property(lambda self: False))
+    app = KinApp(theme_name="kin-graphite")
+    async with app.run_test(size=(160, 44)) as pilot:
+        sidebar = app.sidebar
+        graphite_background = sidebar.styles.background
+        graphite_border = sidebar.styles.border
+
+        assert graphite_background == Color.parse(KIN_GRAPHITE_THEME.surface_raised)
+        assert app.get_css_variables()["primary-darken-2"] == KIN_GRAPHITE_THEME.border_strong
+
+        app.set_theme("dracula")
+        await pilot.pause()
+
+        assert sidebar.styles.background != graphite_background
+        assert sidebar.styles.border != graphite_border
+        assert sidebar.styles.background == Color.parse(DRACULA_THEME.surface_raised)
+        assert app.get_css_variables()["primary-darken-2"] == DRACULA_THEME.border_strong
 
         await pilot.press("q")
