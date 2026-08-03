@@ -54,7 +54,8 @@ async def test_flow_1_home_screen_80x24_plain_mode():
     w.set_lifecycle_state(WidgetLifecycleState.NORMAL)
 
     rendered_str = _render_to_text(w.render())
-    assert len(rendered_str) > 0
+    assert "Home" in rendered_str or "KIN" in rendered_str or "Health" in rendered_str
+    assert "System" in rendered_str or "Status" in rendered_str or "Agents" in rendered_str
 
 
 @pytest.mark.asyncio
@@ -97,7 +98,7 @@ async def test_flow_4_inbox_screen_80x24_keyboard_reachable():
     w.set_lifecycle_state(WidgetLifecycleState.NORMAL)
 
     rendered = _render_to_text(w.render())
-    assert len(rendered) > 0
+    assert "Inbox" in rendered or "Approvals" in rendered or "Pending" in rendered or "Items" in rendered
 
 
 @pytest.mark.asyncio
@@ -153,7 +154,7 @@ async def test_flow_6_session_arena_80x24_plain_mode_lanes():
     w.set_lifecycle_state(WidgetLifecycleState.NORMAL)
 
     rendered = _render_to_text(w.render())
-    assert len(rendered) > 0
+    assert "Session Arena" in rendered or "Arena" in rendered or "Timeline" in rendered or "NEEDS YOU" in rendered
 
 
 @pytest.mark.asyncio
@@ -163,7 +164,7 @@ async def test_flow_7_replay_scrubber_80x24_navigation():
     w.set_lifecycle_state(WidgetLifecycleState.NORMAL)
 
     rendered = _render_to_text(w.render())
-    assert len(rendered) > 0
+    assert "Arena" in rendered or "Session" in rendered or "Timeline" in rendered
 
 
 @pytest.mark.asyncio
@@ -188,11 +189,31 @@ async def test_flow_8_error_recovery_state_80x24_plain_mode():
 @pytest.mark.asyncio
 async def test_terminal_resize_draft_text_and_focus_survive():
     """Terminal resize survival: In-progress draft text and current focus survive a resize event (§14.9 step 5)."""
-    wizard = DispatchWizardWidget()
-    wizard.prompt = "Critical system audit draft text"
-    wizard.controller.current_step = DispatchStep.GOAL_INPUT
+    from textual.geometry import Size
+    from textual.events import Resize
 
-    # Assert draft text survived resize event intact
-    assert wizard.prompt == "Critical system audit draft text"
-    rendered = _render_to_text(wizard.render())
-    assert "Critical system audit draft text" in rendered
+    app = KinApp(profile_name="test_resize_survival_real")
+
+    async with app.run_test(size=(80, 24)) as pilot:
+        # Switch tab to dispatch
+        app.canvas.set_active_tab_kind("dispatch")
+        await pilot.pause()
+
+        # Get mounted DispatchWizardWidget and input draft goal
+        wizard = app.query_one(DispatchWizardWidget)
+        wizard.prompt = "Critical system audit draft text"
+        wizard.controller.current_step = DispatchStep.GOAL_INPUT
+        await pilot.pause()
+
+        assert wizard.prompt == "Critical system audit draft text"
+        assert app.canvas.active_tab_kind == "dispatch"
+
+        # Trigger real terminal resize from 80x24 to 120x36
+        pilot.app.post_message(Resize(Size(120, 36), Size(80, 24)))
+        await pilot.pause()
+
+        # Assert draft text and active tab state survived terminal resize intact
+        assert wizard.prompt == "Critical system audit draft text"
+        assert app.canvas.active_tab_kind == "dispatch"
+        rendered = _render_to_text(wizard.render())
+        assert "Critical system audit draft text" in rendered

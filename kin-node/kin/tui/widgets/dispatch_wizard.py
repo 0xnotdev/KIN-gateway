@@ -129,11 +129,15 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
     """DispatchWizard domain widget for 7-step session dispatching (§14.7 Phase C)."""
 
     def _c(self, role: str, fallback: str) -> str:
-        """Resolve a theme color by role, falling back when app is unavailable."""
-        try:
-            return self.app.theme_tokens.get_role_color(role)
-        except Exception:
-            return fallback
+        app = self._get_app_instance()
+        if app is not None and getattr(app, "is_colorless_active", False):
+            return ""
+        if app is not None and hasattr(app, "theme_tokens"):
+            try:
+                return app.theme_tokens.get_role_color(role)
+            except Exception:
+                pass
+        return fallback if app is None else ""
 
     can_focus = True
 
@@ -550,17 +554,19 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
             return f"Wizard [{self.step_index + 1}/7]: {step_title}"
 
         pantry_count = len(draft.pantry_items)
+        arrow_glyph = self._g("→")
+        play_glyph = self._g("▶")
         lines = [
             f"[bold {accent}]Dispatch Wizard - {step_title}[/bold {accent}]{focus_mark}",
             f"Step {self.step_index + 1}/{len(self.STEPS)}: Peer=@{draft.peer_username or '(unselected)'} | Mode={draft.session_type}",
-            f"Sender={draft.sender_agent_id} → Receiver={draft.receiver_agent_id}",
+            f"Sender={draft.sender_agent_id} {arrow_glyph} Receiver={draft.receiver_agent_id}",
         ]
 
         if self.controller.current_step == DispatchStep.COLLABORATION_TYPE:
             mode_strs = []
             for m in VALID_SESSION_TYPES:
                 if m == draft.session_type:
-                    mode_strs.append(f"[bold {accent}]▶ [{m.upper()}][/bold {accent}]")
+                    mode_strs.append(f"[bold {accent}]{play_glyph} [{m.upper()}][/bold {accent}]")
                 else:
                     mode_strs.append(f"[dim]{m}[/dim]")
             lines.append(f"Session Modes: {'  '.join(mode_strs)}")

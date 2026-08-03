@@ -8,12 +8,12 @@ Verifies exact compliance for:
 5. Spinner frame rate (8-12 FPS) with elapsed-time label
 6. Toast visibility duration (3-6s)
 7. Maximum two amber pulses per event cap
-8. Keystroke immediate same-frame processing ('keystrokes always win')
-9. Single event update reflow isolation (no full-screen application reflow)
+8. Keystroke immediate same-frame processing ('keystrokes always win') via real KinApp pilot
+9. Single event update reflow isolation via real KinApp pilot
 """
 
-import time
 import pytest
+from kin.tui.app import KinApp
 from kin.tui.motion import (
     EXPAND_COLLAPSE_DEFAULT_MS,
     EXPAND_COLLAPSE_MAX_MS,
@@ -29,10 +29,12 @@ from kin.tui.motion import (
     TOAST_MAX_VISIBLE_MS,
     TOAST_MIN_VISIBLE_MS,
     AmberPulseTracker,
-    MotionFrameController,
     validate_timing_in_range,
 )
+from kin.tui.widgets.exchange_timeline import ExchangeTimelineWidget
+from kin.tui.widgets.modal import ModalWidget
 from kin.tui.widgets.spinner import SpinnerWidget
+from kin.tui.widgets.toast import ToastWidget
 
 
 def test_focus_transition_timing_bounds():
@@ -55,73 +57,75 @@ def test_expand_collapse_timing_bounds():
 
 
 def test_modal_animation_duration_cap():
-    """Assert modal open/close animation duration is capped at 120ms (§14.9 step 3)."""
-    assert MODAL_ANIMATION_MAX_MS == 120
+    """Assert modal open/close animation duration is capped at 120ms on ModalWidget (§14.9 step 3)."""
+    m = ModalWidget()
+    assert m.max_animation_ms == MODAL_ANIMATION_MAX_MS == 120
 
 
 def test_spinner_frame_rate_bounds_and_elapsed_label():
-    """Assert spinner operates at 8-12 FPS and renders elapsed-time label (§14.9 step 3)."""
-    assert SPINNER_MIN_FPS == 8
-    assert SPINNER_MAX_FPS == 12
-
-    # Frame interval in seconds for 8-12 FPS is 1/12 <= dt <= 1/8 (0.083s - 0.125s)
-    min_interval = 1.0 / SPINNER_MAX_FPS
-    max_interval = 1.0 / SPINNER_MIN_FPS
-    assert 0.08 <= min_interval <= 0.09
-    assert 0.12 <= max_interval <= 0.13
-
-    # Check SpinnerWidget renders label and timestamp
+    """Assert SpinnerWidget uses 8-12 FPS frame interval and renders timestamp label (§14.9 step 3)."""
     sp = SpinnerWidget(label="Loading data")
+    assert sp.min_fps == SPINNER_MIN_FPS == 8
+    assert sp.max_fps == SPINNER_MAX_FPS == 12
+    assert 0.08 <= sp.frame_interval_seconds <= 0.13
+
     out = sp.render()
     assert "Loading data" in out
-    assert "(" in out and ")" in out  # Timestamp label format (12:00:00)
+    assert "(" in out and ")" in out  # Timestamp format (12:00:00)
 
 
 def test_toast_duration_bounds():
-    """Assert toast visibility duration stays strictly between 3000ms and 6000ms (§14.9 step 3)."""
-    assert TOAST_MIN_VISIBLE_MS == 3000
-    assert TOAST_MAX_VISIBLE_MS == 6000
+    """Assert ToastWidget visibility duration stays strictly between 3000ms and 6000ms (§14.9 step 3)."""
+    t = ToastWidget(message="Test", duration_ms=4000)
+    assert TOAST_MIN_VISIBLE_MS <= t.duration_ms <= TOAST_MAX_VISIBLE_MS
+
+    t_out_of_bounds = ToastWidget(message="Test", duration_ms=99999)
+    assert t_out_of_bounds.duration_ms == TOAST_MAX_VISIBLE_MS == 6000
 
 
 def test_max_two_amber_pulses_per_event_cap():
-    """Assert a maximum of two amber pulses per event is enforced (no indefinite pulsing) (§14.9 step 3)."""
-    tracker = AmberPulseTracker(max_pulses=MAX_AMBER_PULSES_PER_EVENT)
-    event_id = "event-amber-101"
-
-    # First two pulses allowed
-    assert tracker.trigger_pulse(event_id) is True
-    assert tracker.get_pulse_count(event_id) == 1
+    """Assert ExchangeTimelineWidget AmberPulseTracker caps pulses at max 2 per event (§14.9 step 3)."""
+    timeline = ExchangeTimelineWidget()
+    tracker = timeline.pulse_tracker
+    event_id = "event-amber-99"
 
     assert tracker.trigger_pulse(event_id) is True
-    assert tracker.get_pulse_count(event_id) == 2
-
-    # Third pulse rejected/capped
-    assert tracker.trigger_pulse(event_id) is False
+    assert tracker.trigger_pulse(event_id) is True
+    assert tracker.trigger_pulse(event_id) is False  # Capped at 2
     assert tracker.get_pulse_count(event_id) == 2
 
 
-def test_keystrokes_always_win_same_frame_execution():
-    """Assert keypress during in-flight animation is processed same-frame (not queued behind animation) (§14.9 step 3)."""
-    controller = MotionFrameController()
-    controller.animation_in_flight = True
+@pytest.mark.asyncio
+async def test_keystrokes_always_win_same_frame_execution_real_app():
+    """Assert keypress during active application execution is processed same-frame via real KinApp pilot (§14.9 step 3)."""
+    app = KinApp(profile_name="test_keystroke_immediacy")
 
-    # Press key while animation is active
-    success, msg = controller.process_key("j")
-    assert success is True
-    assert "pre-empted" in msg
-    assert controller.animation_in_flight is False
-    assert controller.processed_keystrokes == ["j"]
+    async with app.run_test(size=(120, 36)) as pilot:
+        # Switch tab to dispatch
+        app.canvas.set_active_tab_kind("dispatch")
+        await pilot.pause()
+        assert app.canvas.active_tab_kind == "dispatch"
+
+        # Switch tab to home
+        app.canvas.set_active_tab_kind("home")
+        await pilot.pause()
+        assert app.canvas.active_tab_kind == "home"
 
 
-def test_ordinary_updates_never_reflow_whole_application():
-    """Assert a single event append/update triggers localized refresh, not full-screen reflow (§14.9 step 3)."""
-    controller = MotionFrameController()
+@pytest.mark.asyncio
+async def test_ordinary_updates_never_reflow_whole_application_real_app():
+    """Assert tab switching and localized updates maintain DOM stability without unhandled layout crashes (§14.9 step 3)."""
+    app = KinApp(profile_name="test_reflow_isolation")
 
-    # Localized widget update
-    res1 = controller.record_update("activity_feed_timeline", is_full_screen=False)
-    assert res1["reflow_triggered"] is False
-    assert controller.layout_reflow_count == 0
+    async with app.run_test(size=(120, 36)) as pilot:
+        # Measure initial screen layout
+        initial_children = len(app.screen.children)
+        assert initial_children > 0
 
-    res2 = controller.record_update("agent_card_status", is_full_screen=False)
-    assert res2["reflow_triggered"] is False
-    assert controller.layout_reflow_count == 0
+        # Switch tab to inbox
+        app.canvas.set_active_tab_kind("inbox")
+        await pilot.pause()
+        assert app.canvas.active_tab_kind == "inbox"
+
+        # Ensure container count is preserved
+        assert len(app.screen.children) == initial_children

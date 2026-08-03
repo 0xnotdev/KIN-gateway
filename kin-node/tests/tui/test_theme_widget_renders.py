@@ -13,7 +13,7 @@ from kin.tui.tokens import KIN_GRAPHITE_THEME, DRACULA_THEME
 @pytest.mark.asyncio
 async def test_dispatch_wizard_renders_with_theme_colors():
     """Mount KinApp, render DispatchWizard under kin-graphite, switch to dracula, assert colors changed."""
-    app = KinApp(theme_name="kin-graphite")
+    app = KinApp(theme_name="kin-graphite", profile_name="test_dispatch_render_colors")
     async with app.run_test(size=(160, 44)) as pilot:
         # Switch to dispatch tab to get the wizard mounted
         app.canvas.set_active_tab_kind("dispatch")

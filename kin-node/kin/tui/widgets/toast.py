@@ -7,6 +7,7 @@ from typing import Callable, Optional
 
 from textual.widgets import Static
 
+from kin.tui.motion import TOAST_MAX_VISIBLE_MS, TOAST_MIN_VISIBLE_MS
 from kin.tui.redaction import redact_ui_text
 from kin.tui.tokens import get_glyph
 from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
@@ -48,12 +49,15 @@ class ToastWidget(LifecycleWidgetMixin, Static):
         message: str = "Notification",
         severity: str = "info",
         dismiss_callback: Optional[Callable[[], None]] = None,
+        duration_ms: Optional[int] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.message = message
         self.severity = severity.lower() if severity.lower() in self.SEVERITY_GLYPHS else "info"
         self.dismiss_callback = dismiss_callback
+        req_duration = duration_ms if duration_ms is not None else 4000
+        self.duration_ms = min(TOAST_MAX_VISIBLE_MS, max(TOAST_MIN_VISIBLE_MS, req_duration))
 
     def trigger_dismiss(self) -> bool:
         """Trigger optional dismiss callback (§14.5)."""

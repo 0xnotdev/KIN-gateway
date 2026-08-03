@@ -8,6 +8,7 @@ from typing import Callable, Optional, Union
 
 from textual.widgets import Static
 
+from kin.tui.motion import SPINNER_MAX_FPS, SPINNER_MIN_FPS
 from kin.tui.tokens import get_glyph
 from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
 
@@ -39,6 +40,9 @@ class SpinnerWidget(LifecycleWidgetMixin, Static):
         self.cancel_callback = cancel_callback
         self.frame_index = 0
         self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self.min_fps = SPINNER_MIN_FPS
+        self.max_fps = SPINNER_MAX_FPS
+        self.frame_interval_seconds = 1.0 / SPINNER_MAX_FPS
 
     def trigger_cancel(self) -> bool:
         """Trigger safe cancellation callback (§14.5)."""

@@ -10,6 +10,7 @@ from typing import Callable, Dict, List, Optional, Set, Union
 from textual.events import Key
 from textual.widgets import Static
 
+from kin.tui.motion import EVENT_PULSE_MS, MAX_AMBER_PULSES_PER_EVENT, AmberPulseTracker
 from kin.tui.redaction import redact_ui_text
 from kin.tui.state import UiEvent
 from kin.tui.tokens import get_glyph
@@ -100,9 +101,10 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         self.on_event_selected = on_event_selected
         self.reduced_motion: bool = reduced_motion
 
-        # Streaming state & pulse tracking (§7.2, §14.8 Phase C1/C2)
+        # Streaming state & pulse tracking (§7.2, §14.8 Phase C1/C2, §14.9 step 3)
         self.new_events_off_tail_count: int = 0
         self.live_appended_at_map: Dict[str, datetime] = {}
+        self.pulse_tracker = AmberPulseTracker(max_pulses=MAX_AMBER_PULSES_PER_EVENT)
 
         # Performance memoization cache
         self._coalesced_groups_cache: Optional[List[CoalescedTimelineGroup]] = None
@@ -385,11 +387,12 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
 
         select_tag = f" [bold{warn_tag}][INSPECTED][/bold{warn_tag}]" if is_selected else ""
 
-        # Live-Only Tail Pulse Tracking (§7.2, §14.8 Phase C1/C2)
+        # Live-Only Tail Pulse Tracking (§7.2, §14.8 Phase C1/C2, §14.9 step 3)
         is_pulsing = False
         if evt.event_id in self.live_appended_at_map:
             elapsed_sec = (now_dt - self.live_appended_at_map[evt.event_id]).total_seconds()
-            if (not self.reduced_motion) and (0.0 <= elapsed_sec < 0.120):
+            pulse_window_sec = EVENT_PULSE_MS / 1000.0
+            if (not self.reduced_motion) and (0.0 <= elapsed_sec < pulse_window_sec):
                 is_pulsing = True
 
         pulse_badge = f" [bold{ok_tag}]⚡ [TAIL PULSE][/bold{ok_tag}]" if is_pulsing else ""
