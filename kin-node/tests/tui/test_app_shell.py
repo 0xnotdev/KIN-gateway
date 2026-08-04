@@ -6,22 +6,9 @@ Spec authority: KIN-V1.1-TUI-SYSTEM.md §2, §14.1, §14.2
 import sys
 from pathlib import Path
 import pytest
-from rich.console import ColorSystem
 
 from kin.tui.app import KinApp, is_interactive_tty, run_tui_app
 from kin.tui.errors import get_diagnostics_log_path
-
-
-def _snapshot_app(monkeypatch, **kwargs) -> KinApp:
-    """Build a shell snapshot app with terminal rendering pinned to truecolor UTF-8."""
-    monkeypatch.delenv("NO_COLOR", raising=False)
-    monkeypatch.setenv("TERM", "xterm-256color")
-    app = KinApp(**kwargs)
-    app.prefs.ascii_fallback = False
-    app.prefs.color_depth = "auto"
-    monkeypatch.setattr(type(app.console), "encoding", property(lambda _console: "utf-8"))
-    monkeypatch.setattr(app.console, "_color_system", ColorSystem.TRUECOLOR)
-    return app
 
 
 def test_non_tty_launches_one_line_message_and_exits_zero(monkeypatch, capsys):
@@ -49,9 +36,9 @@ def test_tty_detection_positive(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_app_normal_quit():
+async def test_app_normal_quit(build_tui_app):
     """Assert KinApp initializes, composes panel, and exits cleanly on quit action."""
-    app = KinApp(theme_name="kin-graphite")
+    app = build_tui_app(theme_name="kin-graphite")
     async with app.run_test() as pilot:
         pilot.app.set_focus(None)
         await pilot.press("q")
@@ -59,9 +46,9 @@ async def test_app_normal_quit():
 
 
 @pytest.mark.asyncio
-async def test_app_ctrl_c_quit():
+async def test_app_ctrl_c_quit(build_tui_app):
     """Assert KinApp handles Ctrl+C shortcut to exit cleanly."""
-    app = KinApp(theme_name="kin-graphite")
+    app = build_tui_app(theme_name="kin-graphite")
     async with app.run_test() as pilot:
         await pilot.press("ctrl+c")
         assert app._exit is True
@@ -87,25 +74,25 @@ def test_terminal_restoration_on_injected_exception(tmp_path: Path, monkeypatch)
     assert "Simulated terminal crash" in log_path.read_text(encoding="utf-8")
 
 
-def test_blank_shell_snapshot_160x44(snap_compare, monkeypatch):
+def test_blank_shell_snapshot_160x44(snap_compare, build_tui_app):
     """Textual snapshot test for blank shell at wide 160x44 breakpoint."""
-    app = _snapshot_app(monkeypatch, theme_name="kin-graphite")
+    app = build_tui_app(theme_name="kin-graphite")
     assert snap_compare(app, terminal_size=(160, 44))
 
 
-def test_blank_shell_snapshot_120x36(snap_compare, monkeypatch):
+def test_blank_shell_snapshot_120x36(snap_compare, build_tui_app):
     """Textual snapshot test for blank shell at standard 120x36 breakpoint."""
-    app = _snapshot_app(monkeypatch, theme_name="kin-graphite")
+    app = build_tui_app(theme_name="kin-graphite")
     assert snap_compare(app, terminal_size=(120, 36))
 
 
-def test_blank_shell_snapshot_90x28(snap_compare, monkeypatch):
+def test_blank_shell_snapshot_90x28(snap_compare, build_tui_app):
     """Textual snapshot test for blank shell at compact 90x28 breakpoint."""
-    app = _snapshot_app(monkeypatch, theme_name="kin-graphite")
+    app = build_tui_app(theme_name="kin-graphite")
     assert snap_compare(app, terminal_size=(90, 28))
 
 
-def test_blank_shell_snapshot_80x24(snap_compare, monkeypatch):
+def test_blank_shell_snapshot_80x24(snap_compare, build_tui_app):
     """Textual snapshot test for blank shell at minimal 80x24 breakpoint."""
-    app = _snapshot_app(monkeypatch, theme_name="kin-graphite")
+    app = build_tui_app(theme_name="kin-graphite")
     assert snap_compare(app, terminal_size=(80, 24))

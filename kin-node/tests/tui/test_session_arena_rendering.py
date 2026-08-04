@@ -10,7 +10,6 @@ Covers:
 
 from pathlib import Path
 import pytest
-from rich.console import ColorSystem
 from textual.app import App, ComposeResult
 
 from kin.artifacts.vault import ArtifactMetadata
@@ -46,16 +45,6 @@ class ArenaSnapshotApp(App):
 
     def compose(self) -> ComposeResult:
         yield self.arena_widget
-
-
-def _snapshot_app(monkeypatch, **kwargs) -> ArenaSnapshotApp:
-    """Build an Arena harness with the same deterministic truecolor terminal as shell snapshots."""
-    monkeypatch.delenv("NO_COLOR", raising=False)
-    monkeypatch.setenv("TERM", "xterm-256color")
-    app = ArenaSnapshotApp(**kwargs)
-    monkeypatch.setattr(type(app.console), "encoding", property(lambda _console: "utf-8"))
-    monkeypatch.setattr(app.console, "_color_system", ColorSystem.TRUECOLOR)
-    return app
 
 
 # -----------------------------------------------------------------------------
@@ -256,7 +245,7 @@ def test_arena_trust_check_failure_surfaces_error_and_does_not_reassure(sample_s
 
 
 @pytest.mark.asyncio
-async def test_arena_breakpoint_specific_distinguishing_text_per_terminal_size(sample_session_summary, events_all_7_classes):
+async def test_arena_breakpoint_specific_distinguishing_text_per_terminal_size(build_tui_app, sample_session_summary, events_all_7_classes):
     """Permanent regression test asserting exact breakpoint distinguishing headers per terminal size (§3.2, §7.1, §14.8)."""
     import io
     from rich.console import Console
@@ -269,7 +258,7 @@ async def test_arena_breakpoint_specific_distinguishing_text_per_terminal_size(s
         return buf.getvalue()
 
     # 1. 160x44 (wide / Cockpit 3-lane mode)
-    app_160 = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
+    app_160 = build_tui_app(ArenaSnapshotApp, session_summary=sample_session_summary, events=events_all_7_classes)
     async with app_160.run_test(size=(160, 44)) as pilot:
         text = get_rendered_text(pilot.app, 160, 44)
         assert "SESSION MAP" in text
@@ -278,7 +267,7 @@ async def test_arena_breakpoint_specific_distinguishing_text_per_terminal_size(s
         assert "DOCKED INSPECTOR" not in text
 
     # 2. 120x36 (standard / Docked Inspector 2-lane mode)
-    app_120 = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
+    app_120 = build_tui_app(ArenaSnapshotApp, session_summary=sample_session_summary, events=events_all_7_classes)
     async with app_120.run_test(size=(120, 36)) as pilot:
         text = get_rendered_text(pilot.app, 120, 36)
         assert "DOCKED INSPECTOR" in text
@@ -287,7 +276,7 @@ async def test_arena_breakpoint_specific_distinguishing_text_per_terminal_size(s
         assert "DETAIL INSPECTOR" not in text
 
     # 3. 90x28 (compact / Stacked mode)
-    app_90 = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
+    app_90 = build_tui_app(ArenaSnapshotApp, session_summary=sample_session_summary, events=events_all_7_classes)
     async with app_90.run_test(size=(90, 28)) as pilot:
         text = get_rendered_text(pilot.app, 90, 28)
         assert "SESSION MAP" not in text
@@ -295,7 +284,7 @@ async def test_arena_breakpoint_specific_distinguishing_text_per_terminal_size(s
         assert "DETAIL INSPECTOR" not in text
 
     # 4. 80x24 (minimal / Stacked mode)
-    app_80 = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
+    app_80 = build_tui_app(ArenaSnapshotApp, session_summary=sample_session_summary, events=events_all_7_classes)
     async with app_80.run_test(size=(80, 24)) as pilot:
         text = get_rendered_text(pilot.app, 80, 24)
         assert "SESSION MAP" not in text
@@ -306,25 +295,25 @@ async def test_arena_breakpoint_specific_distinguishing_text_per_terminal_size(s
 # -----------------------------------------------------------------------------
 # Snapshots for Terminal Sizes and Event Variations (§14.8)
 # -----------------------------------------------------------------------------
-def test_arena_snapshot_cockpit_full_mode_160x44(snap_compare, monkeypatch, sample_session_summary, events_all_7_classes):
+def test_arena_snapshot_cockpit_full_mode_160x44(snap_compare, build_tui_app, sample_session_summary, events_all_7_classes):
     """Snapshot: Arena Cockpit 3-lane mode at 160x44 resolution (§14.8)."""
-    app = _snapshot_app(monkeypatch, session_summary=sample_session_summary, events=events_all_7_classes)
+    app = build_tui_app(ArenaSnapshotApp, session_summary=sample_session_summary, events=events_all_7_classes)
     assert snap_compare(app, terminal_size=(160, 44))
 
 
-def test_arena_snapshot_docked_standard_mode_120x36(snap_compare, monkeypatch, sample_session_summary, events_all_7_classes):
+def test_arena_snapshot_docked_standard_mode_120x36(snap_compare, build_tui_app, sample_session_summary, events_all_7_classes):
     """Snapshot: Arena Docked Inspector mode at 120x36 resolution (§14.8)."""
-    app = _snapshot_app(monkeypatch, session_summary=sample_session_summary, events=events_all_7_classes)
+    app = build_tui_app(ArenaSnapshotApp, session_summary=sample_session_summary, events=events_all_7_classes)
     assert snap_compare(app, terminal_size=(120, 36))
 
 
-def test_arena_snapshot_compact_mode_90x28(snap_compare, monkeypatch, sample_session_summary, events_all_7_classes):
+def test_arena_snapshot_compact_mode_90x28(snap_compare, build_tui_app, sample_session_summary, events_all_7_classes):
     """Snapshot: Arena Compact mode at 90x28 resolution (§14.8)."""
-    app = _snapshot_app(monkeypatch, session_summary=sample_session_summary, events=events_all_7_classes)
+    app = build_tui_app(ArenaSnapshotApp, session_summary=sample_session_summary, events=events_all_7_classes)
     assert snap_compare(app, terminal_size=(90, 28))
 
 
-def test_arena_snapshot_minimal_mode_80x24(snap_compare, monkeypatch, sample_session_summary, events_all_7_classes):
+def test_arena_snapshot_minimal_mode_80x24(snap_compare, build_tui_app, sample_session_summary, events_all_7_classes):
     """Snapshot: Arena Minimal mode at 80x24 resolution (§14.8)."""
-    app = _snapshot_app(monkeypatch, session_summary=sample_session_summary, events=events_all_7_classes)
+    app = build_tui_app(ArenaSnapshotApp, session_summary=sample_session_summary, events=events_all_7_classes)
     assert snap_compare(app, terminal_size=(80, 24))

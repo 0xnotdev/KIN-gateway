@@ -2,13 +2,12 @@
 
 import time
 import pytest
-from kin.tui.app import KinApp
 from kin.tui.persistence import UiStatePreferences
 
 
-def test_transient_reduced_motion_isolation():
+def test_transient_reduced_motion_isolation(build_tui_app):
     """Assert transient reduced motion alters active motion state without mutating persisted user preferences."""
-    app = KinApp()
+    app = build_tui_app()
     app.prefs = UiStatePreferences(reduced_motion=False)
     app.transient_reduced_motion = False
 
@@ -28,9 +27,9 @@ def test_transient_reduced_motion_isolation():
     assert app.prefs.reduced_motion is False
 
 
-def test_cpu_latency_hysteresis_trigger():
+def test_cpu_latency_hysteresis_trigger(build_tui_app):
     """Assert 3 consecutive tick checks with latency > 100ms trigger reduced motion, and 1 normal check recovers."""
-    app = KinApp()
+    app = build_tui_app()
     app.prefs = UiStatePreferences(reduced_motion=False)
     app.transient_reduced_motion = False
     app.latency_breach_count = 0
@@ -56,9 +55,9 @@ def test_cpu_latency_hysteresis_trigger():
     assert app.is_reduced_motion_active is False
 
 
-def test_keystroke_latency_zero_artificial_delay():
+def test_keystroke_latency_zero_artificial_delay(build_tui_app):
     """Assert keypress event handling inserts zero artificial animation/timer delays prior to processing."""
-    app = KinApp()
+    app = build_tui_app()
     start_time = time.perf_counter()
 
     # Simulate key event processing and latency recording

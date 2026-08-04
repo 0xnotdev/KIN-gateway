@@ -130,6 +130,18 @@ The enforced policy is: focus has an 80-120ms design limit while remaining immed
 
 The audit adds regression coverage for the timing contract, rapid keyboard input during active transitions, reduced-motion preservation, and local-refresh scope. The snapshot harness now pins a deterministic UTF-8/truecolor console configuration so repository snapshots are reproducible in the headless test environment. No snapshot baselines changed.
 
+### Snapshot Harness Reproducibility Closeout
+
+Terminal capability pinning is now centralized in the shared `build_tui_app` fixture in `tests/tui/conftest.py`. It clears `NO_COLOR`, sets `TERM=xterm-256color`, disables ASCII fallback, forces UTF-8 console encoding, and forces truecolor for both `KinApp` and custom `App` harnesses. All `snap_compare` construction sites use this fixture, including the custom `ArenaSnapshotApp`; the nine requested pilot/snapshot files also use it for every `App` they construct. Inventory additionally found and migrated the duplicate helper in `test_app_shell.py`.
+
+No reference snapshot changed. Three consecutive full `tests/tui/` runs produced:
+
+```text
+Run 1: 14 snapshots passed; 1109 passed in 50.82s
+Run 2: 14 snapshots passed; 1109 passed in 51.14s
+Run 3: 14 snapshots passed; 1109 passed in 51.24s
+```
+
 ---
 
 ## Raw Pytest Verification Output

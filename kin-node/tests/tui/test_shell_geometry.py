@@ -5,9 +5,7 @@ Spec authority: KIN-V1.1-TUI-SYSTEM.md §3.1, §3.2, §3.3, §5, §14.3
 
 from pathlib import Path
 import pytest
-from rich.console import ColorSystem
 
-from kin.tui.app import KinApp
 from kin.tui.layout import (
     INSPECTOR_MAX_WIDTH,
     INSPECTOR_MIN_WIDTH,
@@ -16,18 +14,6 @@ from kin.tui.layout import (
 )
 from kin.tui.persistence import UiStatePreferences, save_ui_preferences
 from kin.tui.state import HealthSnapshot
-
-
-def _snapshot_app(monkeypatch, **kwargs) -> KinApp:
-    """Build a shell snapshot app with terminal rendering pinned to truecolor UTF-8."""
-    monkeypatch.delenv("NO_COLOR", raising=False)
-    monkeypatch.setenv("TERM", "xterm-256color")
-    app = KinApp(**kwargs)
-    app.prefs.ascii_fallback = False
-    app.prefs.color_depth = "auto"
-    monkeypatch.setattr(type(app.console), "encoding", property(lambda _console: "utf-8"))
-    monkeypatch.setattr(app.console, "_color_system", ColorSystem.TRUECOLOR)
-    return app
 
 
 @pytest.fixture
@@ -40,9 +26,9 @@ def mock_profile_dir(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_stable_region_widget_ids_mounted(mock_profile_dir):
+async def test_stable_region_widget_ids_mounted(mock_profile_dir, build_tui_app):
     """Assert all five persistent region widgets are mounted with stable IDs (§3.1)."""
-    app = KinApp()
+    app = build_tui_app()
     async with app.run_test(size=(160, 44)) as pilot:
         assert pilot.app.query_one("#workspace-tab-bar") is not None
         assert pilot.app.query_one("#sidebar") is not None
@@ -52,9 +38,9 @@ async def test_stable_region_widget_ids_mounted(mock_profile_dir):
 
 
 @pytest.mark.asyncio
-async def test_keyboard_sidebar_resize_and_clamping(mock_profile_dir):
+async def test_keyboard_sidebar_resize_and_clamping(mock_profile_dir, build_tui_app):
     """Assert Alt+[ and Alt+] resize sidebar in 2-col increments clamped to [24, 42] (§3.3)."""
-    app = KinApp()
+    app = build_tui_app()
     async with app.run_test(size=(160, 44)) as pilot:
         sidebar = pilot.app.sidebar
 
@@ -77,9 +63,9 @@ async def test_keyboard_sidebar_resize_and_clamping(mock_profile_dir):
 
 
 @pytest.mark.asyncio
-async def test_keyboard_inspector_resize_and_clamping(mock_profile_dir):
+async def test_keyboard_inspector_resize_and_clamping(mock_profile_dir, build_tui_app):
     """Assert Alt+{ and Alt+} resize inspector in 2-col increments clamped to [30, 52] (§3.3)."""
-    app = KinApp()
+    app = build_tui_app()
     async with app.run_test(size=(160, 44)) as pilot:
         inspector = pilot.app.inspector
 
@@ -102,13 +88,13 @@ async def test_keyboard_inspector_resize_and_clamping(mock_profile_dir):
 
 
 @pytest.mark.asyncio
-async def test_keyboard_toggle_sidebar_and_inspector(mock_profile_dir):
+async def test_keyboard_toggle_sidebar_and_inspector(mock_profile_dir, build_tui_app):
     """Assert [ toggles sidebar collapse and ] toggles inspector visibility (§3.3).
 
     When #command-input is focused, printable characters '[' and ']' append to input.
     When focus is not on input, '[' and ']' toggle sidebar/inspector.
     """
-    app = KinApp()
+    app = build_tui_app()
     async with app.run_test(size=(160, 44)) as pilot:
         sidebar = pilot.app.sidebar
         inspector = pilot.app.inspector
@@ -146,13 +132,13 @@ async def test_keyboard_toggle_sidebar_and_inspector(mock_profile_dir):
 
 
 @pytest.mark.asyncio
-async def test_dock_non_overlap_safety_guarantee(mock_profile_dir):
+async def test_dock_non_overlap_safety_guarantee(mock_profile_dir, build_tui_app):
     """CRITICAL DOCK SAFETY TEST (§3.3, §14.3).
 
     Asserts sidebar and inspector docks NEVER overlap or cover workspace-tab-bar,
     status-bar, or active approval / command input in main-canvas.
     """
-    app = KinApp()
+    app = build_tui_app()
     async with app.run_test(size=(160, 44)) as pilot:
         tab_bar = pilot.app.query_one("#workspace-tab-bar")
         status_bar = pilot.app.query_one("#status-bar")
@@ -174,7 +160,7 @@ async def test_dock_non_overlap_safety_guarantee(mock_profile_dir):
 
 
 @pytest.mark.asyncio
-async def test_100_health_updates_focus_and_cursor_stability(mock_profile_dir):
+async def test_100_health_updates_focus_and_cursor_stability(mock_profile_dir, build_tui_app):
     """SPEC REQUIRED STRESS TEST (§14.3).
 
     Inject 100 sequential HealthSnapshot fixture updates into running app while
@@ -184,7 +170,7 @@ async def test_100_health_updates_focus_and_cursor_stability(mock_profile_dir):
       - scroll position unchanged
       - selection unchanged
     """
-    app = KinApp()
+    app = build_tui_app()
     async with app.run_test(size=(160, 44)) as pilot:
         input_widget = pilot.app.query_one("#command-input")
         input_widget.focus()
@@ -219,29 +205,29 @@ async def test_100_health_updates_focus_and_cursor_stability(mock_profile_dir):
 
 
 # Golden Snapshots at 4 Breakpoints using pytest-textual-snapshot
-def test_blank_shell_snapshot_160x44(snap_compare, monkeypatch):
+def test_blank_shell_snapshot_160x44(snap_compare, build_tui_app):
     """Wide breakpoint (160x44) golden snapshot (§14.3)."""
-    assert snap_compare(_snapshot_app(monkeypatch), terminal_size=(160, 44))
+    assert snap_compare(build_tui_app(), terminal_size=(160, 44))
 
 
-def test_blank_shell_snapshot_120x36(snap_compare, monkeypatch):
+def test_blank_shell_snapshot_120x36(snap_compare, build_tui_app):
     """Standard breakpoint (120x36) golden snapshot (§14.3)."""
-    assert snap_compare(_snapshot_app(monkeypatch), terminal_size=(120, 36))
+    assert snap_compare(build_tui_app(), terminal_size=(120, 36))
 
 
-def test_blank_shell_snapshot_90x28(snap_compare, monkeypatch):
+def test_blank_shell_snapshot_90x28(snap_compare, build_tui_app):
     """Compact breakpoint (90x28) golden snapshot (§14.3)."""
-    assert snap_compare(_snapshot_app(monkeypatch), terminal_size=(90, 28))
+    assert snap_compare(build_tui_app(), terminal_size=(90, 28))
 
 
-def test_blank_shell_snapshot_80x24(snap_compare, monkeypatch):
+def test_blank_shell_snapshot_80x24(snap_compare, build_tui_app):
     """Minimal breakpoint (80x24) golden snapshot (§14.3)."""
-    assert snap_compare(_snapshot_app(monkeypatch), terminal_size=(80, 24))
+    assert snap_compare(build_tui_app(), terminal_size=(80, 24))
 
 
-def test_degraded_health_snapshot_160x44(snap_compare, monkeypatch):
+def test_degraded_health_snapshot_160x44(snap_compare, build_tui_app):
     """Degraded relay and keychain health golden snapshot (§14.3)."""
-    app = _snapshot_app(monkeypatch)
+    app = build_tui_app()
     app.status_bar.health = HealthSnapshot(
         keychain_ok=False,
         identity_ok=True,
@@ -255,7 +241,7 @@ def test_degraded_health_snapshot_160x44(snap_compare, monkeypatch):
     assert snap_compare(app, terminal_size=(160, 44))
 
 
-def test_long_profile_name_snapshot_120x36(snap_compare, monkeypatch):
+def test_long_profile_name_snapshot_120x36(snap_compare, build_tui_app):
     """Long profile name golden snapshot (§14.3)."""
-    app = _snapshot_app(monkeypatch, profile_name="production-engineer-profile-alpha-v1")
+    app = build_tui_app(profile_name="production-engineer-profile-alpha-v1")
     assert snap_compare(app, terminal_size=(120, 36))

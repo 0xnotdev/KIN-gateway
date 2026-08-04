@@ -4,11 +4,19 @@ Includes an autouse network isolation fixture to guarantee zero unmocked socket/
 during any TUI test, protecting all app shell geometry, workspace tabs, and widget tests.
 """
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, TypeVar
+
 import httpx
 import pytest
+from rich.console import ColorSystem
+from textual.app import App
 
 from kin.tui.app import KinApp
+
+
+TApp = TypeVar("TApp", bound=App)
 
 
 @pytest.fixture(autouse=True)
@@ -51,6 +59,44 @@ def tui_test_profile_root(tmp_path: Path) -> Path:
     p = tmp_path / "profiles" / "test_user"
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+@pytest.fixture
+def build_tui_app(monkeypatch: pytest.MonkeyPatch) -> Callable[..., App]:
+    """Build an App with deterministic UTF-8 truecolor terminal capabilities.
+
+    This is the canonical constructor for TUI snapshot apps and for interaction
+    tests whose Unicode assertions depend on terminal capability detection.
+    It supports both ``KinApp`` and small custom ``App`` harness subclasses.
+    """
+
+    def _build(
+        app_type: type[TApp] = KinApp,
+        /,
+        **kwargs: Any,
+    ) -> TApp:
+        monkeypatch.delenv("NO_COLOR", raising=False)
+        monkeypatch.setenv("TERM", "xterm-256color")
+
+        app = app_type(**kwargs)
+        prefs = getattr(app, "prefs", None)
+        if prefs is not None:
+            prefs.ascii_fallback = False
+            prefs.color_depth = "auto"
+        else:
+            # Custom snapshot harnesses do not own KinApp preferences, so pin
+            # the effective capability directly for LifecycleWidgetMixin._g().
+            setattr(app, "is_ascii_fallback_active", False)
+
+        monkeypatch.setattr(
+            type(app.console),
+            "encoding",
+            property(lambda _console: "utf-8"),
+        )
+        monkeypatch.setattr(app.console, "_color_system", ColorSystem.TRUECOLOR)
+        return app
+
+    return _build
 
 
 @pytest.fixture

@@ -5,7 +5,6 @@ Spec authority: KIN-V1.1-TUI-SYSTEM.md §5.3, §14.4
 
 import pytest
 
-from kin.tui.app import KinApp
 from kin.tui.shell import ConfirmationModal
 
 
@@ -18,13 +17,13 @@ def mock_profile_dir(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_no_single_key_executes_consequential_action(mock_profile_dir):
+async def test_no_single_key_executes_consequential_action(mock_profile_dir, build_tui_app):
     """SPEC REQUIRED ARCHITECTURAL GATE TEST (§5.3, §14.4).
 
     Assert pressing 'x' (cancel/archive) opens ConfirmationModal stub and takes NO
     effect when user declines ('n').
     """
-    app = KinApp()
+    app = build_tui_app()
     async with app.run_test(size=(160, 44)) as pilot:
         pilot.app.set_focus(None)
         await pilot.pause()
@@ -46,13 +45,13 @@ async def test_no_single_key_executes_consequential_action(mock_profile_dir):
 
 
 @pytest.mark.asyncio
-async def test_consequential_action_confirm_path_executes_action(mock_profile_dir):
+async def test_consequential_action_confirm_path_executes_action(mock_profile_dir, build_tui_app):
     """SPEC REQUIRED CONFIRMATION PATH TEST (§5.3, §14.4).
 
     Assert pressing 'x' and confirming via 'y' fires the underlying action callback
     and updates the status bar cleanly.
     """
-    app = KinApp()
+    app = build_tui_app()
     action_fired = False
 
     def on_confirm_callback():
@@ -83,14 +82,14 @@ async def test_consequential_action_confirm_path_executes_action(mock_profile_di
 
 
 @pytest.mark.asyncio
-async def test_esc_priority_chain_exhaustive(mock_profile_dir):
+async def test_esc_priority_chain_exhaustive(mock_profile_dir, build_tui_app):
     """EXHAUSTIVE 3-STAGE ESC PRIORITY CHAIN TEST (§4, §14.4).
 
     Stage 1: Clear active search/filter if present.
     Stage 2: Close open modal/overlay if active.
     Stage 3: Return focus to main canvas input.
     """
-    app = KinApp()
+    app = build_tui_app()
     async with app.run_test(size=(160, 44)) as pilot:
         # Combined setup: BOTH active filter query AND open modal overlay active simultaneously
         pilot.app.sidebar.filter_query = "scout"

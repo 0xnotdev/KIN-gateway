@@ -11,7 +11,6 @@ Covers:
 from datetime import datetime, timezone
 import pytest
 
-from kin.tui.app import KinApp
 from kin.tui.keymap import DEFAULT_KEYMAP, KeyBindingSpec
 from kin.tui.local_state import NeedsYouItem, get_needs_you_items
 from kin.tui.state import ApprovalView, ArtifactView, SessionSummary, UiEvent
@@ -42,9 +41,9 @@ def sample_artifacts() -> list[ArtifactView]:
 # -----------------------------------------------------------------------------
 # 1. Keymap Completeness Test (§14.4, §14.8 Phase D)
 # -----------------------------------------------------------------------------
-def test_all_default_keymap_specs_have_callable_handlers_on_kin_app():
+def test_all_default_keymap_specs_have_callable_handlers_on_kin_app(build_tui_app):
     """Assert every single KeyBindingSpec in DEFAULT_KEYMAP maps to a real, callable action method on KinApp or SessionArenaWidget (§14.4, §14.8)."""
-    app = KinApp()
+    app = build_tui_app()
     arena = SessionArenaWidget()
     missing_handlers = []
 
@@ -67,9 +66,9 @@ def test_all_default_keymap_specs_have_callable_handlers_on_kin_app():
 # 2. Binding Safety Tests Outside Arena (§14.8 Phase D)
 # -----------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_arena_keybindings_safe_without_active_session_tab():
+async def test_arena_keybindings_safe_without_active_session_tab(build_tui_app):
     """Assert z, t, e, c, u, m, s do not crash when no session tab is active (§14.8 Phase D)."""
-    app = KinApp()
+    app = build_tui_app()
     async with app.run_test() as pilot:
         for k in ("z", "t", "e", "c", "u", "m", "s"):
             await pilot.press(k)
@@ -82,7 +81,7 @@ async def test_arena_keybindings_safe_without_active_session_tab():
 # 3. Focus/Cockpit Mode Toggling (§5.3, §14.8 Phase D)
 # -----------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_focus_cockpit_mode_toggling_across_breakpoints(sample_session_summary, events_all_7_classes):
+async def test_focus_cockpit_mode_toggling_across_breakpoints(build_tui_app, sample_session_summary, events_all_7_classes):
     """Assert z key toggles focus_mode and full-bleed layout across wide, standard, compact breakpoints (§5.3, §14.8)."""
     import io
     from rich.console import Console
@@ -93,7 +92,7 @@ async def test_focus_cockpit_mode_toggling_across_breakpoints(sample_session_sum
         c.print(renderable)
         return buf.getvalue()
 
-    app = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
+    app = build_tui_app(ArenaSnapshotApp, session_summary=sample_session_summary, events=events_all_7_classes)
     async with app.run_test(size=(160, 44)) as pilot:
         arena = pilot.app.query_one(SessionArenaWidget)
         assert arena.focus_mode is False

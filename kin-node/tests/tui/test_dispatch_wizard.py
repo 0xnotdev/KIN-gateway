@@ -14,7 +14,6 @@ from pathlib import Path
 import pytest
 
 from kin.schemas import AgentAvailability, SessionType
-from kin.tui.app import KinApp
 from kin.tui.dispatch import DispatchController, DispatchStep
 from kin.tui.shell import MainCanvas
 from kin.tui.state import AgentCardView, ContactSummary, ContextPantryItem
@@ -136,7 +135,7 @@ async def test_dispatch_wizard_non_blocking_worker_execution(tmp_path: Path):
 # Real Keyboard-Only (pilot.press) Interactive Unit Tests
 # -----------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_dispatch_wizard_keyboard_only_end_to_end_pilot_flow(mock_profile_dir, monkeypatch):
+async def test_dispatch_wizard_keyboard_only_end_to_end_pilot_flow(mock_profile_dir, monkeypatch, build_tui_app):
     """5. End-to-end test driving all 6 selection-bearing steps exclusively via pilot.press() with strict peer scoping (§14.7 Phase C Rework)."""
     # Seed mock contact summaries for peer selection modal
     contacts = [
@@ -156,7 +155,7 @@ async def test_dispatch_wizard_keyboard_only_end_to_end_pilot_flow(mock_profile_
     monkeypatch.setattr("kin.tui.widgets.dispatch_wizard.get_local_agents_summaries", lambda d=None: [local1, local2])
     monkeypatch.setattr("kin.tui.widgets.dispatch_wizard.get_all_agent_summaries", lambda d=None: ([local1, local2], [alice_agent, bob_agent1, bob_agent2]))
 
-    app = KinApp()
+    app = build_tui_app()
     async with app.run_test(size=(160, 44)) as pilot:
         # Mount dispatch canvas and focus wizard widget
         canvas = pilot.app.query_one(MainCanvas)
@@ -243,9 +242,9 @@ async def test_dispatch_wizard_keyboard_only_end_to_end_pilot_flow(mock_profile_
 
 
 @pytest.mark.asyncio
-async def test_dispatch_wizard_invalid_key_preserves_session_type(mock_profile_dir):
+async def test_dispatch_wizard_invalid_key_preserves_session_type(mock_profile_dir, build_tui_app):
     """6. Assert pressing invalid/no-op key on Collaboration Mode step preserves session type (§14.7 Phase C Rework)."""
-    app = KinApp()
+    app = build_tui_app()
     async with app.run_test(size=(160, 44)) as pilot:
         canvas = pilot.app.query_one(MainCanvas)
         canvas.set_active_tab_kind("dispatch")
@@ -269,7 +268,7 @@ async def test_dispatch_wizard_invalid_key_preserves_session_type(mock_profile_d
 
 
 @pytest.mark.asyncio
-async def test_dispatch_wizard_skip_all_steps_without_selection_blocks_dispatch(mock_profile_dir, monkeypatch):
+async def test_dispatch_wizard_skip_all_steps_without_selection_blocks_dispatch(mock_profile_dir, monkeypatch, build_tui_app):
     """7. Assert constructing DispatchWizardWidget() zero-args and skipping all steps without selection BLOCKS dispatch (§14.7 Phase C Rework)."""
     dispatch_calls = []
 
@@ -279,7 +278,7 @@ async def test_dispatch_wizard_skip_all_steps_without_selection_blocks_dispatch(
 
     monkeypatch.setattr("kin.tui.widgets.dispatch_wizard.dispatch_new_session", mock_dispatch)
 
-    app = KinApp()
+    app = build_tui_app()
     async with app.run_test(size=(160, 44)) as pilot:
         canvas = pilot.app.query_one(MainCanvas)
         canvas.set_active_tab_kind("dispatch")

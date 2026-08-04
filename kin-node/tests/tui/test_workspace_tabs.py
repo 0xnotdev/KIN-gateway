@@ -5,7 +5,6 @@ Spec authority: KIN-V1.1-TUI-SYSTEM.md §4.1, §4.2, §14.4
 
 import pytest
 
-from kin.tui.app import KinApp
 from kin.tui.workspace import WorkspaceTabManager
 
 
@@ -112,9 +111,9 @@ def test_tab_stable_ordering_and_background_events():
 
 
 @pytest.mark.asyncio
-async def test_alt_number_tab_jumping_and_cycling(mock_profile_dir):
+async def test_alt_number_tab_jumping_and_cycling(mock_profile_dir, build_tui_app):
     """Assert Alt+1..9 jumps to visible tabs and Ctrl+Tab / Ctrl+Shift+Tab cycles (§4.2)."""
-    app = KinApp()
+    app = build_tui_app()
     async with app.run_test(size=(160, 44)) as pilot:
         tm = pilot.app.tab_manager
         tm.open_tab("agents", "Agents", "agents", singleton=True)

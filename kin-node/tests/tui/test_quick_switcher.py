@@ -5,7 +5,6 @@ Spec authority: KIN-V1.1-TUI-SYSTEM.md §5.1, §5.4, §14.4
 
 import pytest
 
-from kin.tui.app import KinApp
 from kin.tui.palette import QuickSwitcherModal
 
 
@@ -18,9 +17,9 @@ def mock_profile_dir(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_quick_switcher_keyboard_navigation_and_filtering(mock_profile_dir):
+async def test_quick_switcher_keyboard_navigation_and_filtering(mock_profile_dir, build_tui_app):
     """Assert Ctrl+P opens Quick Switcher modal overlay and filters candidates (§5.1)."""
-    app = KinApp()
+    app = build_tui_app()
     async with app.run_test(size=(160, 44)) as pilot:
         # Press Ctrl+P to launch Quick Switcher
         await pilot.press("ctrl+p")
