@@ -2,14 +2,22 @@
 
 **Milestone:** T7 — Motion Timing Limits, Theme System, Colorless MRO Guard, & 80x24 Plain-Mode Completion  
 **Execution Engine:** Antigravity / Codex  
-**Status:** 100% Verified & Passing (Full Test Suite: 1,455 passed, 0 failed, 1 deselected; 14 snapshots passed)
+**Status:** Build Step 3 verified (Full Test Suite: 1,455 passed, 0 failed, 1 deselected; 14 snapshots passed). T7 milestone closure remains pending Build Step 4 completion and the deferred toast/spinner integration decision below.
 **Date:** August 5, 2026
 
 ---
 
 ## Executive Summary
 
-T7 completes the visual design system, live theme engine, colorless/monochrome accessibility safeguards, motion control bounds, and 80x24 plain-mode named flows for KIN V1.1. Every component across screens, modals, overlays, and domain widgets inherits theme token resolution through canonical `LifecycleWidgetMixin._c()` MRO inheritance.
+T7 work to date delivers the visual design system, live theme engine, colorless/monochrome accessibility safeguards, motion-control bounds, and 80x24 plain-mode named flows for KIN V1.1. Every component across screens, modals, overlays, and domain widgets inherits theme token resolution through canonical `LifecycleWidgetMixin._c()` MRO inheritance; the milestone itself remains open until the closure gates below are resolved.
+
+### T7 Closure Gates and Known Limitations
+
+- **Toast and spinner wiring is deliberately deferred.** `ToastWidget` and `SpinnerWidget` are foundation widgets with direct unit and mounted-widget tests, but no production screen instantiates or mounts either one. The only non-test `ToastWidget` reference outside its module is an unused import in `first_flight_wizard.py`; `SpinnerWidget` has no production construction path. Consequently, the Step 3 timer checks prove the foundation widgets' isolated behavior, not an end-to-end notification or loading experience. Inbox quiet-hours logic currently decides whether a toast *would* be suppressed; it does not publish a toast.
+- **Callback-free toast cleanup is not production-ready.** On timer expiry, a mounted callback-free `ToastWidget` becomes visually hidden but remains mounted because no host owns its lifecycle. This prevents a layout reflow in the isolated widget but is not a substitute for a toast host that removes/reuses entries. The required follow-up is to introduce a host/service, route Inbox and other notification producers through it, and verify quiet-hours suppression against the delivered UI.
+- **Build Step 4 (automatic reduced motion) is partially implemented and remains open.** The persisted preference, terminal blur/focus handlers, transient state, and hysteresis method are present and unit-tested. However, `record_latency_sample()` has no production caller, so CPU-pressure activation is not connected to live render/event-loop measurements. Blur/focus reduction works; automatic CPU-pressure reduction does not yet run in the application.
+
+These items qualify the Step 3 verification result. They must be resolved or explicitly accepted as deferred before declaring the T7 milestone closed.
 
 ### Key Technical Accomplishments:
 1. **CSS Variable System Wiring**: `KinApp.get_css_variables()` maps all 20 KIN semantic theme roles to Textual `$variable` definitions (`$surface`, `$background`, `$primary`, `$accent`, `$text`, `$error`, `$success`, `$warning`, `$border-subtle`, `$border-strong`, etc.). Calling `set_theme()` updates both Rich text spans and Textual container/border CSS styles via `self.refresh_css(animate=False)`.
