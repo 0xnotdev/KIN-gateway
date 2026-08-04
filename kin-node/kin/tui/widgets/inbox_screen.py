@@ -88,6 +88,25 @@ class InboxScreenWidget(LifecycleWidgetMixin, Static):
         self.last_action_message: Optional[str] = None
         self.set_lifecycle_state(WidgetLifecycleState.NORMAL)
 
+    def on_mount(self) -> None:
+        """Publish the highest-priority pending item through the app toast host."""
+        needs_you, approvals = self.get_items()
+        candidate = approvals[0] if approvals else (needs_you[0] if needs_you else None)
+        if candidate is not None and not self.should_suppress_toast(candidate):
+            if hasattr(self.app, "show_toast"):
+                self.app.show_toast(
+                    "Inbox action requires review",
+                    severity="warning",
+                )
+
+    def _publish_action_result(self, success: bool) -> None:
+        """Surface a completed approval decision without stealing focus."""
+        if self.is_mounted and hasattr(self.app, "show_toast") and self.last_action_message:
+            self.app.show_toast(
+                self.last_action_message,
+                severity="success" if success else "error",
+            )
+
     def get_items(self) -> tuple[List[NeedsYouItem], List[ApprovalView]]:
         needs_you = (
             self._needs_you_override
@@ -190,11 +209,12 @@ class InboxScreenWidget(LifecycleWidgetMixin, Static):
                     self.last_action_message = f"Approved once: {app_view.request.approval_id[:8]}"
                 else:
                     self.last_action_message = f"Approve failed: {err.what_happened if err else 'Unknown'}"
+                self._publish_action_result(ok)
                 self.refresh()
 
         modal = ApproveConfirmModal(
             title="CONFIRM APPROVE ONCE",
-            body_text=f"Approve action '[bold]{app_view.request.action_class.value}[/bold]' for session '{app_view.request.session_id[:8]}'?",
+            description=f"Approve action '{app_view.request.action_class.value}' for session '{app_view.request.session_id[:8]}'?",
         )
         try:
             self.app.push_screen(modal, on_confirm)
@@ -222,6 +242,7 @@ class InboxScreenWidget(LifecycleWidgetMixin, Static):
                     self.last_action_message = f"Denied: {app_view.request.approval_id[:8]}"
                 else:
                     self.last_action_message = f"Deny failed: {err.what_happened if err else 'Unknown'}"
+                self._publish_action_result(ok)
                 self.refresh()
 
         modal = DenyReasonModal(approval_id=app_view.request.approval_id)
@@ -250,6 +271,7 @@ class InboxScreenWidget(LifecycleWidgetMixin, Static):
                     self.last_action_message = f"Constraints updated: {app_view.request.approval_id[:8]}"
                 else:
                     self.last_action_message = f"Edit failed: {err.what_happened if err else 'Unknown'}"
+                self._publish_action_result(ok)
                 self.refresh()
 
         initial_json = json.dumps(app_view.request.requested_scope or {})
@@ -278,11 +300,12 @@ class InboxScreenWidget(LifecycleWidgetMixin, Static):
                     self.last_action_message = f"Always allowed (bounded): {app_view.request.approval_id[:8]}"
                 else:
                     self.last_action_message = f"Action failed: {err.what_happened if err else 'Unknown'}"
+                self._publish_action_result(ok)
                 self.refresh()
 
         modal = ApproveConfirmModal(
             title="CONFIRM ALWAYS ALLOW (BOUNDED)",
-            body_text=f"Grant bounded prior approval for '[bold]{app_view.request.action_class.value}[/bold]'?",
+            description=f"Grant bounded prior approval for '{app_view.request.action_class.value}'?",
         )
         try:
             self.app.push_screen(modal, on_confirm)
@@ -326,6 +349,45 @@ class InboxScreenWidget(LifecycleWidgetMixin, Static):
             return Panel("[dim]Loading Inbox & Approvals...[/dim]", title="Inbox", border_style="cyan")
 
         needs_you, approvals = self.get_items()
+
+        if self._is_plain_mode_active():
+            if self.lifecycle_state == WidgetLifecycleState.RECOVERABLE_ERROR:
+                return (
+                    "INBOX ERROR\n"
+                    "WHAT HAPPENED: Inbox data could not be loaded.\n"
+                    "PRESERVED: Existing queue state and selection.\n"
+                    "NEXT ACTION: Press Retry or Esc to return Home."
+                )
+            lines = [
+                "INBOX / NEEDS YOU",
+                f"1. NEEDS YOU ITEMS: {len(needs_you)}",
+            ]
+            for idx, item in enumerate(needs_you):
+                marker = ">" if self.active_lane == "needs_you" and idx == self.selected_index else "-"
+                lines.append(
+                    f"{marker} {item.kind}: {item.human_readable_reason} "
+                    f"[urgency={item.urgency}]"
+                )
+            lines.append(f"2. APPROVALS: {len(approvals)}")
+            for idx, approval in enumerate(approvals):
+                req = approval.request
+                marker = ">" if self.active_lane == "approvals" and idx == self.selected_index else "-"
+                risk = getattr(req.risk_label, "value", req.risk_label)
+                action = getattr(req.action_class, "value", req.action_class)
+                lines.extend(
+                    [
+                        f"{marker} {req.summary} [risk={risk}]",
+                        f"  ACTION: {action}",
+                        f"  REASON: {req.reason}",
+                    ]
+                )
+            if self.last_action_message:
+                lines.append(f"RESULT: {self.last_action_message}")
+            lines.append(
+                "ACTIONS: Tab/Left/Right switch queue | j/k navigate | "
+                "a Approve | d Deny | e Edit | b Bounded | Esc Back"
+            )
+            return "\n".join(lines)
 
         if len(needs_you) == 0 and len(approvals) == 0:
             return Panel(

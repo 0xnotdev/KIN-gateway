@@ -16,6 +16,7 @@ from textual.widgets import Static
 
 from kin.schemas import DecisionKind
 from kin.tui.layout import Breakpoint, classify_breakpoint
+from kin.tui.redaction import redact_ui_text
 from kin.tui.local_state import (
     cancel_session_command,
     decide_pending_approval,
@@ -117,6 +118,13 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self.inspector_widget = InspectorWidget()
 
         self.load_arena_data()
+
+    def set_reduced_motion(self, active: bool) -> None:
+        """Propagate effective motion state to the live timeline immediately."""
+        self.reduced_motion = bool(active)
+        self.exchange_timeline_widget.set_reduced_motion(active)
+        if self.is_mounted:
+            self.refresh(layout=False)
 
     def load_arena_data(self) -> None:
         """Load session data using Phase A data functions (§14.8 Phase B/D)."""
@@ -654,6 +662,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
 
     def on_mount(self) -> None:
         """Lifecycle hook when widget is mounted to app (§14.8 Phase C2 Round 2)."""
+        self.set_reduced_motion(self._is_reduced_motion_active() or self.reduced_motion)
         self.is_polling_active = True
         if self.session_id:
             self.run_event_polling_worker()
@@ -756,6 +765,21 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             return f"[dim]Session Arena (DISABLED: {reason})[/dim]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
+            if self._is_plain_mode_active():
+                error = self.last_arena_error or RecoverableError(
+                    what_happened="Session load error",
+                    impact="The active session cannot be displayed.",
+                    preserved="Existing local session data remains unchanged.",
+                    next_action="Press Retry or Esc to return Home.",
+                )
+                return (
+                    "RECOVERY\n"
+                    f"1. WHAT HAPPENED: {error.what_happened}\n"
+                    f"2. IMPACT: {error.impact}\n"
+                    f"3. PRESERVED: {error.preserved}\n"
+                    f"4. NEXT ACTION: {error.next_action}\n"
+                    "ACTIONS: Retry | Esc Back"
+                )
             glyph = get_glyph("!")
             error_msg = self.last_arena_error.what_happened if self.last_arena_error else "Session load error"
             error_detail = self.last_arena_error.technical_detail if (self.last_arena_error and self.last_arena_error.technical_detail) else ""
@@ -767,6 +791,48 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.EMPTY or not self.session_summary:
             return "[dim]Session Arena: No active session selected.[/dim]"
+
+        if self._is_plain_mode_active():
+            summary = self.session_summary
+            lines = [
+                "SESSION ARENA",
+                f"SESSION: {summary.session_id}",
+                f"STATUS: {summary.status}",
+                f"PARTICIPANTS: @{summary.initiator_username} -> @{summary.receiver_username}",
+                f"OBJECTIVE: {summary.objective or 'No objective declared'}",
+                f"ACTIVE LANE: {self.active_lane}",
+                f"REPLAY: {'ON' if self.is_replay_mode else 'OFF'}",
+            ]
+            if self.active_lane == "needs_you":
+                lines.append(f"APPROVALS: {len(self.approvals)}")
+                for approval in self.approvals:
+                    req = approval.request
+                    risk = getattr(req.risk_label, "value", req.risk_label)
+                    lines.append(f"- {req.summary}; risk={risk}; reason={req.reason}")
+            elif self.active_lane == "outputs":
+                lines.append(f"OUTPUTS: {len(self.artifacts)}")
+                for artifact in self.artifacts:
+                    meta = artifact.metadata
+                    lines.append(
+                        f"- {meta.artifact_id}; type={meta.mime_type}; size={artifact.display_size}; "
+                        f"source={meta.source}"
+                    )
+            else:
+                visible_events = self.exchange_timeline_widget.get_filtered_events()
+                if self.is_replay_mode and self.replay_index is not None:
+                    visible_events = visible_events[: self.replay_index + 1]
+                lines.append(f"EVENTS: {len(visible_events)}")
+                for index, event in enumerate(visible_events, start=1):
+                    lines.append(
+                        f"{index}. {event.created_at} | {event.presentation_class.upper()} | "
+                        f"{event.kind} | actor=@{event.actor_username or 'system'} | "
+                        f"{redact_ui_text(event.content or '')}"
+                    )
+            lines.append(
+                "ACTIONS: t Transcript | e Activity | o Outputs | c Decisions | "
+                "u Needs You | r Replay | Ctrl+E Export | Esc Back"
+            )
+            return "\n".join(lines)
 
         header_str = self.trust_strip_widget.render()
         map_str = self.session_map_widget.render()

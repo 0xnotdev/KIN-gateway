@@ -120,10 +120,16 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
 
         groups = self.get_coalesced_groups()
         if selected_event_id and groups:
-            for idx, g in enumerate(groups):
-                if g.last_event.event_id == selected_event_id:
+            for idx, group in enumerate(groups):
+                if group.last_event.event_id == selected_event_id:
                     self.selected_index = idx
                     break
+
+    def set_reduced_motion(self, active: bool) -> None:
+        """Apply effective motion state immediately without changing event labels."""
+        self.reduced_motion = bool(active)
+        if self.is_mounted:
+            self.refresh(layout=False)
 
     def _invalidate_cache(self) -> None:
         self._coalesced_groups_cache = None
@@ -379,7 +385,8 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         if evt.event_id in self.live_appended_at_map:
             elapsed_sec = (now_dt - self.live_appended_at_map[evt.event_id]).total_seconds()
             pulse_window_sec = EVENT_PULSE_DURATION_MS / 1000.0
-            if (not self.reduced_motion) and (0.0 <= elapsed_sec < pulse_window_sec):
+            reduced_motion = self.reduced_motion or self._is_reduced_motion_active()
+            if (not reduced_motion) and (0.0 <= elapsed_sec < pulse_window_sec):
                 is_pulsing = True
 
         pulse_badge = f" [bold{ok_tag}]⚡ [TAIL PULSE][/bold{ok_tag}]" if is_pulsing else ""

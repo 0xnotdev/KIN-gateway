@@ -129,6 +129,10 @@ class SidebarTreeWidget(LifecycleWidgetMixin, Static):
 
     def _begin_expand_transition(self, section: str) -> None:
         """Show a local transition affordance for the spec-defined window."""
+        if self._is_reduced_motion_active():
+            self._transitioning_section = None
+            self.refresh(layout=False)
+            return
         self._transitioning_section = section
         self.refresh(layout=False)
         if self.is_mounted:

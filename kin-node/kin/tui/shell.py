@@ -222,7 +222,7 @@ class Sidebar(LifecycleWidgetMixin, Static):
     def set_collapsed(self, collapsed: bool, *, with_transition: bool = False) -> None:
         self.collapsed = collapsed
         target_width = 4 if self.collapsed else self.sidebar_width
-        if with_transition and self.is_mounted:
+        if with_transition and self.is_mounted and not self._is_reduced_motion_active():
             self.styles.animate(
                 "width",
                 value=target_width,
@@ -308,6 +308,10 @@ class Sidebar(LifecycleWidgetMixin, Static):
 
     def _begin_expand_transition(self, section: str) -> None:
         """Render the section transition locally for the centralized window."""
+        if self._is_reduced_motion_active():
+            self._transitioning_section = None
+            self.refresh(layout=False)
+            return
         self._transitioning_section = section
         self.refresh(layout=False)
         if self.is_mounted:

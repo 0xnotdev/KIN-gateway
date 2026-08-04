@@ -80,6 +80,16 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         justification="Global navigation shortcut; Ctrl modifier safely bypasses text fields.",
     ),
     KeyBindingSpec(
+        key="f2",
+        action="open_settings",
+        label="Open Settings",
+        priority=True,
+        suppressed_when_text_focused=False,
+        section="global",
+        scope="app",
+        justification="Function key exposes accessibility settings from every workspace.",
+    ),
+    KeyBindingSpec(
         key="d",
         action="open_dispatch",
         label="Open Dispatch",
@@ -228,6 +238,16 @@ DEFAULT_KEYMAP: List[KeyBindingSpec] = [
         section="global",
         scope="app",
         justification="Global draft save shortcut.",
+    ),
+    KeyBindingSpec(
+        key="ctrl+e",
+        action="export_view",
+        label="Export Current View",
+        priority=True,
+        suppressed_when_text_focused=False,
+        section="global",
+        scope="app",
+        justification="Keyboard-only semantic export, including minimal terminals.",
     ),
     KeyBindingSpec(
         key="q",

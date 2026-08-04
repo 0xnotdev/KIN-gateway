@@ -116,6 +116,17 @@ class ApprovalCardWidget(LifecycleWidgetMixin, Static):
         warn_open = f"[{warn}]" if warn else ""
         warn_close = f"[/{warn}]" if warn else ""
 
+        if self._is_plain_mode_active():
+            return (
+                "APPROVAL REVIEW\n"
+                f"RISK: {risk}\n"
+                f"ACTION: {summary} ({action_class})\n"
+                f"REQUESTER: {agent_id}\n"
+                f"TIME REMAINING: {time_str}\n"
+                f"REASON: {reason}\n"
+                "DECISIONS: a Approve once | d Deny | e Edit constraints | b Bounded allow | Esc Back"
+            )
+
         if state == WidgetLifecycleState.NARROW:
             return f"[{style}]{glyph} {risk}[/{style}] {summary[:12]} ({time_str})"
 

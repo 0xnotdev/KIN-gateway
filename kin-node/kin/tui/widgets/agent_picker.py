@@ -140,6 +140,28 @@ class AgentPickerWidget(LifecycleWidgetMixin, ModalScreen[Optional[AgentCardView
             glyph = get_glyph("!")
             return f"[bold {err}]{glyph} AgentPicker Error: Failed to query roster. Press [Retry].[/bold {err}]"
 
+        if self._is_plain_mode_active():
+            lines = ["AGENT PICKER", self.prompt]
+            for idx, agent in enumerate(self.agents):
+                marker = ">" if idx == self.selected_index else "-"
+                availability = (
+                    agent.availability.value
+                    if isinstance(agent.availability, AgentAvailability)
+                    else str(agent.availability)
+                )
+                lines.extend(
+                    [
+                        f"{marker} {agent.name} ({agent.agent_id}) [{availability}]",
+                        f"  DESCRIPTION: {redact_ui_text(agent.description) or 'None'}",
+                        f"  CAPABILITIES: {', '.join(agent.capabilities_tags) or 'none'}",
+                        f"  ACCEPTS: {', '.join(agent.accepts) or 'any'}",
+                        f"  PRODUCES: {', '.join(agent.produces) or 'any'}",
+                        f"  BOUNDARY: {agent.boundary_summary or 'Workspace restricted'}",
+                    ]
+                )
+            lines.append("ACTIONS: j/k navigate | Tab details | Enter select | Esc back")
+            return "\n".join(lines)
+
         lines = [f"[bold {ok}]{self.prompt}[/bold {ok}]"]
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
         lines[0] += focus_mark

@@ -56,6 +56,7 @@ class ToastWidget(LifecycleWidgetMixin, Static):
         severity: str = "info",
         dismiss_callback: Optional[Callable[[], None]] = None,
         duration_ms: Optional[int] = None,
+        auto_start: bool = True,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -71,17 +72,60 @@ class ToastWidget(LifecycleWidgetMixin, Static):
         self._amber_pulse_active = False
         self._amber_pulse_timer = None
         self._dismiss_timer = None
+        self._auto_start = auto_start
+        self._reduced_motion = False
 
     def on_mount(self) -> None:
         """Schedule automatic dismissal timer using self.duration_ms (§14.5, §14.9 step 3)."""
+        if self._auto_start:
+            self._schedule_timers()
+
+    def _schedule_timers(self) -> None:
+        """Schedule visibility and optional attention timers for the current message."""
+        if self._dismiss_timer is not None:
+            self._dismiss_timer.pause()
         self._dismiss_timer = self.set_timer(self.duration_seconds, self.trigger_dismiss)
-        if self.severity == "warning":
+        if self._amber_pulse_timer is not None:
+            self._amber_pulse_timer.pause()
+        if self.severity == "warning" and not self._reduced_motion:
             self.amber_pulse_count = 1
             self._amber_pulse_active = True
             self._amber_pulse_timer = self.set_interval(
                 milliseconds_to_seconds(TOAST_AMBER_PULSE_INTERVAL_MS),
                 self._advance_amber_pulse,
             )
+        else:
+            self.amber_pulse_count = 0
+            self._amber_pulse_active = False
+
+    def show(
+        self,
+        message: str,
+        *,
+        severity: str = "info",
+        duration_ms: Optional[int] = None,
+    ) -> None:
+        """Display a hosted toast and restart its bounded lifecycle."""
+        self.message = message
+        self.severity = severity.lower() if severity.lower() in self.SEVERITY_GLYPHS else "info"
+        requested_seconds = (
+            duration_ms / 1000.0 if duration_ms is not None else TOAST_DURATION_SEC
+        )
+        self.duration_seconds = clamp_toast_duration_seconds(requested_seconds)
+        self.duration_ms = int(self.duration_seconds * 1000)
+        if self.is_mounted:
+            self.styles.visibility = "visible"
+            self._schedule_timers()
+            self.refresh(layout=False)
+
+    def set_reduced_motion(self, active: bool) -> None:
+        """Suppress amber pulses instantly while retaining toast text and lifetime."""
+        self._reduced_motion = bool(active)
+        if self._amber_pulse_timer is not None:
+            self._amber_pulse_timer.pause()
+        self._amber_pulse_active = False
+        if self.is_mounted:
+            self.refresh(layout=False)
 
     def _advance_amber_pulse(self) -> None:
         """Advance a warning toast through no more than two amber pulse cycles."""

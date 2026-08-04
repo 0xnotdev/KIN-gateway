@@ -1,183 +1,108 @@
-# KIN V1.1 — T7 Progress & Completion Report (Phases A–E)
+# KIN V1.1 — T7 Completion Report
 
-**Milestone:** T7 — Motion Timing Limits, Theme System, Colorless MRO Guard, & 80x24 Plain-Mode Completion  
-**Execution Engine:** Antigravity / Codex  
-**Status:** Build Step 3 verified (Full Test Suite: 1,455 passed, 0 failed, 1 deselected; 14 snapshots passed). T7 milestone closure remains pending Build Step 4 completion and the deferred toast/spinner integration decision below.
+**Milestone:** T7 — Motion Timing Limits, Theme System, Colorless MRO Guard, Automatic Reduced Motion, and 80×24 Plain Mode
+
+**Status:** Complete
+
 **Date:** August 5, 2026
 
----
+## Outcome
 
-## Executive Summary
+T7 is closed against `KIN-V1.1-TUI-SYSTEM.md` §14.9. The application no longer requires width, true color, Unicode, mouse input, or motion to complete a required T7 workflow.
 
-T7 work to date delivers the visual design system, live theme engine, colorless/monochrome accessibility safeguards, motion-control bounds, and 80x24 plain-mode named flows for KIN V1.1. Every component across screens, modals, overlays, and domain widgets inherits theme token resolution through canonical `LifecycleWidgetMixin._c()` MRO inheritance; the milestone itself remains open until the closure gates below are resolved.
+All five build steps are implemented:
 
-### T7 Closure Gates and Known Limitations
+1. Six built-in themes, live theme changes, persisted display preferences, and a globally reachable Settings surface.
+2. Semantic colorless and ASCII fallbacks with the permanent `_c()` MRO compliance guard.
+3. Centralized timing limits for focus, pulses, expand/collapse, spinners, toasts, and modals.
+4. Manual and automatic reduced motion, including terminal blur and live event-loop pressure detection.
+5. Complete 80×24/plain-mode behavior for Home, Dispatch, agent selection, Inbox, approvals, Session Arena, replay/export, and recovery.
 
-- **Toast and spinner wiring is deliberately deferred.** `ToastWidget` and `SpinnerWidget` are foundation widgets with direct unit and mounted-widget tests, but no production screen instantiates or mounts either one. The only non-test `ToastWidget` reference outside its module is an unused import in `first_flight_wizard.py`; `SpinnerWidget` has no production construction path. Consequently, the Step 3 timer checks prove the foundation widgets' isolated behavior, not an end-to-end notification or loading experience. Inbox quiet-hours logic currently decides whether a toast *would* be suppressed; it does not publish a toast.
-- **Callback-free toast cleanup is not production-ready.** On timer expiry, a mounted callback-free `ToastWidget` becomes visually hidden but remains mounted because no host owns its lifecycle. This prevents a layout reflow in the isolated widget but is not a substitute for a toast host that removes/reuses entries. The required follow-up is to introduce a host/service, route Inbox and other notification producers through it, and verify quiet-hours suppression against the delivered UI.
-- **Build Step 4 (automatic reduced motion) is partially implemented and remains open.** The persisted preference, terminal blur/focus handlers, transient state, and hysteresis method are present and unit-tested. However, `record_latency_sample()` has no production caller, so CPU-pressure activation is not connected to live render/event-loop measurements. Blur/focus reduction works; automatic CPU-pressure reduction does not yet run in the application.
+The previously recorded toast/spinner deferral is resolved. Both widgets now have persistent application-owned hosts and real producers. The previously recorded callback-free toast defect is also resolved: a mounted toast hides when its dismissal timer fires even without a callback, without triggering layout reflow.
 
-These items qualify the Step 3 verification result. They must be resolved or explicitly accepted as deferred before declaring the T7 milestone closed.
+## Closure Evidence
 
-### Key Technical Accomplishments:
-1. **CSS Variable System Wiring**: `KinApp.get_css_variables()` maps all 20 KIN semantic theme roles to Textual `$variable` definitions (`$surface`, `$background`, `$primary`, `$accent`, `$text`, `$error`, `$success`, `$warning`, `$border-subtle`, `$border-strong`, etc.). Calling `set_theme()` updates both Rich text spans and Textual container/border CSS styles via `self.refresh_css(animate=False)`.
-2. **Open Content Live Theme Propagation**: Live theme transitions (`set_theme()` / `set_custom_theme()`) refresh both application chrome (`canvas`, `sidebar`, `status_bar`, `inspector`, `tab_bar`) and active workspace content mounted inside `MainCanvas` (such as `SessionArenaWidget` and `DispatchWizardWidget`).
-3. **Colorless MRO Inheritance & Permanent Compliance Guard**: All 48 duplicate, shadowed `def _c()` method definitions across 37 files were eliminated. Every screen, widget, and modal now inherits canonical `LifecycleWidgetMixin._c()`. Permanent structural test `test_no_widget_or_screen_defines_local_c_override` enforces this via AST/introspection.
-4. **Motion Control Bounds**: Centralized constants in `kin/tui/motion.py` bound focus transitions (80–120ms), event pulses (120ms), expand/collapse (120–180ms), spinner frame rates (8–12 FPS), and toast visibility (3–6s).
-5. **80x24 Plain-Mode 8 Named Flows**: Full test matrix in `tests/tui/test_80x24_plain_mode_flows.py` guarantees keyboard reachability, breadcrumb navigation, and draft preservation across 8 core flows.
+### Settings is reachable
 
----
+- `F2` opens Settings from every workspace, including while a text field is focused.
+- `Ctrl+K` exposes the same Settings action in the command palette.
+- Theme, color depth, ASCII fallback, and reduced motion changes are applied and persisted through `KinApp.set_preference()`.
 
-## File Inventory
+### Automatic reduced motion is live
 
-### Production Files Added / Modified:
-- `kin/tui/app.py`: CSS variable mapping (`get_css_variables()`), theme refresh helper (`_refresh_theme_ui()`), and colorless auto-detection.
-- `kin/tui/motion.py`: Canonical motion limits, safe conversion/clamping helpers, and compatibility aliases.
-- `kin/tui/theme_yaml.py`: Strict YAML theme override parser validating 20 semantic roles with full rollback on error.
-- `kin/tui/tokens.py`: 6 built-in themes (`kin-graphite`, `kin-night`, `nord`, `dracula`, `catppuccin-mocha`, `high-contrast`) and WCAG contrast contrast ratios.
-- `kin/tui/widgets/lifecycle.py`: Canonical `LifecycleWidgetMixin._c()`, `_tag()`, and `_bold()` helpers for safe tag formatting.
-- `kin/tui/widgets/settings_screen.py`: Settings screen UI allowing live theme selection and preference persistence.
-- `kin/tui/widgets/approval_modals.py`: Safety-critical modals (`DenyReasonModal`, `EditConstraintsModal`, `ApproveConfirmModal`, `PatchApplyConfirmModal`) inheriting `LifecycleWidgetMixin`.
-- `kin/tui/widgets/compose_modal.py`: `ComposeMessageModal` inheriting `LifecycleWidgetMixin`.
-- `kin/tui/shell.py`: Shell components (`Sidebar`, `Inspector`, `StatusBar`, `ConfirmationModal`, `WorkspaceTabBar`) inheriting `LifecycleWidgetMixin`.
-- `kin/tui/guide.py` & `kin/tui/help.py`: `GuideOverlayScreen` and `HelpOverlayScreen` inheriting `LifecycleWidgetMixin`.
+- A 250 ms production event-loop probe measures scheduling drift and feeds every sample into `record_latency_sample()`.
+- Three consecutive samples above 100 ms activate the CPU-pressure override.
+- A healthy sample clears the CPU-pressure override; terminal blur remains an independent override until focus returns.
+- The effective state propagates immediately to every mounted motion-aware widget.
+- Spinner frames, warning-toast pulses, event-tail pulses, sidebar width interpolation, and section transition timers stop under reduced motion while labels remain visible.
+- Manual reduced motion, automatic CPU-pressure reduction, and terminal focus state compose without one source accidentally clearing another.
 
-### Test Suite Files Added / Modified:
-- `tests/tui/test_theme_token_compliance.py`: WCAG 2.1 AA contrast verification and structural `test_no_widget_or_screen_defines_local_c_override`.
-- `tests/tui/test_live_theme_switch.py`: E2E live theme switching test covering chrome text spans, CSS variables, and focus/scroll preservation.
-- `tests/tui/test_theme_widget_renders.py`: Domain widget theme color switch tests (`SessionArenaWidget`, `DispatchWizardWidget`).
-- `tests/tui/test_colorless_fallback.py`: 0-color, pure-ASCII presentation tests for 6 semantic states.
-- `tests/tui/test_motion_timing_limits.py`: Unit and integration coverage of the production focus, pulse, expand/collapse, spinner, toast, reduced-motion, and refresh-scope paths.
-- `tests/tui/test_80x24_plain_mode_flows.py`: 8 spec-mandated 80x24 plain-mode flow completion tests.
-- `tests/tui/conftest.py`: Systemic `isolate_tui_profile_dir` test isolation fixture preventing state pollution.
+### 80×24 and plain mode are complete
 
----
+- Minimal mode replaces nonessential shell chrome with a one-line breadcrumb and keyboard back path.
+- Resizing between minimal and larger breakpoints preserves the exact Dispatch widget, focused field, and draft text.
+- Required views render ordered, box-free semantic text in minimal or ASCII mode.
+- Long agent labels and full capability/boundary details are keyboard-visible without hover.
+- Approval details and all approval decisions remain keyboard-accessible.
+- Session Arena lanes, replay, recovery guidance, and plain-text export remain available.
+- Plain export writes the current redacted semantic view to `exports/latest-view.txt`.
+- The mounted 80×24 tests use keyboard interaction only; no flow depends on mouse support.
 
-## Detailed Technical Verification
+### Toast and spinner integration is complete
 
-### 1. CSS Variable System Wiring
-Textual container styles (backgrounds, borders, panels) reference CSS variables prefixed with `$` in `DEFAULT_CSS` blocks. `KinApp.get_css_variables()` exposes all 20 semantic roles as CSS variables:
+- `KinApp` owns one reusable toast overlay and one reusable activity spinner overlay.
+- Inbox publishes real pending-review and approval-result notifications through the toast host.
+- Quiet-hours and snooze checks run before the Inbox notification is published.
+- Dispatch starts the activity host before worker execution and stops it with completion or failure feedback.
+- Hosted animations obey the same effective reduced-motion state as the Session Arena.
+- Timed dismissal is paint-only and callback-free mounted toasts are hidden correctly.
 
-```python
-def get_css_variables(self) -> Dict[str, str]:
-    variables = super().get_css_variables()
-    roles = self.theme_tokens.get_role_map()
-    semantic_variables = {role.replace(".", "-"): color for role, color in roles.items()}
-    aliases = {
-        "background": roles["surface.base"],
-        "surface": roles["surface.base"],
-        "surface-darken-1": roles["surface.raised"],
-        "primary": roles["accent.primary"],
-        "primary-lighten-1": roles["accent.highlight"],
-        "primary-darken-2": roles["border.strong"],
-        "accent": roles["accent.secondary"],
-        "text": roles["text.primary"],
-        "text-muted": roles["text.muted"],
-        "error": roles["state.error"],
-        "success": roles["state.live"],
-        "warning": roles["state.waiting"],
-        "border-subtle": roles["border.subtle"],
-        "border-focus": roles["border.focus"],
-        "border-strong": roles["border.strong"],
-    }
-    combined = {**variables, **semantic_variables, **aliases}
-    self.theme_variables = combined
-    return combined
-```
+## Primary Production Changes
 
-Calling `set_theme("dracula")` triggers `self.refresh_css(animate=False)`, updating CSS-styled container borders and panel backgrounds live.
+- `kin/tui/app.py`: global Settings and export actions; minimal breadcrumb/back navigation; persistent toast/spinner hosts; live pressure probe; reduced-motion propagation.
+- `kin/tui/keymap.py`: global `F2` Settings and `Ctrl+E` semantic export bindings.
+- `kin/tui/motion.py`: shared pressure-probe interval, threshold, and hysteresis constants.
+- `kin/tui/shell.py` and `kin/tui/widgets/sidebar_tree.py`: reduced-motion-safe transitions.
+- `kin/tui/widgets/lifecycle.py`: canonical effective plain/reduced-motion capability helpers.
+- `kin/tui/widgets/home_screen.py`, `dispatch_wizard.py`, `agent_picker.py`, `inbox_screen.py`, `approval_card.py`, and `session_arena.py`: ordered semantic minimal/plain renderings and complete keyboard action labels.
+- `kin/tui/widgets/exchange_timeline.py`: live application reduced-motion propagation.
+- `kin/tui/widgets/spinner.py` and `toast.py`: reusable hosted lifecycle, immediate reduced-motion response, and correct callback-free dismissal.
 
----
+## Verification
 
-### 2. Live Theme Propagation to Open Content
-When `set_theme()` or `set_custom_theme()` is invoked, `KinApp._refresh_theme_ui()` refreshes all chrome components and recursively refreshes mounted workspace content inside `MainCanvas`:
+The 80×24 closure matrix uses mounted `KinApp` instances at exactly 80 columns × 24 rows. It verifies the eight named flows, draft/focus preservation during resize, breadcrumb navigation, long-label details, approval decisions, replay/export, recovery ordering, and ASCII-only output.
 
-```python
-def _refresh_theme_ui(self) -> None:
-    self.refresh_css(animate=False)
-    for widget in (self.canvas, self.sidebar, self.status_bar, self.inspector, self.tab_bar):
-        widget.refresh(layout=False)
-    for child in self.canvas.children:
-        child.refresh(layout=False)
-```
+The motion matrix verifies live event-loop sampling, three-sample pressure hysteresis, independent blur/focus behavior, instant manual preference changes, propagation to mounted Arena/spinner/toast widgets, label retention, and animation recovery.
 
-This guarantees that open workspace views (`SessionArenaWidget`, `DispatchWizardWidget`, `HomeScreenWidget`, `InboxScreenWidget`, `AgentsScreenWidget`, `NetworkScreenWidget`) immediately re-render under the active theme.
+Exactly two snapshot references changed, both intentional 80×24 shell snapshots:
 
----
+- `tests/tui/__snapshots__/test_app_shell/test_blank_shell_snapshot_80x24.svg`
+- `tests/tui/__snapshots__/test_shell_geometry/test_blank_shell_snapshot_80x24.svg`
 
-### 3. Structural MRO Compliance Guard
-`test_no_widget_or_screen_defines_local_c_override()` in `tests/tui/test_theme_token_compliance.py` inspects all Python files under `kin/tui/` (excluding `lifecycle.py`) to assert zero local `_c()` method overrides exist. Every component receives role colors through `LifecycleWidgetMixin._c()`, which respects `is_colorless_active`.
+They now include the minimal-mode breadcrumb. The remaining twelve snapshots are unchanged.
 
----
-
-### 4. Motion Control & Timing Limits
-`kin/tui/motion.py` defines enforceable motion bounds:
-- Focus transition duration: 80–120ms
-- Event pulse duration: 120ms (max 2 amber pulses per event)
-- Expand / collapse transition: 120–180ms
-- Spinner refresh interval: 8–12 FPS (100ms interval) with elapsed time label
-- Toast visibility duration: 3.0s (min) to 6.0s (max)
-
-> **Disclosure regarding `MODAL_ANIMATION_MAX_MS`**: `MODAL_ANIMATION_MAX_MS = 120` is defined and asserted in unit tests as a spec boundary constant. There is currently no modal open/close frame animation subsystem in the codebase for this constant to bound; it serves as a contract bound for future animation integration.
-
----
-
-## T7 Build Step 3 - Motion-Timing Limits Audit (August 5, 2026)
-
-This closeout supersedes the preliminary motion summary above and validates the real production widget paths. `ExchangeTimelineWidget` tracks the 120ms event-tail pulse by monotonic time; `SpinnerWidget` schedules local 10 FPS updates and reports elapsed time; `ToastManager` clamps duration and limits warning pulses; and `Sidebar`/`SidebarTree` apply their 150ms visual transition only to the user action that requested it. Modal behavior is explicitly zero-duration.
-
-The enforced policy is: focus has an 80-120ms design limit while remaining immediate today; event tails pulse for exactly 120ms; expand/collapse remains within 120-180ms; spinners run at 8-12 FPS (10 FPS default); toasts remain visible for 3-6 seconds (4 seconds default); and modal animation may not exceed 120ms. Warning toasts may use no more than two amber pulses and dismiss through a paint-only update, avoiding layout reflow.
-
-The audit adds regression coverage for the timing contract, rapid keyboard input during active transitions, reduced-motion preservation, and local-refresh scope. The snapshot harness now pins a deterministic UTF-8/truecolor console configuration so repository snapshots are reproducible in the headless test environment. No snapshot baselines changed.
-
-### Snapshot Harness Reproducibility Closeout
-
-Terminal capability pinning is now centralized in the shared `build_tui_app` fixture in `tests/tui/conftest.py`. It clears `NO_COLOR`, sets `TERM=xterm-256color`, disables ASCII fallback, forces UTF-8 console encoding, and forces truecolor for both `KinApp` and custom `App` harnesses. All `snap_compare` construction sites use this fixture, including the custom `ArenaSnapshotApp`; the nine requested pilot/snapshot files also use it for every `App` they construct. Inventory additionally found and migrated the duplicate helper in `test_app_shell.py`.
-
-No reference snapshot changed. Three consecutive full `tests/tui/` runs produced:
+### Three consecutive complete TUI runs
 
 ```text
-Run 1: 14 snapshots passed; 1109 passed in 50.82s
-Run 2: 14 snapshots passed; 1109 passed in 51.14s
-Run 3: 14 snapshots passed; 1109 passed in 51.24s
+Run 1: 14 snapshots passed; 1111 passed in 62.11s
+Run 2: 14 snapshots passed; 1111 passed in 61.26s
+Run 3: 14 snapshots passed; 1111 passed in 60.77s
 ```
 
----
+### Full repository run
 
-## Raw Pytest Verification Output
-
-### Full Repository Test Suite
 ```text
-py -3.11 -m pytest -v
-============================== test session starts ==============================
-platform win32 -- Python 3.11.9, pytest-8.4.2, pluggy-1.6.0
-rootdir: D:\KIN\kin-node
-configfile: pyproject.toml
-plugins: anyio-4.14.0, langsmith-0.8.16, asyncio-1.4.0, cov-7.1.0, httpbin-2.1.0, textual-snapshot-1.1.0, syrupy-4.8.0
-collected 1455 items
-
-...
-tests/tui/test_80x24_plain_mode_flows.py PASSED
-tests/tui/test_colorless_fallback.py PASSED
-tests/tui/test_live_theme_switch.py PASSED
-tests/tui/test_motion_timing_limits.py PASSED
-tests/tui/test_theme_token_compliance.py PASSED
-tests/tui/test_theme_widget_renders.py PASSED
-tests/tui/test_theme_yaml_override.py PASSED
-
---------------------------- snapshot report summary ---------------------------
 14 snapshots passed.
-========== 1455 passed, 1 deselected in 101.51s (0:01:41) ==========
+1457 passed, 1 deselected in 109.39s
 ```
 
-### Structural Compliance Test
+### Diff hygiene
+
 ```text
-py -3.11 -m pytest tests/tui/test_theme_token_compliance.py -k test_no_widget_or_screen_defines_local_c_override -v
-============================= test session starts =============================
-platform win32 -- Python 3.11.9, pytest-8.4.2, pluggy-1.6.0
-collected 77 items / 76 deselected / 1 selected
-
-tests/tui/test_theme_token_compliance.py::test_no_widget_or_screen_defines_local_c_override PASSED [100%]
-
-====================== 1 passed, 76 deselected in 0.15s =======================
+git diff --check
+# no errors
 ```
+
+## Final Checkpoint
+
+T7 satisfies its checkpoint: no required task depends on width, true color, Unicode, mouse input, or motion. There are no deferred T7 implementation gaps remaining.

@@ -40,6 +40,7 @@ class SpinnerWidget(LifecycleWidgetMixin, Static):
         cancel_callback: Optional[Callable[[], None]] = None,
         now: Optional[Union[datetime, str, float]] = None,
         elapsed_clock: Callable[[], float] = monotonic,
+        auto_start: bool = True,
         **kwargs,
     ) -> None:
         super().__init__(now=now, **kwargs)
@@ -54,6 +55,8 @@ class SpinnerWidget(LifecycleWidgetMixin, Static):
         self._elapsed_clock = elapsed_clock
         self._started_at = elapsed_clock()
         self._frame_timer = None
+        self._auto_start = auto_start
+        self._reduced_motion = False
 
     @property
     def elapsed_seconds(self) -> int:
@@ -70,12 +73,64 @@ class SpinnerWidget(LifecycleWidgetMixin, Static):
 
     def advance_frame(self) -> None:
         """Advance spinner animation frame and trigger local refresh."""
+        if self._reduced_motion:
+            return
         self.frame_index = (self.frame_index + 1) % len(self.spinner_frames)
         self.refresh(layout=False)
 
     def on_mount(self) -> None:
         """Schedule periodic frame updates bounded by 8-12 FPS frame_interval_seconds (§14.5, §14.9 step 3)."""
-        self._frame_timer = self.set_interval(self.frame_interval_seconds, self.advance_frame)
+        if self._auto_start:
+            self.start()
+
+    def start(
+        self,
+        *,
+        label: Optional[str] = None,
+        cancel_callback: Optional[Callable[[], None]] = None,
+    ) -> None:
+        """Start or resume the hosted activity indicator without stealing focus."""
+        if label is not None:
+            self.label = label
+        if cancel_callback is not None:
+            self.cancel_callback = cancel_callback
+        self._started_at = self._elapsed_clock()
+        self.frame_index = 0
+        self.styles.visibility = "visible"
+        if not self._reduced_motion:
+            if self._frame_timer is None:
+                self._frame_timer = self.set_interval(
+                    self.frame_interval_seconds,
+                    self.advance_frame,
+                )
+            else:
+                self._frame_timer.resume()
+        if self.is_mounted:
+            self.refresh(layout=False)
+
+    def stop(self) -> None:
+        """Stop animation and hide the fixed activity overlay."""
+        if self._frame_timer is not None:
+            self._frame_timer.pause()
+        if self.is_mounted:
+            self.styles.visibility = "hidden"
+            self.refresh(layout=False)
+
+    def set_reduced_motion(self, active: bool) -> None:
+        """Pause/resume frames immediately while retaining the elapsed label."""
+        self._reduced_motion = bool(active)
+        if self._frame_timer is not None:
+            if self._reduced_motion:
+                self._frame_timer.pause()
+            elif self.is_mounted and self.styles.visibility == "visible":
+                self._frame_timer.resume()
+        elif not self._reduced_motion and self.is_mounted and self.styles.visibility == "visible":
+            self._frame_timer = self.set_interval(
+                self.frame_interval_seconds,
+                self.advance_frame,
+            )
+        if self.is_mounted:
+            self.refresh(layout=False)
 
     def trigger_cancel(self) -> bool:
         """Trigger safe cancellation callback (§14.5)."""

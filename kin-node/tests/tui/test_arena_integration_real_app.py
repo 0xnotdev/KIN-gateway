@@ -5,11 +5,11 @@ opens ComposeMessageModal, and isolates arena bindings from global navigation.
 """
 
 from pathlib import Path
+from io import StringIO
 import pytest
 from rich.console import Console
 from textual.widgets import Input, Static
 
-from kin.tui.app import KinApp
 from kin.tui.help import generate_help_markdown
 from kin.tui.local_state import ensure_profile_db
 from kin.tui.tokens import DRACULA_THEME, KIN_GRAPHITE_THEME
@@ -20,7 +20,13 @@ from kin.tui.widgets.session_arena import SessionArenaWidget
 
 def _render_to_svg(renderable) -> str:
     """Render Rich output with truecolor preserved for theme assertions."""
-    console = Console(width=120, record=True, force_terminal=True, color_system="truecolor")
+    console = Console(
+        width=120,
+        record=True,
+        force_terminal=True,
+        color_system="truecolor",
+        file=StringIO(),
+    )
     console.print(renderable)
     return console.export_svg()
 
@@ -44,13 +50,13 @@ def _seed_test_session(profile_dir: Path, session_id: str = "sess-real-100") -> 
 
 
 @pytest.mark.asyncio
-async def test_real_app_mounts_session_arena_widget_not_placeholder(tmp_path, monkeypatch):
+async def test_real_app_mounts_session_arena_widget_not_placeholder(tmp_path, build_tui_app):
     """Assert real KinApp mounts SessionArenaWidget in MainCanvas and renders live Arena content (§14.8)."""
     profile_dir = Path.home() / ".kin" / "profiles" / "default"
     profile_dir.mkdir(parents=True, exist_ok=True)
     _seed_test_session(profile_dir, "sess-real-100")
 
-    app = KinApp(profile_name="default", profile_dir=profile_dir)
+    app = build_tui_app(profile_name="default", profile_dir=profile_dir)
     async with app.run_test(size=(120, 36)) as pilot:
         # Open session tab for sess-real-100
         app.tab_manager.open_tab("tab:sess-real-100", "Real Session", "session")
@@ -65,14 +71,17 @@ async def test_real_app_mounts_session_arena_widget_not_placeholder(tmp_path, mo
 
 
 @pytest.mark.asyncio
-async def test_live_theme_switch_rethemes_mounted_session_arena(tmp_path, monkeypatch):
+async def test_live_theme_switch_rethemes_mounted_session_arena(
+    tmp_path, monkeypatch, build_tui_app
+):
     """Real session-tab flow refreshes Arena content when the live theme changes."""
-    monkeypatch.setattr(KinApp, "is_colorless_active", property(lambda self: False))
     profile_dir = Path.home() / ".kin" / "profiles" / "default"
     profile_dir.mkdir(parents=True, exist_ok=True)
     _seed_test_session(profile_dir, "sess-theme-100")
 
-    app = KinApp(theme_name="kin-graphite", profile_name="default", profile_dir=profile_dir)
+    app = build_tui_app(
+        theme_name="kin-graphite", profile_name="default", profile_dir=profile_dir
+    )
     async with app.run_test(size=(120, 36)) as pilot:
         app.tab_manager.open_tab("tab:sess-theme-100", "Theme Session", "session")
         app.sync_tab_bar()
@@ -103,13 +112,13 @@ async def test_live_theme_switch_rethemes_mounted_session_arena(tmp_path, monkey
 
 
 @pytest.mark.asyncio
-async def test_real_app_arena_key_sequence_drives_widget_state(tmp_path, monkeypatch):
+async def test_real_app_arena_key_sequence_drives_widget_state(tmp_path, build_tui_app):
     """Press t, e, o, c, u, z, i in sequence on real KinApp and assert arena state changes (§14.8)."""
     profile_dir = Path.home() / ".kin" / "profiles" / "default"
     profile_dir.mkdir(parents=True, exist_ok=True)
     _seed_test_session(profile_dir, "sess-real-200")
 
-    app = KinApp(profile_name="default", profile_dir=profile_dir)
+    app = build_tui_app(profile_name="default", profile_dir=profile_dir)
     async with app.run_test(size=(160, 44)) as pilot:
         app.tab_manager.open_tab("tab:sess-real-200", "Real Session", "session")
         app.sync_tab_bar()
@@ -154,13 +163,13 @@ async def test_real_app_arena_key_sequence_drives_widget_state(tmp_path, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_real_app_press_m_opens_compose_message_modal(tmp_path, monkeypatch):
+async def test_real_app_press_m_opens_compose_message_modal(tmp_path, build_tui_app):
     """Press 'm' on active session tab in real KinApp and assert ComposeMessageModal is pushed (§14.8)."""
     profile_dir = Path.home() / ".kin" / "profiles" / "default"
     profile_dir.mkdir(parents=True, exist_ok=True)
     _seed_test_session(profile_dir, "sess-real-300")
 
-    app = KinApp(profile_name="default", profile_dir=profile_dir)
+    app = build_tui_app(profile_name="default", profile_dir=profile_dir)
     async with app.run_test(size=(120, 36)) as pilot:
         app.tab_manager.open_tab("tab:sess-real-300", "Real Session", "session")
         app.sync_tab_bar()
@@ -179,12 +188,12 @@ async def test_real_app_press_m_opens_compose_message_modal(tmp_path, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_arena_scoped_bindings_do_not_leak_outside_arena(tmp_path, monkeypatch):
+async def test_arena_scoped_bindings_do_not_leak_outside_arena(tmp_path, build_tui_app):
     """Assert 'i' still opens Inbox and 'o' still opens new tab when active tab is Home (§14.4, §14.8)."""
     profile_dir = Path.home() / ".kin" / "profiles" / "default"
     profile_dir.mkdir(parents=True, exist_ok=True)
 
-    app = KinApp(profile_name="default", profile_dir=profile_dir)
+    app = build_tui_app(profile_name="default", profile_dir=profile_dir)
     async with app.run_test(size=(120, 36)) as pilot:
         # Active tab is Home (non-session)
         assert app.tab_manager.get_active_tab().kind == "home"

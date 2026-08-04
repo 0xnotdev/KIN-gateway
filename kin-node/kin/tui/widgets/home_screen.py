@@ -112,6 +112,16 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
             return Panel("[dim]Loading Home Dashboard...[/dim]", title="Home", border_style="cyan")
 
         if self.lifecycle_state == WidgetLifecycleState.RECOVERABLE_ERROR and self.recoverable_error:
+            if self._is_plain_mode_active():
+                error = self.recoverable_error
+                return (
+                    "HOME RECOVERY\n"
+                    f"1. WHAT HAPPENED: {error.what_happened}\n"
+                    f"2. IMPACT: {error.impact}\n"
+                    f"3. PRESERVED: {error.preserved}\n"
+                    f"4. NEXT ACTION: {error.next_action}\n"
+                    "ACTIONS: Retry | Esc Back"
+                )
             return Panel(
                 f"[bold {err}]Home Dashboard Error[/bold {err}]\n{self.recoverable_error.what_happened}",
                 title="Error",
@@ -121,6 +131,31 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
         health = self.get_health()
         agents = self.get_agents()
         contacts = self.get_contacts()
+
+        if self._is_plain_mode_active():
+            health_state = "HEALTHY" if health.identity_ok and health.relay_reachable else (
+                "DEGRADED" if health.identity_ok else "NO IDENTITY"
+            )
+            lines = [
+                "HOME",
+                f"1. STATUS: {health_state}",
+                f"2. PROFILE: {self.profile_name}",
+                f"3. NEEDS YOU: {len(self.approvals)} pending approvals",
+                f"4. AGENTS: {len(agents)}",
+            ]
+            for agent in agents:
+                lines.append(
+                    f"   - {agent.name} ({agent.agent_id}): {agent.description or 'No description'}; "
+                    f"status={agent.availability}"
+                )
+            lines.append(f"5. NETWORK: {len(contacts)} paired contacts")
+            for contact in contacts:
+                lines.append(
+                    f"   - {contact.display_name or contact.username} (@{contact.username}): "
+                    f"{contact.endpoint or 'No endpoint'}"
+                )
+            lines.append("ACTIONS: d Dispatch | i Inbox | a Agents | n Network | F2 Settings")
+            return "\n".join(lines)
 
         layout_table = Table.grid(expand=True)
         layout_table.add_column()

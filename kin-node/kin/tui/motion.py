@@ -34,6 +34,12 @@ TOAST_DURATION_SEC: int = 4
 TOAST_MAX_AMBER_PULSES: int = 2
 TOAST_AMBER_PULSE_INTERVAL_MS: int = EVENT_PULSE_DURATION_MS
 
+# Automatic reduced-motion pressure probe. Event-loop drift above the latency
+# threshold for three consecutive samples is treated as sustained CPU pressure.
+REDUCED_MOTION_PROBE_INTERVAL_SECONDS: float = 0.25
+REDUCED_MOTION_LATENCY_THRESHOLD_MS: float = 100.0
+REDUCED_MOTION_BREACH_SAMPLES: int = 3
+
 
 def milliseconds_to_seconds(duration_ms: int) -> float:
     """Convert an integer millisecond token to Textual's seconds unit."""

@@ -352,6 +352,8 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
         self.is_sending = True
         self.status_message = "Packaging payload..."
         self.refresh()
+        if self.is_mounted and hasattr(self.app, "start_activity"):
+            self.app.start_activity("Dispatching session")
 
         try:
             self._run_worker_via_textual()
@@ -360,6 +362,8 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
             self._run_dispatch_worker_logic()
         except Exception as exc:
             self.is_sending = False
+            if self.is_mounted and hasattr(self.app, "stop_activity"):
+                self.app.stop_activity("Dispatch failed", severity="error")
             self.last_dispatch_error = RecoverableError(
                 what_happened="Dispatch Worker Error",
                 impact="Session request could not be dispatched.",
@@ -419,6 +423,19 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
             self.status_message = "Dispatch draft prepared (UI preview only)"
 
         self.refresh()
+        if self.is_mounted and hasattr(self.app, "stop_activity"):
+            completion_message = redact_ui_text(self.status_message)
+            try:
+                self.app.call_from_thread(
+                    self.app.stop_activity,
+                    completion_message,
+                    "success" if ok else "warning",
+                )
+            except RuntimeError:
+                self.app.stop_activity(
+                    completion_message,
+                    severity="success" if ok else "warning",
+                )
 
     def on_key(self, event: Key) -> None:
         if self.lifecycle_state == WidgetLifecycleState.DISABLED or self.is_submitted or self.is_sending:
@@ -514,6 +531,26 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
         scrubbed_prompt = redact_ui_text(self.prompt)
         scrubbed_status = redact_ui_text(self.status_message)
         draft = self.controller.draft
+
+        if self._is_plain_mode_active():
+            lines = [
+                "DISPATCH",
+                f"STEP {self.step_index + 1} OF {len(self.STEPS)}: {step_title}",
+                f"PEER: @{draft.peer_username or '(not selected)'}",
+                f"SENDER: {draft.sender_agent_id or '(not selected)'}",
+                f"RECEIVER: {draft.receiver_agent_id or '(not selected)'}",
+                f"MODE: {draft.session_type}",
+                f"GOAL: {scrubbed_prompt or '(empty)'}",
+                f"CONTEXT ITEMS: {len(draft.pantry_items)}",
+                f"STATUS: {scrubbed_status}",
+            ]
+            if self.controller.current_step == DispatchStep.REVIEW_DISPATCH:
+                lines.append("REVIEW: Enter confirms this dispatch; Left/p returns to edit.")
+            elif self.controller.current_step == DispatchStep.GOAL_INPUT:
+                lines.append("EDIT: type goal text; Backspace removes one character.")
+            else:
+                lines.append("NAVIGATION: Right/n next | Left/p back | Enter select")
+            return "\n".join(lines)
 
         if self.is_submitted:
             return (

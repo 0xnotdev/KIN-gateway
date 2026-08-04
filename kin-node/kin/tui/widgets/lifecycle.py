@@ -82,6 +82,16 @@ class LifecycleWidgetMixin:
         from kin.tui.tokens import get_glyph
         return get_glyph(symbol, ascii_fallback=ascii_fallback)
 
+    def _is_reduced_motion_active(self) -> bool:
+        """Resolve the application's effective manual/automatic motion state."""
+        app = self._get_app_instance()
+        return bool(getattr(app, "is_reduced_motion_active", False)) if app else False
+
+    def _is_plain_mode_active(self) -> bool:
+        """Resolve semantic plain output for minimal or constrained terminals."""
+        app = self._get_app_instance()
+        return bool(getattr(app, "is_plain_mode_active", False)) if app else False
+
     def __init__(
         self,
         lifecycle_state: WidgetLifecycleState = WidgetLifecycleState.NORMAL,

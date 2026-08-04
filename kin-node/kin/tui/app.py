@@ -5,6 +5,8 @@ Spec authority: KIN-V1.1-TUI-SYSTEM.md §3, §4, §5, §14.4
 
 import os
 import sys
+from io import StringIO
+from time import monotonic
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -12,11 +14,17 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.events import Key, Resize
 from textual.widgets import Input, Static
+from rich.console import Console
 
 from kin.tui.errors import tui_error_boundary
 from kin.tui.help import HelpOverlayScreen
 from kin.tui.keymap import DEFAULT_KEYMAP, KeyBindingSpec, build_textual_bindings
 from kin.tui.layout import Breakpoint, classify_breakpoint
+from kin.tui.motion import (
+    REDUCED_MOTION_BREACH_SAMPLES,
+    REDUCED_MOTION_LATENCY_THRESHOLD_MS,
+    REDUCED_MOTION_PROBE_INTERVAL_SECONDS,
+)
 from kin.tui.palette import CommandItem, CommandPaletteModal, QuickSwitcherModal
 from kin.tui.persistence import (
     UiStatePreferences,
@@ -36,6 +44,8 @@ from kin.tui.state import RecoverableError
 from kin.tui.widgets import WidgetLifecycleState
 from kin.tui.widgets.compose_modal import ComposeMessageModal
 from kin.tui.widgets.session_arena import SessionArenaWidget
+from kin.tui.widgets.spinner import SpinnerWidget
+from kin.tui.widgets.toast import ToastWidget
 from kin.tui.local_state import send_human_message_to_session_action
 from kin.tui.workspace import WorkspaceTabManager
 
@@ -52,6 +62,18 @@ class KinApp(App[None]):
     SUB_TITLE = "V1.1 Terminal UI"
 
     CSS = """
+    #minimal-breadcrumb {
+        display: none;
+        height: 1;
+        dock: top;
+        padding: 0 1;
+        background: $surface;
+        color: $text;
+    }
+    #activity-spinner, #notification-toast {
+        layer: overlay;
+        dock: top;
+    }
     #middle-pane {
         width: 100%;
         height: 1fr;
@@ -77,6 +99,13 @@ class KinApp(App[None]):
         self.canvas = MainCanvas()
         self.inspector = Inspector()
         self.status_bar = StatusBar(profile_name=profile_name)
+        self.minimal_breadcrumb = Static("KIN > Home | Esc: Back", id="minimal-breadcrumb")
+        self.activity_spinner = SpinnerWidget(id="activity-spinner", auto_start=False)
+        self.notification_toast = ToastWidget(
+            id="notification-toast",
+            dismiss_callback=self._on_toast_dismissed,
+            auto_start=False,
+        )
 
         self.current_breakpoint: Breakpoint = "wide"
         self.has_shown_resize_hint: bool = False
@@ -84,7 +113,11 @@ class KinApp(App[None]):
 
         # Motion & Hysteresis Controls (§14.9 Phase D)
         self.transient_reduced_motion: bool = False
+        self.terminal_unfocused: bool = False
+        self.cpu_reduced_motion: bool = False
         self.latency_breach_count: int = 0
+        self._motion_probe_last_at: Optional[float] = None
+        self._motion_probe_timer = None
 
         # Operational error state (§10.3)
         self.active_error: Optional[RecoverableError] = None
@@ -96,6 +129,7 @@ class KinApp(App[None]):
             CommandItem("open_network", "Open Network workspace", "Navigation", "n"),
             CommandItem("open_inbox", "Open Inbox / Needs You", "Navigation", "i", contextual=True),
             CommandItem("open_approvals", "Open Approvals queue", "Navigation", "p", contextual=True),
+            CommandItem("open_settings", "Open Settings & Accessibility", "Settings", "F2"),
             CommandItem("help", "Contextual help", "System", "?"),
             CommandItem("guide", "Open kin guide", "System"),
             CommandItem("theme_graphite", "Change theme: KIN Graphite", "Settings"),
@@ -110,7 +144,20 @@ class KinApp(App[None]):
     @property
     def is_reduced_motion_active(self) -> bool:
         """Effective reduced motion state combining persisted setting and transient overrides."""
-        return bool(self.prefs.reduced_motion or self.transient_reduced_motion)
+        return bool(
+            self.prefs.reduced_motion
+            or self.terminal_unfocused
+            or self.cpu_reduced_motion
+            or self.transient_reduced_motion
+        )
+
+    @property
+    def is_plain_mode_active(self) -> bool:
+        """Whether semantic, box-free output is required for this terminal."""
+        return bool(
+            self.current_breakpoint == "minimal"
+            or self.is_ascii_fallback_active
+        )
 
     @property
     def is_ascii_fallback_active(self) -> bool:
@@ -201,6 +248,9 @@ class KinApp(App[None]):
                 self.set_theme(str(value))
             else:
                 self._refresh_theme_ui()
+                if key == "reduced_motion":
+                    self._apply_reduced_motion()
+            self.show_toast(f"Preference updated: {key}", severity="info")
 
     def set_theme(self, theme_name: str) -> None:
         """Live non-teardown theme transition preserving widget DOM, focus, and scroll state (§14.9 Phase B).
@@ -230,6 +280,8 @@ class KinApp(App[None]):
         save_ui_preferences(self.prefs, self.profile_name)
 
         self._refresh_theme_ui()
+        if self.is_mounted:
+            self.show_toast(f"Theme changed: {theme_name}", severity="success")
 
     def set_custom_theme(self, theme: Theme) -> None:
         """Live theme transition for a custom Theme object (§14.9 Phase A)."""
@@ -244,30 +296,84 @@ class KinApp(App[None]):
 
     def on_app_blur(self) -> None:
         """Handle terminal window blur — enable transient reduced motion."""
+        self.terminal_unfocused = True
         self.transient_reduced_motion = True
+        self._apply_reduced_motion()
 
     def on_app_focus(self) -> None:
         """Handle terminal window focus — restore normal motion."""
-        self.transient_reduced_motion = False
+        self.terminal_unfocused = False
+        self.transient_reduced_motion = self.cpu_reduced_motion
+        self._apply_reduced_motion()
 
     def record_latency_sample(self, latency_ms: float) -> None:
         """Record a render latency sample; 3 consecutive breaches (>100ms) trigger transient reduced motion."""
-        if latency_ms > 100.0:
+        before = self.is_reduced_motion_active
+        if latency_ms > REDUCED_MOTION_LATENCY_THRESHOLD_MS:
             self.latency_breach_count += 1
-            if self.latency_breach_count >= 3:
-                self.transient_reduced_motion = True
+            if self.latency_breach_count >= REDUCED_MOTION_BREACH_SAMPLES:
+                self.cpu_reduced_motion = True
         else:
             self.latency_breach_count = 0
-            self.transient_reduced_motion = False
+            self.cpu_reduced_motion = False
+        self.transient_reduced_motion = self.terminal_unfocused or self.cpu_reduced_motion
+        if self.is_reduced_motion_active != before:
+            self._apply_reduced_motion()
+
+    def _sample_event_loop_latency(self) -> None:
+        """Measure live event-loop drift and feed automatic reduced motion."""
+        now = monotonic()
+        if self._motion_probe_last_at is None:
+            self._motion_probe_last_at = now
+            return
+        elapsed = now - self._motion_probe_last_at
+        self._motion_probe_last_at = now
+        drift_ms = max(
+            0.0,
+            (elapsed - REDUCED_MOTION_PROBE_INTERVAL_SECONDS) * 1000.0,
+        )
+        self.record_latency_sample(drift_ms)
+
+    def _apply_reduced_motion(self) -> None:
+        """Propagate the effective motion state to every mounted animation."""
+        if not self._screen_stack:
+            return
+        active = self.is_reduced_motion_active
+        for widget in self.query("*"):
+            setter = getattr(widget, "set_reduced_motion", None)
+            if callable(setter):
+                setter(active)
+        self.refresh(layout=False)
+
+    def _on_toast_dismissed(self) -> None:
+        """Persistent toast host callback; the fixed overlay owns its lifecycle."""
+        self.notification_toast.styles.visibility = "hidden"
+
+    def show_toast(self, message: str, severity: str = "info", duration_ms: Optional[int] = None) -> None:
+        """Publish a real application toast through the persistent overlay host."""
+        self.notification_toast.show(message, severity=severity, duration_ms=duration_ms)
+
+    def start_activity(self, label: str, cancel_callback: Optional[Callable[[], None]] = None) -> None:
+        """Show the application-owned loading indicator without stealing focus."""
+        self.activity_spinner.start(label=label, cancel_callback=cancel_callback)
+
+    def stop_activity(self, message: Optional[str] = None, severity: str = "success") -> None:
+        """Stop the loading indicator and optionally publish completion feedback."""
+        self.activity_spinner.stop()
+        if message:
+            self.show_toast(message, severity=severity)
 
     def compose(self) -> ComposeResult:
         """Compose the five persistent stable regions (§3.1)."""
+        yield self.minimal_breadcrumb
         yield self.tab_bar
         with Horizontal(id="middle-pane"):
             yield self.sidebar
             yield self.canvas
             yield self.inspector
         yield self.status_bar
+        yield self.activity_spinner
+        yield self.notification_toast
 
     def on_mount(self) -> None:
         """Load UI preferences on mount and apply saved geometry/preferences."""
@@ -282,6 +388,15 @@ class KinApp(App[None]):
         self.inspector.set_visible(self.prefs.inspector_visible)
 
         self.sync_tab_bar()
+
+        self.activity_spinner.styles.visibility = "hidden"
+        self.notification_toast.styles.visibility = "hidden"
+        self._motion_probe_last_at = monotonic()
+        self._motion_probe_timer = self.set_interval(
+            REDUCED_MOTION_PROBE_INTERVAL_SECONDS,
+            self._sample_event_loop_latency,
+        )
+        self._apply_reduced_motion()
 
         if status_msg:
             self.status_bar.status_message = status_msg
@@ -308,6 +423,9 @@ class KinApp(App[None]):
             profile_dir=self.profile_dir,
             profile_name=self.profile_name,
         )
+        self.minimal_breadcrumb.update(
+            f"KIN > {active.title} | Esc: Back | Ctrl+K: Commands | F2: Settings"
+        )
 
     def on_resize(self, event: Resize) -> None:
         """Handle terminal geometry changes and classify breakpoint tiers (§3.2)."""
@@ -315,19 +433,34 @@ class KinApp(App[None]):
         self.current_breakpoint = bp
 
         if bp == "minimal":
+            self.sidebar.set_collapsed(True)
+            self.sidebar.styles.display = "none"
+            self.inspector.set_visible(False)
+            self.tab_bar.styles.display = "none"
+            self.minimal_breadcrumb.styles.display = "block"
             if not self.has_shown_resize_hint:
-                self.status_bar.status_message = "Resize terminal to at least 90x28 for full experience."
+                self.status_bar.status_message = "Minimal mode active: all tasks remain keyboard accessible."
                 self.status_bar.refresh()
                 self.has_shown_resize_hint = True
         elif bp == "compact":
+            self.sidebar.styles.display = "block"
+            self.tab_bar.styles.display = "block"
+            self.minimal_breadcrumb.styles.display = "none"
             self.sidebar.set_collapsed(True)
             self.inspector.set_visible(False)
         else:  # wide or standard
+            self.sidebar.styles.display = "block"
+            self.tab_bar.styles.display = "block"
+            self.minimal_breadcrumb.styles.display = "none"
             self.sidebar.set_collapsed(self.prefs.sidebar_collapsed)
             if bp == "wide":
                 self.inspector.set_visible(self.prefs.inspector_visible)
             else:
                 self.inspector.set_visible(False)
+        # Breakpoint rendering is derived dynamically by mounted widgets; a
+        # local paint/layout refresh preserves the exact focused instance and
+        # in-progress drafts across terminal resizes.
+        self.canvas.refresh(layout=True)
 
     # ═══════════════════════════════════════════════════════════════════
     # Esc Priority Chain (§4, §14.4)
@@ -358,6 +491,12 @@ class KinApp(App[None]):
             return
 
         # Stage 3: Return focus to main canvas input
+        if self.current_breakpoint == "minimal" and self.tab_manager.get_active_tab().kind != "home":
+            self.tab_manager.open_tab("home", "Home", "home", singleton=True)
+            self.sync_tab_bar()
+            self.status_bar.status_message = "Returned to Home from minimal-mode breadcrumb."
+            self.status_bar.refresh()
+            return
         cmd_input = self.query_one("#command-input", Input)
         cmd_input.focus()
         self.status_bar.status_message = "Returned focus to main canvas."
@@ -383,6 +522,21 @@ class KinApp(App[None]):
                     self.set_theme(target_theme)
                 elif item.command_id.startswith("colon:"):
                     self.execute_colon_command(item.title)
+                elif item.command_id == "open_settings":
+                    self.action_open_settings()
+                elif item.command_id in {
+                    "dispatch",
+                    "open_agents",
+                    "open_network",
+                    "open_inbox",
+                    "open_approvals",
+                    "help",
+                    "guide",
+                }:
+                    action_name = "open_dispatch" if item.command_id == "dispatch" else item.command_id
+                    handler = getattr(self, f"action_{action_name}", None)
+                    if callable(handler):
+                        handler()
                 elif item.consequential:
                     self.gate_consequential_action(item.title, "selected target")
                 else:
@@ -390,6 +544,19 @@ class KinApp(App[None]):
                     self.status_bar.refresh()
 
         self.push_screen(CommandPaletteModal(self.command_index), handle_selected)
+
+    def action_open_settings(self) -> None:
+        """Open the reachable Settings and accessibility surface (F2)."""
+        from kin.tui.widgets.settings_screen import SettingsModal
+
+        self.push_screen(
+            SettingsModal(
+                current_theme=self.requested_theme,
+                color_depth=self.prefs.color_depth,
+                ascii_fallback=self.prefs.ascii_fallback,
+                reduced_motion=self.prefs.reduced_motion,
+            )
+        )
 
     def execute_colon_command(self, colon_cmd_str: str) -> None:
         """Execute validated colon command."""
@@ -549,6 +716,42 @@ class KinApp(App[None]):
             active.dirty = False
             self.status_bar.status_message = "Dispatch draft saved locally."
             self.status_bar.refresh()
+
+    def action_export_view(self) -> None:
+        """Export the active workspace as ordered, redacted plain text."""
+        active = self.tab_manager.get_active_tab()
+        if active.kind == "home":
+            widget = self.canvas.home_widget
+        elif active.kind == "agents":
+            widget = self.canvas.agents_widget
+        elif active.kind == "network":
+            widget = self.canvas.network_widget
+        elif active.kind in ("inbox", "approvals"):
+            widget = self.canvas.inbox_widget
+        elif active.kind == "dispatch":
+            widget = self.canvas.dispatch_widget
+        elif active.kind == "session":
+            widget = self.canvas.get_session_arena_widget()
+        else:
+            widget = self.canvas
+
+        output = StringIO()
+        console = Console(
+            file=output,
+            width=80,
+            color_system=None,
+            force_terminal=False,
+        )
+        console.print(widget.render())
+        export_text = output.getvalue()
+
+        export_dir = self.profile_dir / "exports"
+        export_dir.mkdir(parents=True, exist_ok=True)
+        export_path = export_dir / "latest-view.txt"
+        export_path.write_text(export_text, encoding="utf-8")
+        self.status_bar.status_message = f"Exported {active.title} to exports/latest-view.txt"
+        self.status_bar.refresh()
+        self.show_toast("Plain-text export saved", severity="success")
 
     def jump_tab(self, idx: int) -> None:
         if self.tab_manager.jump_to_tab_index(idx):
