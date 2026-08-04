@@ -1,88 +1,67 @@
-"""Motion Timing Limits & Hysteresis Controls (§14.9 Phase A / Build Step 3).
+"""Central motion and timing limits for the KIN terminal UI.
 
-Defines spec-enforced constants and helpers for animation durations, frame rates,
-keystroke immediacy, and reflow scoping.
+The values in this module are policy tokens, not widget-specific defaults. Keeping
+them separate from the visual tokens in :mod:`kin.tui.tokens` makes timing behavior
+easy to audit without mixing it with theme data.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+
+# Focus changes in Textual are discrete and currently have no animated transition.
+# These bounds are retained as the design limit if a focus animation is introduced.
+FOCUS_TRANSITION_MS_MIN: int = 80
+FOCUS_TRANSITION_MS_MAX: int = 120
+
+# A genuinely live-appended timeline event remains highlighted for exactly 120 ms.
+EVENT_PULSE_DURATION_MS: int = 120
+
+EXPAND_TRANSITION_MS_MIN: int = 120
+EXPAND_TRANSITION_MS_MAX: int = 180
+EXPAND_TRANSITION_MS: int = 150
+
+# Modal screens are currently shown and dismissed synchronously (0 ms). Any future
+# modal animation must remain at or below this cap.
+MODAL_TRANSITION_MS: int = 0
+MODAL_TRANSITION_MS_MAX: int = 120
+
+SPINNER_FPS_MIN: int = 8
+SPINNER_FPS_MAX: int = 12
+SPINNER_FPS: int = 10
+SPINNER_FRAME_INTERVAL_SECONDS: float = 1.0 / SPINNER_FPS
+
+TOAST_DURATION_SEC_MIN: int = 3
+TOAST_DURATION_SEC_MAX: int = 6
+TOAST_DURATION_SEC: int = 4
+TOAST_MAX_AMBER_PULSES: int = 2
+TOAST_AMBER_PULSE_INTERVAL_MS: int = EVENT_PULSE_DURATION_MS
 
 
-# Spec-defined timing thresholds (§14.9 step 3)
-FOCUS_TRANSITION_MIN_MS: int = 80
-FOCUS_TRANSITION_MAX_MS: int = 120
-FOCUS_TRANSITION_DEFAULT_MS: int = 100
-
-EVENT_PULSE_MS: int = 120
-
-EXPAND_COLLAPSE_MIN_MS: int = 120
-EXPAND_COLLAPSE_MAX_MS: int = 180
-EXPAND_COLLAPSE_DEFAULT_MS: int = 150
-
-MODAL_ANIMATION_MAX_MS: int = 120
-
-SPINNER_MIN_FPS: int = 8
-SPINNER_MAX_FPS: int = 12
-
-TOAST_MIN_VISIBLE_MS: int = 3000
-TOAST_MAX_VISIBLE_MS: int = 6000
-
-MAX_AMBER_PULSES_PER_EVENT: int = 2
+def milliseconds_to_seconds(duration_ms: int) -> float:
+    """Convert an integer millisecond token to Textual's seconds unit."""
+    return duration_ms / 1000.0
 
 
-def validate_timing_in_range(val_ms: int, min_ms: int, max_ms: int) -> bool:
-    """Assert a motion duration is within spec-mandated minimum and maximum boundaries."""
-    return min_ms <= val_ms <= max_ms
+def clamp_toast_duration_seconds(duration_seconds: float) -> float:
+    """Clamp a requested toast lifetime to the specification's inclusive range."""
+    return min(TOAST_DURATION_SEC_MAX, max(TOAST_DURATION_SEC_MIN, duration_seconds))
 
 
-class AmberPulseTracker:
-    """Tracks amber pulse counts per event to enforce max 2 pulses (no indefinite pulsing)."""
-
-    def __init__(self, max_pulses: int = MAX_AMBER_PULSES_PER_EVENT):
-        self.max_pulses = max_pulses
-        self._counts: Dict[str, int] = {}
-
-    def trigger_pulse(self, event_id: str) -> bool:
-        """Attempt to trigger an amber pulse for event_id.
-
-        Returns True if pulse allowed, False if capped at max_pulses.
-        """
-        current = self._counts.get(event_id, 0)
-        if current >= self.max_pulses:
-            return False
-        self._counts[event_id] = current + 1
-        return True
-
-    def get_pulse_count(self, event_id: str) -> int:
-        return self._counts.get(event_id, 0)
+# Compatibility aliases for callers from the earlier T7 implementation. New code
+# uses the canonical names above, which mirror the wording of the audit spec.
+FOCUS_TRANSITION_MIN_MS = FOCUS_TRANSITION_MS_MIN
+FOCUS_TRANSITION_MAX_MS = FOCUS_TRANSITION_MS_MAX
+FOCUS_TRANSITION_DEFAULT_MS = 100
+EVENT_PULSE_MS = EVENT_PULSE_DURATION_MS
+EXPAND_COLLAPSE_MIN_MS = EXPAND_TRANSITION_MS_MIN
+EXPAND_COLLAPSE_MAX_MS = EXPAND_TRANSITION_MS_MAX
+EXPAND_COLLAPSE_DEFAULT_MS = EXPAND_TRANSITION_MS
+MODAL_ANIMATION_MAX_MS = MODAL_TRANSITION_MS_MAX
+SPINNER_MIN_FPS = SPINNER_FPS_MIN
+SPINNER_MAX_FPS = SPINNER_FPS_MAX
+TOAST_MIN_VISIBLE_MS = TOAST_DURATION_SEC_MIN * 1000
+TOAST_MAX_VISIBLE_MS = TOAST_DURATION_SEC_MAX * 1000
+MAX_AMBER_PULSES_PER_EVENT = TOAST_MAX_AMBER_PULSES
 
 
-class MotionFrameController:
-    """Controls keystroke priority and reflow isolation during animations."""
-
-    def __init__(self):
-        self.animation_in_flight: bool = False
-        self.processed_keystrokes: List[str] = []
-        self.layout_reflow_count: int = 0
-
-    def process_key(self, key_name: str) -> Tuple[bool, str]:
-        """Process a key event immediately, even if an animation is currently in flight.
-
-        'Keystrokes always win': key events are processed same-frame and never queued
-        behind animation frame callbacks.
-        """
-        self.processed_keystrokes.append(key_name)
-        # Keystrokes cancel or pre-empt in-flight animation
-        if self.animation_in_flight:
-            self.animation_in_flight = False
-            return True, f"Key '{key_name}' processed same-frame (animation pre-empted)"
-        return True, f"Key '{key_name}' processed same-frame"
-
-    def record_update(self, widget_id: str, is_full_screen: bool = False) -> Dict[str, Any]:
-        """Record a widget update, enforcing localized refresh rather than full-screen reflow."""
-        if is_full_screen:
-            self.layout_reflow_count += 1
-        return {
-            "widget_id": widget_id,
-            "reflow_triggered": is_full_screen,
-            "total_reflows": self.layout_reflow_count,
-        }
+def validate_timing_in_range(value_ms: int, minimum_ms: int, maximum_ms: int) -> bool:
+    """Return whether a duration falls within inclusive motion bounds."""
+    return minimum_ms <= value_ms <= maximum_ms

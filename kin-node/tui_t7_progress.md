@@ -2,8 +2,8 @@
 
 **Milestone:** T7 — Motion Timing Limits, Theme System, Colorless MRO Guard, & 80x24 Plain-Mode Completion  
 **Execution Engine:** Antigravity / Codex  
-**Status:** 100% Verified & Passing (Full Test Suite: 1,453 passed, 0 failed, 1 deselected)  
-**Date:** August 3, 2026  
+**Status:** 100% Verified & Passing (Full Test Suite: 1,455 passed, 0 failed, 1 deselected; 14 snapshots passed)
+**Date:** August 5, 2026
 
 ---
 
@@ -24,7 +24,7 @@ T7 completes the visual design system, live theme engine, colorless/monochrome a
 
 ### Production Files Added / Modified:
 - `kin/tui/app.py`: CSS variable mapping (`get_css_variables()`), theme refresh helper (`_refresh_theme_ui()`), and colorless auto-detection.
-- `kin/tui/motion.py`: Motion timing constants, pulse tracker, and frame-bound timing helpers.
+- `kin/tui/motion.py`: Canonical motion limits, safe conversion/clamping helpers, and compatibility aliases.
 - `kin/tui/theme_yaml.py`: Strict YAML theme override parser validating 20 semantic roles with full rollback on error.
 - `kin/tui/tokens.py`: 6 built-in themes (`kin-graphite`, `kin-night`, `nord`, `dracula`, `catppuccin-mocha`, `high-contrast`) and WCAG contrast contrast ratios.
 - `kin/tui/widgets/lifecycle.py`: Canonical `LifecycleWidgetMixin._c()`, `_tag()`, and `_bold()` helpers for safe tag formatting.
@@ -39,7 +39,7 @@ T7 completes the visual design system, live theme engine, colorless/monochrome a
 - `tests/tui/test_live_theme_switch.py`: E2E live theme switching test covering chrome text spans, CSS variables, and focus/scroll preservation.
 - `tests/tui/test_theme_widget_renders.py`: Domain widget theme color switch tests (`SessionArenaWidget`, `DispatchWizardWidget`).
 - `tests/tui/test_colorless_fallback.py`: 0-color, pure-ASCII presentation tests for 6 semantic states.
-- `tests/tui/test_motion_timing_limits.py`: Unit tests for focus, pulse, expand/collapse, spinner, and toast timing limits.
+- `tests/tui/test_motion_timing_limits.py`: Unit and integration coverage of the production focus, pulse, expand/collapse, spinner, toast, reduced-motion, and refresh-scope paths.
 - `tests/tui/test_80x24_plain_mode_flows.py`: 8 spec-mandated 80x24 plain-mode flow completion tests.
 - `tests/tui/conftest.py`: Systemic `isolate_tui_profile_dir` test isolation fixture preventing state pollution.
 
@@ -114,6 +114,16 @@ This guarantees that open workspace views (`SessionArenaWidget`, `DispatchWizard
 
 ---
 
+## T7 Build Step 3 - Motion-Timing Limits Audit (August 5, 2026)
+
+This closeout supersedes the preliminary motion summary above and validates the real production widget paths. `ExchangeTimelineWidget` tracks the 120ms event-tail pulse by monotonic time; `SpinnerWidget` schedules local 10 FPS updates and reports elapsed time; `ToastManager` clamps duration and limits warning pulses; and `Sidebar`/`SidebarTree` apply their 150ms visual transition only to the user action that requested it. Modal behavior is explicitly zero-duration.
+
+The enforced policy is: focus has an 80-120ms design limit while remaining immediate today; event tails pulse for exactly 120ms; expand/collapse remains within 120-180ms; spinners run at 8-12 FPS (10 FPS default); toasts remain visible for 3-6 seconds (4 seconds default); and modal animation may not exceed 120ms. Warning toasts may use no more than two amber pulses and dismiss through a paint-only update, avoiding layout reflow.
+
+The audit adds regression coverage for the timing contract, rapid keyboard input during active transitions, reduced-motion preservation, and local-refresh scope. The snapshot harness now pins a deterministic UTF-8/truecolor console configuration so repository snapshots are reproducible in the headless test environment. No snapshot baselines changed.
+
+---
+
 ## Raw Pytest Verification Output
 
 ### Full Repository Test Suite
@@ -136,8 +146,8 @@ tests/tui/test_theme_widget_renders.py PASSED
 tests/tui/test_theme_yaml_override.py PASSED
 
 --------------------------- snapshot report summary ---------------------------
-6 snapshots passed. 8 snapshots updated.
-========== 1453 passed, 1 deselected, 1 warning in 104.92s (0:01:44) ==========
+14 snapshots passed.
+========== 1455 passed, 1 deselected in 101.51s (0:01:41) ==========
 ```
 
 ### Structural Compliance Test

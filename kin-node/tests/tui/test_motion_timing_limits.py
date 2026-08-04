@@ -1,198 +1,310 @@
-"""Unit tests for Motion Timing Limits & Execution Guarantees (§14.9 Phase A / Build Step 3).
+"""Motion-timing limits and behavioral guarantees for T7 build step 3."""
 
-Verifies exact compliance for:
-1. Focus transition timing (80-120ms)
-2. Event pulse duration (120ms)
-3. Expand/collapse timing (120-180ms)
-4. Modal animation cap (<= 120ms)
-5. Spinner frame rate (8-12 FPS) with elapsed-time label
-6. Toast visibility duration (3-6s)
-7. Maximum two amber pulses per event cap
-8. Keystroke immediate same-frame processing ('keystrokes always win') via real KinApp pilot
-9. Single event update reflow isolation via real KinApp pilot
-"""
+from datetime import datetime, timedelta, timezone
+import inspect
 
 import pytest
+
 from kin.tui.app import KinApp
+from kin.tui.guide import GuideOverlayScreen
+from kin.tui.help import HelpOverlayScreen
 from kin.tui.motion import (
-    EXPAND_COLLAPSE_DEFAULT_MS,
-    EXPAND_COLLAPSE_MAX_MS,
-    EXPAND_COLLAPSE_MIN_MS,
-    FOCUS_TRANSITION_DEFAULT_MS,
-    FOCUS_TRANSITION_MAX_MS,
-    FOCUS_TRANSITION_MIN_MS,
-    EVENT_PULSE_MS,
-    MAX_AMBER_PULSES_PER_EVENT,
-    MODAL_ANIMATION_MAX_MS,
-    SPINNER_MAX_FPS,
-    SPINNER_MIN_FPS,
-    TOAST_MAX_VISIBLE_MS,
-    TOAST_MIN_VISIBLE_MS,
-    AmberPulseTracker,
-    validate_timing_in_range,
+    EVENT_PULSE_DURATION_MS,
+    EXPAND_TRANSITION_MS,
+    EXPAND_TRANSITION_MS_MAX,
+    EXPAND_TRANSITION_MS_MIN,
+    FOCUS_TRANSITION_MS_MAX,
+    FOCUS_TRANSITION_MS_MIN,
+    MODAL_TRANSITION_MS,
+    MODAL_TRANSITION_MS_MAX,
+    SPINNER_FPS,
+    SPINNER_FPS_MAX,
+    SPINNER_FPS_MIN,
+    SPINNER_FRAME_INTERVAL_SECONDS,
+    TOAST_AMBER_PULSE_INTERVAL_MS,
+    TOAST_DURATION_SEC,
+    TOAST_DURATION_SEC_MAX,
+    TOAST_DURATION_SEC_MIN,
+    TOAST_MAX_AMBER_PULSES,
 )
+from kin.tui.palette import CommandPaletteModal, QuickSwitcherModal
+from kin.tui.shell import ConfirmationModal, Sidebar
+from kin.tui.state import UiEvent
+from kin.tui.widgets.agent_picker import AgentPickerWidget
+from kin.tui.widgets.approval_modals import (
+    ApproveConfirmModal,
+    DenyReasonModal,
+    EditConstraintsModal,
+    PatchApplyConfirmModal,
+)
+from kin.tui.widgets.compose_modal import ComposeMessageModal
+from kin.tui.widgets.dispatch_wizard import ContactPickerModal
 from kin.tui.widgets.exchange_timeline import ExchangeTimelineWidget
-from kin.tui.widgets.modal import ModalWidget
+from kin.tui.widgets.modal import ModalScreenWidget, ModalWidget
+from kin.tui.widgets.session_state_modal import SessionStateMenuModal
+from kin.tui.widgets.settings_screen import SettingsModal
+from kin.tui.widgets.sidebar_tree import SidebarTreeWidget
 from kin.tui.widgets.spinner import SpinnerWidget
 from kin.tui.widgets.toast import ToastWidget
 
 
-def test_focus_transition_timing_bounds():
-    """Assert focus transition duration stays strictly between 80ms and 120ms (§14.9 step 3)."""
-    assert FOCUS_TRANSITION_MIN_MS == 80
-    assert FOCUS_TRANSITION_MAX_MS == 120
-    assert validate_timing_in_range(FOCUS_TRANSITION_DEFAULT_MS, FOCUS_TRANSITION_MIN_MS, FOCUS_TRANSITION_MAX_MS)
+class _PausedTimer:
+    def __init__(self) -> None:
+        self.pause_count = 0
+
+    def pause(self) -> None:
+        self.pause_count += 1
 
 
-def test_event_pulse_duration_constant():
-    """Assert event pulse duration is exactly 120ms (§14.9 step 3)."""
-    assert EVENT_PULSE_MS == 120
+def test_central_motion_limits_match_specification() -> None:
+    assert (FOCUS_TRANSITION_MS_MIN, FOCUS_TRANSITION_MS_MAX) == (80, 120)
+    assert EVENT_PULSE_DURATION_MS == 120
+    assert (EXPAND_TRANSITION_MS_MIN, EXPAND_TRANSITION_MS_MAX) == (120, 180)
+    assert EXPAND_TRANSITION_MS_MIN <= EXPAND_TRANSITION_MS <= EXPAND_TRANSITION_MS_MAX
+    assert MODAL_TRANSITION_MS == 0 <= MODAL_TRANSITION_MS_MAX == 120
+    assert SPINNER_FPS_MIN <= SPINNER_FPS <= SPINNER_FPS_MAX
+    assert (SPINNER_FPS_MIN, SPINNER_FPS_MAX) == (8, 12)
+    assert SPINNER_FRAME_INTERVAL_SECONDS == 1.0 / SPINNER_FPS
+    assert (TOAST_DURATION_SEC_MIN, TOAST_DURATION_SEC_MAX) == (3, 6)
+    assert TOAST_DURATION_SEC_MIN <= TOAST_DURATION_SEC <= TOAST_DURATION_SEC_MAX
+    assert TOAST_MAX_AMBER_PULSES == 2
 
 
-def test_expand_collapse_timing_bounds():
-    """Assert expand/collapse duration stays strictly between 120ms and 180ms (§14.9 step 3)."""
-    assert EXPAND_COLLAPSE_MIN_MS == 120
-    assert EXPAND_COLLAPSE_MAX_MS == 180
-    assert validate_timing_in_range(EXPAND_COLLAPSE_DEFAULT_MS, EXPAND_COLLAPSE_MIN_MS, EXPAND_COLLAPSE_MAX_MS)
+def test_event_pulse_remains_time_based_for_the_full_120_ms_window() -> None:
+    event = UiEvent(
+        event_id="evt-live-pulse",
+        session_id="session-motion",
+        kind="message",
+        created_at="2026-08-05T12:00:00Z",
+        actor_username="agent",
+        presentation_class="message",
+        content="Live result",
+    )
+    appended_at = datetime(2026, 8, 5, 12, 0, 0, tzinfo=timezone.utc)
+    timeline = ExchangeTimelineWidget(events=[event])
+    timeline.live_appended_at_map[event.event_id] = appended_at
+    group = timeline.get_coalesced_groups()[0]
+
+    # Rendering frequency does not consume the pulse; elapsed time alone controls it.
+    for _ in range(3):
+        rendered = timeline._render_group_card(
+            group,
+            is_selected=False,
+            now_dt=appended_at + timedelta(milliseconds=119),
+        )
+        assert "[TAIL PULSE]" in rendered
+
+    expired = timeline._render_group_card(
+        group,
+        is_selected=False,
+        now_dt=appended_at + timedelta(milliseconds=120),
+    )
+    assert "[TAIL PULSE]" not in expired
 
 
-def test_modal_animation_duration_cap():
-    """Assert modal open/close animation duration is capped at 120ms on ModalWidget (§14.9 step 3)."""
-    m = ModalWidget()
-    assert m.max_animation_ms == MODAL_ANIMATION_MAX_MS == 120
+def test_spinner_uses_10_fps_and_renders_elapsed_time() -> None:
+    clock_value = [100.0]
+    spinner = SpinnerWidget(
+        label="Loading data",
+        now=datetime(2026, 8, 5, 8, 45, tzinfo=timezone.utc),
+        elapsed_clock=lambda: clock_value[0],
+    )
+    clock_value[0] = 165.0
+
+    assert spinner.fps == 10
+    assert spinner.frame_interval_seconds == 0.1
+    rendered = spinner.render()
+    assert "started 08:45:00" in rendered
+    assert "elapsed 01:05" in rendered
 
 
-def test_spinner_frame_rate_bounds_and_elapsed_label():
-    """Assert SpinnerWidget uses 8-12 FPS frame interval and renders timestamp label (§14.9 step 3)."""
-    sp = SpinnerWidget(label="Loading data")
-    assert sp.min_fps == SPINNER_MIN_FPS == 8
-    assert sp.max_fps == SPINNER_MAX_FPS == 12
-    assert 0.08 <= sp.frame_interval_seconds <= 0.13
-
-    out = sp.render()
-    assert "Loading data" in out
-    assert "(" in out and ")" in out  # Timestamp format (12:00:00)
+def test_toast_duration_is_clamped_to_three_through_six_seconds() -> None:
+    assert ToastWidget(duration_ms=100).duration_seconds == TOAST_DURATION_SEC_MIN
+    assert ToastWidget(duration_ms=4500).duration_seconds == 4.5
+    assert ToastWidget(duration_ms=99_000).duration_seconds == TOAST_DURATION_SEC_MAX
 
 
-def test_toast_duration_bounds():
-    """Assert ToastWidget visibility duration stays strictly between 3000ms and 6000ms (§14.9 step 3)."""
-    t = ToastWidget(message="Test", duration_ms=4000)
-    assert TOAST_MIN_VISIBLE_MS <= t.duration_ms <= TOAST_MAX_VISIBLE_MS
+def test_warning_toast_never_exceeds_two_amber_pulses() -> None:
+    toast = ToastWidget(message="Approval needed", severity="warning")
+    timer = _PausedTimer()
+    toast._amber_pulse_timer = timer
+    toast.amber_pulse_count = 1
+    toast._amber_pulse_active = True
+    toast.refresh = lambda **kwargs: None
 
-    t_out_of_bounds = ToastWidget(message="Test", duration_ms=99999)
-    assert t_out_of_bounds.duration_ms == TOAST_MAX_VISIBLE_MS == 6000
+    toast._advance_amber_pulse()  # first pulse off
+    toast._advance_amber_pulse()  # second pulse on
+    toast._advance_amber_pulse()  # second pulse off and timer paused
+    toast._advance_amber_pulse()  # defensive re-entry remains capped
+
+    assert toast.amber_pulse_count == TOAST_MAX_AMBER_PULSES
+    assert timer.pause_count >= 1
 
 
-def test_max_two_amber_pulses_per_event_cap():
-    """Assert ExchangeTimelineWidget AmberPulseTracker caps pulses at max 2 per event (§14.9 step 3)."""
-    timeline = ExchangeTimelineWidget()
-    tracker = timeline.pulse_tracker
-    event_id = "event-amber-99"
+def test_all_modal_screen_classes_are_instant_and_have_no_css_transition() -> None:
+    modal_classes = (
+        ModalScreenWidget,
+        ConfirmationModal,
+        ApproveConfirmModal,
+        DenyReasonModal,
+        EditConstraintsModal,
+        PatchApplyConfirmModal,
+        ComposeMessageModal,
+        SessionStateMenuModal,
+        GuideOverlayScreen,
+        HelpOverlayScreen,
+        CommandPaletteModal,
+        QuickSwitcherModal,
+        AgentPickerWidget,
+        ContactPickerModal,
+        SettingsModal,
+    )
+    assert MODAL_TRANSITION_MS == 0
+    for modal_class in modal_classes:
+        assert "transition:" not in getattr(modal_class, "DEFAULT_CSS", "")
+        assert ".animate(" not in inspect.getsource(modal_class)
 
-    assert tracker.trigger_pulse(event_id) is True
-    assert tracker.trigger_pulse(event_id) is True
-    assert tracker.trigger_pulse(event_id) is False  # Capped at 2
-    assert tracker.get_pulse_count(event_id) == 2
+    widget = ModalWidget()
+    assert widget.transition_duration_ms == 0
+    assert widget.max_animation_ms == MODAL_TRANSITION_MS_MAX
 
 
 @pytest.mark.asyncio
-async def test_keystrokes_always_win_same_frame_execution_real_app():
-    """Assert keypress during active application execution is processed same-frame via real KinApp pilot (§14.9 step 3)."""
-    app = KinApp(profile_name="test_keystroke_immediacy")
+async def test_expand_collapse_paths_schedule_150_ms_local_transitions(
+    tmp_path, monkeypatch
+) -> None:
+    app = KinApp(profile_name="motion-expand", profile_dir=tmp_path)
+    async with app.run_test(size=(120, 36)):
+        sidebar = app.sidebar
+        delays = []
+        callbacks = []
+        refresh_kwargs = []
+        app_refreshes = 0
 
+        def capture_timer(delay, callback, *args, **kwargs):
+            delays.append(delay)
+            callbacks.append(callback)
+            return _PausedTimer()
+
+        def capture_sidebar_refresh(*args, **kwargs):
+            refresh_kwargs.append(kwargs)
+
+        def capture_app_refresh(*args, **kwargs):
+            nonlocal app_refreshes
+            app_refreshes += 1
+
+        monkeypatch.setattr(sidebar, "set_timer", capture_timer)
+        monkeypatch.setattr(sidebar, "refresh", capture_sidebar_refresh)
+        monkeypatch.setattr(app, "refresh", capture_app_refresh)
+
+        sidebar.toggle_section_collapse("SPACES")
+        assert delays == [EXPAND_TRANSITION_MS / 1000.0]
+        assert sidebar._transitioning_section == "SPACES"
+        callbacks[0]()
+        assert sidebar._transitioning_section is None
+        assert refresh_kwargs == [{"layout": False}, {"layout": False}]
+        assert app_refreshes == 0
+
+        foundation_tree = SidebarTreeWidget()
+        await app.mount(foundation_tree)
+        foundation_delays = []
+        foundation_callbacks = []
+
+        def capture_foundation_timer(delay, callback, *args, **kwargs):
+            foundation_delays.append(delay)
+            foundation_callbacks.append(callback)
+            return _PausedTimer()
+
+        monkeypatch.setattr(foundation_tree, "set_timer", capture_foundation_timer)
+        foundation_tree.toggle_collapse()
+        assert foundation_delays == [EXPAND_TRANSITION_MS / 1000.0]
+        assert foundation_tree._transitioning_section == "workspaces"
+        foundation_callbacks[0]()
+        assert foundation_tree._transitioning_section is None
+
+        style_animations = []
+
+        def capture_style_animation(styles, attribute, value, *, duration, **kwargs):
+            style_animations.append((attribute, value, duration))
+
+        monkeypatch.setattr(type(sidebar.styles), "animate", capture_style_animation)
+        sidebar.set_collapsed(True, with_transition=True)
+        assert style_animations == [("width", 4, EXPAND_TRANSITION_MS / 1000.0)]
+
+        assert foundation_tree.expand_transition_duration_ms == EXPAND_TRANSITION_MS
+        assert sidebar.expand_transition_duration_ms == EXPAND_TRANSITION_MS
+
+
+@pytest.mark.asyncio
+async def test_keystrokes_win_while_spinner_and_toast_timers_are_active(
+    tmp_path,
+) -> None:
+    app = KinApp(profile_name="motion-keys", profile_dir=tmp_path)
     async with app.run_test(size=(120, 36)) as pilot:
-        # Switch tab to dispatch
-        app.canvas.set_active_tab_kind("dispatch")
+        spinner = SpinnerWidget(label="Working")
+        toast = ToastWidget(message="Check policy", severity="warning")
+        await app.mount(spinner, toast)
         await pilot.pause()
+
+        assert spinner._frame_timer is not None
+        assert toast._dismiss_timer is not None
+        assert toast._amber_pulse_timer is not None
+
+        app.set_focus(None)
+        await pilot.press("d")
         assert app.canvas.active_tab_kind == "dispatch"
 
-        # Switch tab to home
-        app.canvas.set_active_tab_kind("home")
-        await pilot.pause()
-        assert app.canvas.active_tab_kind == "home"
+
+@pytest.mark.asyncio
+async def test_ordinary_timer_updates_refresh_only_the_owning_widgets(
+    tmp_path, monkeypatch
+) -> None:
+    app = KinApp(profile_name="motion-reflow", profile_dir=tmp_path)
+    async with app.run_test(size=(120, 36)):
+        spinner = SpinnerWidget(label="Working")
+        toast = ToastWidget(message="Check policy", severity="warning")
+        await app.mount(spinner, toast)
+
+        app_refreshes = 0
+        spinner_refreshes = []
+        toast_refreshes = []
+
+        def capture_app_refresh(*args, **kwargs):
+            nonlocal app_refreshes
+            app_refreshes += 1
+
+        monkeypatch.setattr(app, "refresh", capture_app_refresh)
+        monkeypatch.setattr(
+            spinner, "refresh", lambda *args, **kwargs: spinner_refreshes.append(kwargs)
+        )
+        monkeypatch.setattr(
+            toast, "refresh", lambda *args, **kwargs: toast_refreshes.append(kwargs)
+        )
+
+        spinner.advance_frame()
+        toast._advance_amber_pulse()
+
+        assert spinner_refreshes == [{"layout": False}]
+        assert toast_refreshes == [{"layout": False}]
+        assert app_refreshes == 0
 
 
 @pytest.mark.asyncio
-async def test_ordinary_updates_never_reflow_whole_application_real_app():
-    """Assert tab switching and localized updates maintain DOM stability without unhandled layout crashes (§14.9 step 3)."""
-    app = KinApp(profile_name="test_reflow_isolation")
-
+async def test_toast_without_callback_hides_without_layout_reflow_when_timer_fires(tmp_path) -> None:
+    app = KinApp(profile_name="motion-toast", profile_dir=tmp_path)
     async with app.run_test(size=(120, 36)) as pilot:
-        # Measure initial screen layout
-        initial_children = len(app.screen.children)
-        assert initial_children > 0
-
-        # Switch tab to inbox
-        app.canvas.set_active_tab_kind("inbox")
-        await pilot.pause()
-        assert app.canvas.active_tab_kind == "inbox"
-
-        # Ensure container count is preserved
-        assert len(app.screen.children) == initial_children
-
-
-@pytest.mark.asyncio
-async def test_amber_pulse_cap_enforced_during_widget_render():
-    """Assert ExchangeTimelineWidget.pulse_tracker enforces pulse cap during actual widget rendering (§14.9 step 3)."""
-    from datetime import datetime, timezone
-    from kin.tui.state import UiEvent
-
-    evt = UiEvent(
-        event_id="evt-pulse-runtime-1",
-        session_id="sess-pulse",
-        kind="system_event",
-        created_at="2026-08-03T10:00:00Z",
-        actor_username="system",
-        presentation_class="message",
-        content="Testing pulse cap runtime enforcement",
-    )
-    now_dt = datetime.now(timezone.utc)
-    timeline = ExchangeTimelineWidget(events=[evt])
-    timeline.live_appended_at_map[evt.event_id] = now_dt
-
-    # First two renders trigger pulse (trigger_pulse returns True)
-    group = timeline.get_coalesced_groups()[0]
-    out1 = timeline._render_group_card(group, is_selected=False, now_dt=now_dt)
-    assert "[TAIL PULSE]" in out1
-
-    out2 = timeline._render_group_card(group, is_selected=False, now_dt=now_dt)
-    assert "[TAIL PULSE]" in out2
-
-    # Third render exceeds max cap of 2 (trigger_pulse returns False), pulse badge suppressed
-    out3 = timeline._render_group_card(group, is_selected=False, now_dt=now_dt)
-    assert "[TAIL PULSE]" not in out3
-
-
-@pytest.mark.asyncio
-async def test_spinner_periodic_frame_interval_timer_scheduled_on_mount():
-    """Assert SpinnerWidget schedules periodic frame advance timer using frame_interval_seconds on_mount (§14.9 step 3)."""
-    app = KinApp(profile_name="test_spinner_mount")
-    async with app.run_test(size=(120, 36)) as pilot:
-        sp = SpinnerWidget(label="Loading resources")
-        await app.mount(sp)
-        await pilot.pause()
-
-        # Verify frame_interval_seconds equals 1.0 / SPINNER_MAX_FPS
-        assert sp.frame_interval_seconds == 1.0 / SPINNER_MAX_FPS == 0.08333333333333333
-        await pilot.press("q")
-
-
-@pytest.mark.asyncio
-async def test_toast_dismissal_timer_scheduled_on_mount():
-    """Assert ToastWidget schedules automatic dismissal timer using duration_ms on_mount (§14.9 step 3)."""
-    app = KinApp(profile_name="test_toast_mount")
-    async with app.run_test(size=(120, 36)) as pilot:
-        dismissed = False
-
-        def _on_dismiss():
-            nonlocal dismissed
-            dismissed = True
-
-        toast = ToastWidget(message="Operation finished", duration_ms=3000, dismiss_callback=_on_dismiss)
+        toast = ToastWidget(message="Saved", duration_ms=3000)
         await app.mount(toast)
-        await pilot.pause()
+        assert toast.is_mounted
 
-        assert toast.duration_ms == 3000
         assert toast.trigger_dismiss() is True
-        assert dismissed is True
-        await pilot.press("q")
+        assert toast.styles.visibility == "hidden"
+        assert toast.is_mounted
+
+
+def test_toast_amber_pulse_interval_reuses_central_120_ms_token() -> None:
+    assert TOAST_AMBER_PULSE_INTERVAL_MS == EVENT_PULSE_DURATION_MS == 120
+
+
+def test_sidebar_instance_uses_central_expand_duration() -> None:
+    assert Sidebar().expand_transition_duration_ms == EXPAND_TRANSITION_MS

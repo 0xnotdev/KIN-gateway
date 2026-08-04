@@ -10,6 +10,7 @@ Covers:
 
 from pathlib import Path
 import pytest
+from rich.console import ColorSystem
 from textual.app import App, ComposeResult
 
 from kin.artifacts.vault import ArtifactMetadata
@@ -45,6 +46,16 @@ class ArenaSnapshotApp(App):
 
     def compose(self) -> ComposeResult:
         yield self.arena_widget
+
+
+def _snapshot_app(monkeypatch, **kwargs) -> ArenaSnapshotApp:
+    """Build an Arena harness with the same deterministic truecolor terminal as shell snapshots."""
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    app = ArenaSnapshotApp(**kwargs)
+    monkeypatch.setattr(type(app.console), "encoding", property(lambda _console: "utf-8"))
+    monkeypatch.setattr(app.console, "_color_system", ColorSystem.TRUECOLOR)
+    return app
 
 
 # -----------------------------------------------------------------------------
@@ -295,25 +306,25 @@ async def test_arena_breakpoint_specific_distinguishing_text_per_terminal_size(s
 # -----------------------------------------------------------------------------
 # Snapshots for Terminal Sizes and Event Variations (§14.8)
 # -----------------------------------------------------------------------------
-def test_arena_snapshot_cockpit_full_mode_160x44(snap_compare, sample_session_summary, events_all_7_classes):
+def test_arena_snapshot_cockpit_full_mode_160x44(snap_compare, monkeypatch, sample_session_summary, events_all_7_classes):
     """Snapshot: Arena Cockpit 3-lane mode at 160x44 resolution (§14.8)."""
-    app = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
+    app = _snapshot_app(monkeypatch, session_summary=sample_session_summary, events=events_all_7_classes)
     assert snap_compare(app, terminal_size=(160, 44))
 
 
-def test_arena_snapshot_docked_standard_mode_120x36(snap_compare, sample_session_summary, events_all_7_classes):
+def test_arena_snapshot_docked_standard_mode_120x36(snap_compare, monkeypatch, sample_session_summary, events_all_7_classes):
     """Snapshot: Arena Docked Inspector mode at 120x36 resolution (§14.8)."""
-    app = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
+    app = _snapshot_app(monkeypatch, session_summary=sample_session_summary, events=events_all_7_classes)
     assert snap_compare(app, terminal_size=(120, 36))
 
 
-def test_arena_snapshot_compact_mode_90x28(snap_compare, sample_session_summary, events_all_7_classes):
+def test_arena_snapshot_compact_mode_90x28(snap_compare, monkeypatch, sample_session_summary, events_all_7_classes):
     """Snapshot: Arena Compact mode at 90x28 resolution (§14.8)."""
-    app = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
+    app = _snapshot_app(monkeypatch, session_summary=sample_session_summary, events=events_all_7_classes)
     assert snap_compare(app, terminal_size=(90, 28))
 
 
-def test_arena_snapshot_minimal_mode_80x24(snap_compare, sample_session_summary, events_all_7_classes):
+def test_arena_snapshot_minimal_mode_80x24(snap_compare, monkeypatch, sample_session_summary, events_all_7_classes):
     """Snapshot: Arena Minimal mode at 80x24 resolution (§14.8)."""
-    app = ArenaSnapshotApp(session_summary=sample_session_summary, events=events_all_7_classes)
+    app = _snapshot_app(monkeypatch, session_summary=sample_session_summary, events=events_all_7_classes)
     assert snap_compare(app, terminal_size=(80, 24))

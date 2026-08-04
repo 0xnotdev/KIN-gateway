@@ -7,7 +7,13 @@ from typing import Callable, Optional
 
 from textual.widgets import Static
 
-from kin.tui.motion import TOAST_MAX_VISIBLE_MS, TOAST_MIN_VISIBLE_MS
+from kin.tui.motion import (
+    TOAST_AMBER_PULSE_INTERVAL_MS,
+    TOAST_DURATION_SEC,
+    TOAST_MAX_AMBER_PULSES,
+    clamp_toast_duration_seconds,
+    milliseconds_to_seconds,
+)
 from kin.tui.redaction import redact_ui_text
 from kin.tui.tokens import get_glyph
 from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
@@ -56,22 +62,56 @@ class ToastWidget(LifecycleWidgetMixin, Static):
         self.message = message
         self.severity = severity.lower() if severity.lower() in self.SEVERITY_GLYPHS else "info"
         self.dismiss_callback = dismiss_callback
-        req_duration = duration_ms if duration_ms is not None else 4000
-        self.duration_ms = min(TOAST_MAX_VISIBLE_MS, max(TOAST_MIN_VISIBLE_MS, req_duration))
+        requested_seconds = (
+            duration_ms / 1000.0 if duration_ms is not None else TOAST_DURATION_SEC
+        )
+        self.duration_seconds = clamp_toast_duration_seconds(requested_seconds)
+        self.duration_ms = int(self.duration_seconds * 1000)
+        self.amber_pulse_count = 0
+        self._amber_pulse_active = False
+        self._amber_pulse_timer = None
+        self._dismiss_timer = None
 
     def on_mount(self) -> None:
         """Schedule automatic dismissal timer using self.duration_ms (§14.5, §14.9 step 3)."""
-        try:
-            self.set_timer(self.duration_ms / 1000.0, self.trigger_dismiss)
-        except Exception:
-            pass
+        self._dismiss_timer = self.set_timer(self.duration_seconds, self.trigger_dismiss)
+        if self.severity == "warning":
+            self.amber_pulse_count = 1
+            self._amber_pulse_active = True
+            self._amber_pulse_timer = self.set_interval(
+                milliseconds_to_seconds(TOAST_AMBER_PULSE_INTERVAL_MS),
+                self._advance_amber_pulse,
+            )
+
+    def _advance_amber_pulse(self) -> None:
+        """Advance a warning toast through no more than two amber pulse cycles."""
+        if self._amber_pulse_active:
+            self._amber_pulse_active = False
+            if self.amber_pulse_count >= TOAST_MAX_AMBER_PULSES:
+                if self._amber_pulse_timer is not None:
+                    self._amber_pulse_timer.pause()
+        else:
+            if self.amber_pulse_count >= TOAST_MAX_AMBER_PULSES:
+                if self._amber_pulse_timer is not None:
+                    self._amber_pulse_timer.pause()
+                return
+            self.amber_pulse_count += 1
+            self._amber_pulse_active = True
+        self.refresh(layout=False)
 
     def trigger_dismiss(self) -> bool:
         """Trigger optional dismiss callback (§14.5)."""
+        dismissed = False
         if self.dismiss_callback:
             self.dismiss_callback()
-            return True
-        return False
+            dismissed = True
+        if self.is_mounted:
+            # Visibility is paint-only. Removing the widget would ask its parent to
+            # recompute layout, violating the ordinary-update reflow guarantee.
+            self.styles.visibility = "hidden"
+            self.refresh(layout=False)
+            dismissed = True
+        return dismissed
 
     def render(self) -> str:
         state = self.lifecycle_state
@@ -105,6 +145,8 @@ class ToastWidget(LifecycleWidgetMixin, Static):
             "error": f"bold {err}",
         }
         style = severity_styles.get(self.severity, accent)
+        if self.severity == "warning" and self._amber_pulse_active:
+            style = f"bold {warn}"
 
         scrubbed_msg = redact_ui_text(self.message)
 

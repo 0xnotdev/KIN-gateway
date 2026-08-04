@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Tuple
 
 from textual.widgets import Static
 
+from kin.tui.motion import EXPAND_TRANSITION_MS, milliseconds_to_seconds
 from kin.tui.tokens import get_glyph
 from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
 from kin.tui.widgets.search_field import SearchFieldWidget
@@ -45,6 +46,8 @@ class SidebarTreeWidget(LifecycleWidgetMixin, Static):
         self.section_collapse: Dict[str, bool] = {}
         self.selected_index: int = 0
         self.collapsed: bool = False
+        self.expand_transition_duration_ms = EXPAND_TRANSITION_MS
+        self._transitioning_section: Optional[str] = None
         self.search_field = SearchFieldWidget(
             placeholder="Filter Tree...",
             on_query_change=self.handle_filter_change,
@@ -122,7 +125,23 @@ class SidebarTreeWidget(LifecycleWidgetMixin, Static):
         node = self.get_selected_node()
         if node and node.kind == "section":
             self.section_collapse[node.section] = not self.section_collapse.get(node.section, False)
-            self.refresh()
+            self._begin_expand_transition(node.section)
+
+    def _begin_expand_transition(self, section: str) -> None:
+        """Show a local transition affordance for the spec-defined window."""
+        self._transitioning_section = section
+        self.refresh(layout=False)
+        if self.is_mounted:
+            self.set_timer(
+                milliseconds_to_seconds(self.expand_transition_duration_ms),
+                self._finish_expand_transition,
+            )
+        else:
+            self._transitioning_section = None
+
+    def _finish_expand_transition(self) -> None:
+        self._transitioning_section = None
+        self.refresh(layout=False)
 
     def render(self) -> str:
         state = self.lifecycle_state
@@ -164,6 +183,8 @@ class SidebarTreeWidget(LifecycleWidgetMixin, Static):
                 is_col = self.section_collapse.get(node.section, False)
                 arrow = "›" if is_col else "▼"
                 lbl = f"[bold dim]{arrow} {node.title}[/bold dim]"
+                if node.section == self._transitioning_section:
+                    lbl = f"[reverse]{lbl}[/reverse]"
             else:
                 badge_str = f" [{accent}]({node.badge})[/{accent}]" if node.badge else ""
                 lbl = f"{node.title}{badge_str}"

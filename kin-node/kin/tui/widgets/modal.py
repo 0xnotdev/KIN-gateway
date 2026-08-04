@@ -10,7 +10,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
-from kin.tui.motion import MODAL_ANIMATION_MAX_MS
+from kin.tui.motion import MODAL_TRANSITION_MS, MODAL_TRANSITION_MS_MAX
 from kin.tui.redaction import redact_ui_text
 from kin.tui.tokens import get_glyph
 from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
@@ -50,7 +50,8 @@ class ModalWidget(LifecycleWidgetMixin, Static):
         self.cancel_label = cancel_label
         self.on_confirm = on_confirm
         self.on_cancel = on_cancel
-        self.max_animation_ms = MODAL_ANIMATION_MAX_MS
+        self.transition_duration_ms = MODAL_TRANSITION_MS
+        self.max_animation_ms = MODAL_TRANSITION_MS_MAX
 
     def render(self) -> str:
         err = self._c("state.error", "#f7768e")

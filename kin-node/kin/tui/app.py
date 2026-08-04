@@ -794,7 +794,7 @@ class KinApp(App[None]):
 
     def action_toggle_sidebar(self) -> None:
         new_collapsed = not self.sidebar.collapsed
-        self.sidebar.set_collapsed(new_collapsed)
+        self.sidebar.set_collapsed(new_collapsed, with_transition=True)
         self.prefs.sidebar_collapsed = new_collapsed
         save_ui_preferences(self.prefs, self.profile_name)
 

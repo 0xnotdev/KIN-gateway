@@ -25,6 +25,7 @@ from kin.tui.layout import (
     clamp_inspector_width,
     clamp_sidebar_width,
 )
+from kin.tui.motion import EXPAND_TRANSITION_MS, milliseconds_to_seconds
 from kin.tui.state import HealthSnapshot
 from kin.tui.tokens import get_glyph
 from kin.tui.widgets.agents_screen import AgentsScreenWidget
@@ -115,6 +116,8 @@ class Sidebar(LifecycleWidgetMixin, Static):
 
         # Persistent section collapse state (§4.3)
         self.section_collapse: Dict[str, bool] = section_collapse or {}
+        self.expand_transition_duration_ms = EXPAND_TRANSITION_MS
+        self._transitioning_section: Optional[str] = None
 
         # Dynamically build real tree nodes (§A2)
         self.nodes: List[SidebarNode] = []
@@ -216,12 +219,17 @@ class Sidebar(LifecycleWidgetMixin, Static):
         if not self.collapsed:
             self.styles.width = self.sidebar_width
 
-    def set_collapsed(self, collapsed: bool) -> None:
+    def set_collapsed(self, collapsed: bool, *, with_transition: bool = False) -> None:
         self.collapsed = collapsed
-        if self.collapsed:
-            self.styles.width = 4
+        target_width = 4 if self.collapsed else self.sidebar_width
+        if with_transition and self.is_mounted:
+            self.styles.animate(
+                "width",
+                value=target_width,
+                duration=milliseconds_to_seconds(self.expand_transition_duration_ms),
+            )
         else:
-            self.styles.width = self.sidebar_width
+            self.styles.width = target_width
 
     def get_visible_nodes(self) -> List[SidebarNode]:
         """Compute list of visible nodes respecting section collapse and filter query."""
@@ -295,8 +303,24 @@ class Sidebar(LifecycleWidgetMixin, Static):
 
         current = self.section_collapse.get(sec, False)
         self.section_collapse[sec] = not current
-        self.refresh()
+        self._begin_expand_transition(sec)
         return self.section_collapse[sec]
+
+    def _begin_expand_transition(self, section: str) -> None:
+        """Render the section transition locally for the centralized window."""
+        self._transitioning_section = section
+        self.refresh(layout=False)
+        if self.is_mounted:
+            self.set_timer(
+                milliseconds_to_seconds(self.expand_transition_duration_ms),
+                self._finish_expand_transition,
+            )
+        else:
+            self._transitioning_section = None
+
+    def _finish_expand_transition(self) -> None:
+        self._transitioning_section = None
+        self.refresh(layout=False)
 
     def remove_node(self, node_id: str) -> Tuple[bool, Optional[str]]:
         """Remove a node from tree and execute sticky selection fallback (§4.3).
@@ -357,6 +381,8 @@ class Sidebar(LifecycleWidgetMixin, Static):
                 is_col = self.section_collapse.get(node.section, False)
                 arrow = "›" if is_col else "▼"
                 label = f"{arrow} [bold]{node.title}[/bold]"
+                if node.section == self._transitioning_section:
+                    label = f"[reverse]{label}[/reverse]"
                 if is_selected:
                     lines.append(f"[bold {accent}]{prefix}{label}[/bold {accent}]")
                 else:
