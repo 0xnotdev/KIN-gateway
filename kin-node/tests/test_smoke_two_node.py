@@ -39,3 +39,27 @@ def test_two_node_v11_session_lifecycle_real_sockets():
     assert 'kinds=["task_request", "acceptance", "question", "answer", "final_result"]' in res.stdout
     assert "status=completed, event_count=5" in res.stdout
     assert "PASS: V1.1" in res.stdout
+
+
+@pytest.mark.smoke
+def test_two_node_v11_phase_b_real_relay_restart_expiry_and_artifact():
+    """Run every non-TUI Phase B gate over real relay and node subprocesses."""
+    script_path = Path(__file__).parent.parent / "scripts" / "smoke_two_node.py"
+    res = subprocess.run(
+        [sys.executable, str(script_path), "--protocol", "v11-phase-b"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    print(res.stdout, end="")
+    print(res.stderr, end="", file=sys.stderr)
+    assert res.returncode == 0, (
+        f"V1.1 Phase B smoke failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
+    )
+    assert "dispatch=queued, queued_messages=1, first_poll=1" in res.stdout
+    assert "mailbox_after_ack=0, second_poll=0, bob_event_count=1" in res.stdout
+    assert "reconstructed_status=active, reconstructed_events=4" in res.stdout
+    assert "final_status=completed, final_events=5" in res.stdout
+    assert "success=False" in res.stdout and "has expired" in res.stdout and "decision=None" in res.stdout
+    assert "delivery=direct" in res.stdout and "offered_by=alice, source=peer_received" in res.stdout
+    assert "PASS: V1.1 Phase B" in res.stdout

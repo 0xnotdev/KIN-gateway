@@ -505,6 +505,7 @@ def ask(
                     "Content-Type": "application/json",
                     "X-Signature": x_signature,
                 },
+                timeout=30.0,
             )
             r.raise_for_status()
             res = r.json()

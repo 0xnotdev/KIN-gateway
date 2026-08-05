@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -82,6 +83,7 @@ class TwoNodeSmokeHarness:
         self.bob_env = self._profile_environment(self.bob_home, python_path)
         self.started = False
         self.enable_v11 = enable_v11
+        self.node_processes: dict[str, subprocess.Popen[bytes]] = {}
 
     @property
     def alice_profile_dir(self) -> Path:
@@ -130,6 +132,12 @@ class TwoNodeSmokeHarness:
                 raise RuntimeError(f"Alice failed to sync Bob's real card: {alice_cards}")
             if bob_cards.get("source") != "network" or bob_cards.get("card_count") != 1:
                 raise RuntimeError(f"Bob failed to sync Alice's real card: {bob_cards}")
+            alice_capabilities = self.run_worker("alice", "sync-capabilities", "--peer", "bob")
+            bob_capabilities = self.run_worker("bob", "sync-capabilities", "--peer", "alice")
+            if alice_capabilities.get("source") != "network":
+                raise RuntimeError(f"Alice failed to cache Bob's real capabilities: {alice_capabilities}")
+            if bob_capabilities.get("source") != "network":
+                raise RuntimeError(f"Bob failed to cache Alice's real capabilities: {bob_capabilities}")
         self.started = True
         return self
 
@@ -272,6 +280,7 @@ class TwoNodeSmokeHarness:
             stderr=subprocess.PIPE,
         )
         self.processes.append((f"{profile}-node", process))
+        self.node_processes[profile] = process
         for _ in range(40):
             try:
                 response = httpx.get(
@@ -282,6 +291,44 @@ class TwoNodeSmokeHarness:
             except httpx.HTTPError:
                 time.sleep(0.2)
         raise RuntimeError(f"{profile} node failed to start on its real socket")
+
+    def stop_node(self, profile: str, *, crash: bool = True) -> int:
+        """Stop a real node, using SIGTERM for the Phase B crash simulation."""
+        process = self.node_processes.get(profile)
+        if process is None:
+            raise RuntimeError(f"No {profile} node process has been started")
+        if process.poll() is None:
+            if crash:
+                process.send_signal(signal.SIGTERM)
+            else:
+                process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+        print(
+            f"SMOKE: {profile} node stopped via {'SIGTERM' if crash else 'terminate'} "
+            f"with returncode={process.returncode}",
+            file=sys.stderr,
+        )
+        return int(process.returncode or 0)
+
+    def restart_node(self, profile: str) -> subprocess.Popen[bytes]:
+        """Restart a node on its original port against its unchanged profile directory."""
+        if profile == "alice":
+            port, environment = self.alice_port, self.alice_env
+        elif profile == "bob":
+            port, environment = self.bob_port, self.bob_env
+        else:
+            raise ValueError(f"Unknown profile: {profile}")
+        self._start_node(profile, port, environment)
+        print(
+            f"SMOKE: {profile} node restarted on port={port} with profile_dir="
+            f"{self.alice_profile_dir if profile == 'alice' else self.bob_profile_dir}",
+            file=sys.stderr,
+        )
+        return self.node_processes[profile]
 
     def _pair_profiles(self) -> None:
         alice_pair = self._start_pair("alice", "bob", self.alice_env)
@@ -432,6 +479,176 @@ class TwoNodeSmokeHarness:
             "bob_received": bob_received,
             "alice_final": alice_final,
             "bob_final": bob_final,
+        }
+
+    def run_v11_phase_b(self) -> dict[str, Any]:
+        """Exercise Phase B relay, restart, expiry, and artifact persistence gates."""
+        # 1. Bob is offline at dispatch; the real relay retains exactly one envelope.
+        self.stop_node("bob", crash=True)
+        relay_dispatch = self.run_worker(
+            "alice",
+            "dispatch",
+            "--peer",
+            "bob",
+            "--sender-agent",
+            "alice_agent",
+            "--receiver-agent",
+            "bob_agent",
+            "--goal",
+            "Queue this V1.1 session while Bob is offline",
+        )
+        if relay_dispatch.get("status") != "queued":
+            raise RuntimeError(f"Offline dispatch did not queue at real relay: {relay_dispatch}")
+        relay_session_id = str(relay_dispatch["session_id"])
+        queued_mailbox = self.run_worker("bob", "relay-inbox")
+        if queued_mailbox.get("message_count") != 1 or queued_mailbox.get("senders") != ["alice"]:
+            raise RuntimeError(f"Real relay mailbox did not retain Alice's envelope: {queued_mailbox}")
+
+        self.restart_node("bob")
+        first_poll = self.run_worker("bob", "poll-relay")
+        bob_relay_received = self.run_worker("bob", "inspect", "--session", relay_session_id)
+        empty_mailbox = self.run_worker("bob", "relay-inbox")
+        second_poll = self.run_worker("bob", "poll-relay")
+        bob_after_second_poll = self.run_worker("bob", "inspect", "--session", relay_session_id)
+        if first_poll.get("processed_count") != 1:
+            raise RuntimeError(f"Bob's first real relay poll did not process one envelope: {first_poll}")
+        if not bob_relay_received.get("found") or bob_relay_received.get("event_count") != 1:
+            raise RuntimeError(f"Bob did not persist relay-delivered session: {bob_relay_received}")
+        if empty_mailbox.get("message_count") != 0 or second_poll.get("processed_count") != 0:
+            raise RuntimeError(
+                f"Relay ACK/idempotency failed: mailbox={empty_mailbox}, second_poll={second_poll}"
+            )
+        if bob_after_second_poll.get("event_count") != 1:
+            raise RuntimeError(f"Second fetch duplicated Bob's event: {bob_after_second_poll}")
+
+        # 2. Crash/restart Alice mid-session and reconstruct exclusively from persisted state.
+        restart_dispatch = self.run_worker(
+            "alice",
+            "dispatch",
+            "--peer",
+            "bob",
+            "--sender-agent",
+            "alice_agent",
+            "--receiver-agent",
+            "bob_agent",
+            "--goal",
+            "Reconstruct this active session after Alice crashes",
+        )
+        restart_session_id = str(restart_dispatch["session_id"])
+        self.run_worker(
+            "bob", "respond", "--session", restart_session_id,
+            "--decision", "accept", "--agent", "bob_agent", "--text", "Accepted before crash",
+        )
+        self.run_worker(
+            "alice", "message", "--session", restart_session_id, "--kind", "question",
+            "--actor-agent", "alice_agent", "--text", "Will this survive SIGTERM?",
+        )
+        self.run_worker(
+            "bob", "message", "--session", restart_session_id, "--kind", "answer",
+            "--actor-agent", "bob_agent", "--text", "The SQLite audit trail will survive.",
+        )
+        before_crash = self.run_worker("alice", "inspect", "--session", restart_session_id)
+        if before_crash.get("status") != "active" or before_crash.get("event_count") != 4:
+            raise RuntimeError(f"Restart scenario was not active at crash point: {before_crash}")
+        crash_returncode = self.stop_node("alice", crash=True)
+        self.restart_node("alice")
+        reconstructed = self.run_worker("alice", "reconstruct", "--session", restart_session_id)
+        if reconstructed.get("status") != "active" or reconstructed.get("event_count") != 4:
+            raise RuntimeError(f"Alice failed to reconstruct active state after SIGTERM: {reconstructed}")
+        self.run_worker(
+            "bob", "message", "--session", restart_session_id, "--kind", "final_result",
+            "--actor-agent", "bob_agent", "--text", "Restart reconstruction completed.",
+        )
+        restart_final = self.run_worker("alice", "inspect", "--session", restart_session_id)
+        if restart_final.get("status") != "completed" or restart_final.get("event_count") != 5:
+            raise RuntimeError(f"Restarted Alice missed or duplicated terminal event: {restart_final}")
+
+        # 3. A genuinely elapsed, test-shortened approval is rejected by the real TUI command.
+        expiry_dispatch = self.run_worker(
+            "alice", "dispatch", "--peer", "bob", "--sender-agent", "alice_agent",
+            "--receiver-agent", "bob_agent", "--goal", "Expire a real pending approval",
+        )
+        expiry_session_id = str(expiry_dispatch["session_id"])
+        self.run_worker(
+            "bob", "respond", "--session", expiry_session_id, "--decision", "accept",
+            "--agent", "bob_agent", "--text", "Accepted for expiry proof",
+        )
+        approval = self.run_worker(
+            "alice", "create-expiring-approval", "--session", expiry_session_id,
+            "--agent", "alice_agent", "--expiry-seconds", "0.5",
+        )
+        time.sleep(0.8)
+        expiry_decision = self.run_worker(
+            "alice", "decide-approval", "--session", expiry_session_id,
+            "--approval", str(approval["approval_id"]), "--decision", "approve_once",
+        )
+        if expiry_decision.get("success") is not False:
+            raise RuntimeError(f"Expired approval decision unexpectedly succeeded: {expiry_decision}")
+        if "has expired" not in str(expiry_decision.get("error")) or expiry_decision.get("decision") is not None:
+            raise RuntimeError(f"Expired approval did not return the specific preserved-state error: {expiry_decision}")
+
+        # 4. A peer-received artifact remains decryptable with its provenance after Bob restarts.
+        artifact_dispatch = self.run_worker(
+            "alice", "dispatch", "--peer", "bob", "--sender-agent", "alice_agent",
+            "--receiver-agent", "bob_agent", "--goal", "Persist artifact metadata across Bob restart",
+        )
+        artifact_session_id = str(artifact_dispatch["session_id"])
+        self.run_worker(
+            "bob", "respond", "--session", artifact_session_id, "--decision", "accept",
+            "--agent", "bob_agent", "--text", "Accepted for artifact proof",
+        )
+        artifact_text = "Phase B restart-persistent artifact payload"
+        artifact_offer = self.run_worker(
+            "alice", "artifact-offer", "--session", artifact_session_id, "--text", artifact_text,
+        )
+        if artifact_offer.get("delivery") != "direct":
+            raise RuntimeError(f"Artifact was not offered over the real Bob node: {artifact_offer}")
+        artifact_id = str(artifact_offer["artifact_id"])
+        artifact_before = self.run_worker("bob", "inspect-artifact", "--artifact", artifact_id)
+        self.stop_node("bob", crash=True)
+        self.restart_node("bob")
+        artifact_after = self.run_worker("bob", "inspect-artifact", "--artifact", artifact_id)
+        if artifact_before != artifact_after:
+            raise RuntimeError(
+                f"Artifact metadata/content changed across Bob restart: before={artifact_before}, after={artifact_after}"
+            )
+        if (
+            artifact_after.get("sha256") != artifact_after.get("computed_sha256")
+            or artifact_after.get("sha256") != artifact_offer.get("sha256")
+            or artifact_after.get("offered_by") != "alice"
+            or artifact_after.get("source") != "peer_received"
+            or artifact_after.get("content") != artifact_text
+        ):
+            raise RuntimeError(f"Restarted artifact proof failed hash/provenance checks: {artifact_after}")
+
+        return {
+            "relay": {
+                "session_id": relay_session_id,
+                "dispatch": relay_dispatch,
+                "queued_mailbox": queued_mailbox,
+                "first_poll": first_poll,
+                "empty_mailbox": empty_mailbox,
+                "second_poll": second_poll,
+                "bob_after_second_poll": bob_after_second_poll,
+            },
+            "restart": {
+                "session_id": restart_session_id,
+                "sigterm_returncode": crash_returncode,
+                "before_crash": before_crash,
+                "reconstructed": reconstructed,
+                "final": restart_final,
+            },
+            "expiry": {
+                "session_id": expiry_session_id,
+                "approval": approval,
+                "decision": expiry_decision,
+            },
+            "artifact": {
+                "session_id": artifact_session_id,
+                "offer": artifact_offer,
+                "before_restart": artifact_before,
+                "after_restart": artifact_after,
+            },
         }
 
     def run_legacy_task_lifecycle(self) -> dict[str, Any]:

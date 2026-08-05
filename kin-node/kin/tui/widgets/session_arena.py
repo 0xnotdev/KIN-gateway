@@ -100,6 +100,8 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self.last_arena_error: Optional[RecoverableError] = None
         self.last_trust_error: Optional[str] = None
         self.breakpoint: Breakpoint = "wide"
+        self.is_polling_active: bool = False
+        self._poll_generation: int = 0
 
         # Phase D layout & lane state (§5.3, §14.8 Phase D)
         self.focus_mode: bool = False
@@ -663,15 +665,17 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
     def on_mount(self) -> None:
         """Lifecycle hook when widget is mounted to app (§14.8 Phase C2 Round 2)."""
         self.set_reduced_motion(self._is_reduced_motion_active() or self.reduced_motion)
+        self._poll_generation += 1
         self.is_polling_active = True
         if self.session_id:
-            self.run_event_polling_worker()
+            self.run_event_polling_worker(self._poll_generation)
 
     def on_unmount(self) -> None:
         """Lifecycle hook when widget is unmounted from app (§14.8 Phase C2 Round 2)."""
         self.is_polling_active = False
+        self._poll_generation += 1
 
-    def _run_event_polling_worker_logic(self) -> None:
+    def _run_event_polling_worker_logic(self, generation: Optional[int] = None) -> None:
         """Core polling worker logic with incremental cursor filtering (§14.8 Phase C2 Round 2)."""
         import time
 
@@ -679,12 +683,21 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         if not self.session_id:
             return
 
+        worker_generation = self._poll_generation if generation is None else generation
         seen_ids: Set[str] = {e.event_id for e in (self.events or []) if getattr(e, "event_id", None)}
         max_order: Optional[int] = max([e.event_order for e in (self.events or []) if getattr(e, "event_order", None) is not None], default=None)
         max_created: Optional[str] = max([e.created_at for e in (self.events or []) if getattr(e, "created_at", None)], default=None)
 
-        while getattr(self, "is_polling_active", False):
+        while (
+            getattr(self, "is_polling_active", False)
+            and worker_generation == self._poll_generation
+        ):
             time.sleep(getattr(self, "polling_interval_sec", 0.5))
+            if (
+                not getattr(self, "is_polling_active", False)
+                or worker_generation != self._poll_generation
+            ):
+                break
             try:
                 fetched = get_session_events(
                     self.profile_dir,
@@ -710,9 +723,9 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
                 convert_exception_to_recoverable_error(exc, self.profile_dir)
 
     @work(thread=True, exclusive=True, name="arena_event_poller")
-    def run_event_polling_worker(self) -> None:
+    def run_event_polling_worker(self, generation: Optional[int] = None) -> None:
         """Background polling worker fetching new session events off main thread (§14.8 Phase C2 Round 2)."""
-        self._run_event_polling_worker_logic()
+        self._run_event_polling_worker_logic(generation)
 
     def _render_needs_you_queue(self) -> str:
         warn = self._c("state.waiting", "#e0af68")

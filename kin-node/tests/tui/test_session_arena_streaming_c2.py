@@ -133,6 +133,27 @@ def test_worker_standing_requirement_guard_prevents_polling_when_session_id_unsp
         assert arena.session_summary is None or getattr(arena, "events", []) == []
 
 
+def test_stale_polling_generation_cannot_resume_after_remount(monkeypatch):
+    """An unmounted worker must not revive when a later mount sets the shared flag true."""
+    arena = SessionArenaWidget(session_id="sess-remount")
+    arena.is_polling_active = True
+    arena._poll_generation = 3
+    fetch_calls = []
+
+    def advance_to_new_mount(_seconds):
+        arena._poll_generation = 4
+
+    monkeypatch.setattr("time.sleep", advance_to_new_mount)
+    monkeypatch.setattr(
+        "kin.tui.widgets.session_arena.get_session_events",
+        lambda *args, **kwargs: fetch_calls.append((args, kwargs)) or [],
+    )
+
+    arena._run_event_polling_worker_logic(generation=3)
+
+    assert fetch_calls == []
+
+
 # -----------------------------------------------------------------------------
 # 5. Incremental Seen-Event-ID & Cursor Query Test (§14.8 Phase C2 Round 2)
 # -----------------------------------------------------------------------------
@@ -400,4 +421,3 @@ def test_stress_10k_events_31_ev_sec_zero_data_loss_and_sql_row_bounding(tmp_pat
     # Assert 100% data retention and strictly 35 SQL rows fetched (not 10,035)
     assert len(incremental) == 35
     assert session_event_rows_fetched == 35
-

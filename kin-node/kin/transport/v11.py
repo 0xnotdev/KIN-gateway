@@ -96,6 +96,42 @@ def _iso_now(now: datetime.datetime | None = None) -> str:
     return res
 
 
+def _queue_relay_envelope(
+    client: httpx.Client,
+    relay_url: str,
+    recipient_username: str,
+    sender_username: str,
+    encrypted_payload: bytes,
+) -> httpx.Response:
+    """Queue one encrypted V1.1 envelope using the relay's real HTTP contract."""
+    return client.post(
+        f"{relay_url.rstrip('/')}/relay/mailbox/{recipient_username}",
+        json={
+            "sender_username": sender_username,
+            "encrypted_blob": encrypted_payload.hex(),
+        },
+    )
+
+
+def _relay_auth_headers(
+    username: str,
+    private_key: ed25519.Ed25519PrivateKey,
+    *,
+    now: datetime.datetime | None = None,
+    acknowledgement_body: str | None = None,
+) -> dict[str, str]:
+    """Build relay-compatible hex signatures for inbox reads and bound ACKs."""
+    timestamp = _iso_now(now)
+    canonical = f"{username}:{timestamp}"
+    if acknowledgement_body is not None:
+        canonical = f"{canonical}:{acknowledgement_body}"
+    return {
+        "X-Username": username,
+        "X-Timestamp": timestamp,
+        "X-Signature": private_key.sign(canonical.encode("utf-8")).hex(),
+    }
+
+
 def _resolve_peer_contact_info(
     conn: sqlite3.Connection, peer_username: str
 ) -> tuple[str | None, bytes | None, ed25519.Ed25519PublicKey | None]:
@@ -852,13 +888,12 @@ def ingest_envelope(
                 try:
                     raw_bytes = json.dumps(accept_env_dict, sort_keys=True).encode("utf-8")
                     enc_payload = encrypt_for_recipient(recip_x255_priv, sender_x255_bytes, raw_bytes)
-                    cli.post(
-                        f"{relay_url.rstrip('/')}/relay/mailbox",
-                        json={
-                            "recipient_username": env.actor_username,
-                            "sender_username": my_username,
-                            "payload": enc_payload.hex(),
-                        },
+                    _queue_relay_envelope(
+                        cli,
+                        relay_url,
+                        env.actor_username,
+                        my_username,
+                        enc_payload,
                     )
                 except Exception:
                     pass
@@ -1017,13 +1052,12 @@ def dispatch_session(
         try:
             raw_bytes = json.dumps(env_dict, sort_keys=True).encode("utf-8")
             enc_payload = encrypt_for_recipient(sender_x25519_privkey, recip_x255, raw_bytes)
-            relay_resp = client.post(
-                f"{relay_url.rstrip('/')}/relay/mailbox",
-                json={
-                    "recipient_username": peer_username,
-                    "sender_username": sender_username,
-                    "payload": enc_payload.hex(),
-                },
+            relay_resp = _queue_relay_envelope(
+                client,
+                relay_url,
+                peer_username,
+                sender_username,
+                enc_payload,
             )
             if relay_resp.status_code == 200:
                 queued_at_relay = True
@@ -1126,13 +1160,12 @@ def send_session_message(
         try:
             raw_bytes = json.dumps(env_dict, sort_keys=True).encode("utf-8")
             enc_payload = encrypt_for_recipient(owner_x25519_privkey, recip_x255, raw_bytes)
-            relay_resp = client.post(
-                f"{relay_url.rstrip('/')}/relay/mailbox",
-                json={
-                    "recipient_username": peer_username,
-                    "sender_username": owner_username,
-                    "payload": enc_payload.hex(),
-                },
+            relay_resp = _queue_relay_envelope(
+                client,
+                relay_url,
+                peer_username,
+                owner_username,
+                enc_payload,
             )
             if relay_resp.status_code == 200:
                 queued_at_relay = True
@@ -1511,7 +1544,7 @@ def poll_relay_and_process(
 ) -> int:
     """Fetch relay inbox, decrypt, ingest envelopes, and ACK only after successful processing."""
     client = http_client or httpx.Client(timeout=10.0)
-    auth_headers = create_signed_auth_headers(my_username, my_private_key, now=now)
+    auth_headers = _relay_auth_headers(my_username, my_private_key, now=now)
 
     resp = client.get(f"{relay_url.rstrip('/')}/relay/inbox", headers=auth_headers)
     if resp.status_code != 200:
@@ -1523,7 +1556,7 @@ def poll_relay_and_process(
     for msg in messages:
         msg_id = msg.get("message_id")
         sender_un = msg.get("sender_username")
-        payload_hex = msg.get("payload", "")
+        payload_hex = msg.get("encrypted_blob", "")
 
         try:
             cipher_bytes = bytes.fromhex(payload_hex)
@@ -1538,12 +1571,20 @@ def poll_relay_and_process(
             # GAP V: check_sequence_conflict resolves duplicate sequence numbers to status="delivered" upstream
             if ack.status in ("delivered", "queued"):
                 # Send ACK to relay after successful ingestion
-                client.post(
-                    f"{relay_url.rstrip('/')}/relay/inbox/ack",
-                    headers=auth_headers,
-                    json={"message_ids": [msg_id]},
+                ack_body = json.dumps({"message_ids": [msg_id]}, separators=(",", ":"))
+                ack_headers = _relay_auth_headers(
+                    my_username,
+                    my_private_key,
+                    now=now,
+                    acknowledgement_body=ack_body,
                 )
-                processed_count += 1
+                ack_response = client.post(
+                    f"{relay_url.rstrip('/')}/relay/inbox/ack",
+                    content=ack_body,
+                    headers={"Content-Type": "application/json", **ack_headers},
+                )
+                if ack_response.status_code == 200:
+                    processed_count += 1
         except Exception as e:
             write_audit_event(
                 conn,
@@ -1709,12 +1750,12 @@ def send_artifact_offer(
         try:
             raw_env_bytes = json.dumps(env_dict, sort_keys=True).encode("utf-8")
             enc_payload = encrypt_for_recipient(owner_x25519_privkey, recip_x255, raw_env_bytes)
-            relay_resp = client.post(
-                f"{relay_url.rstrip('/')}/relay/mailbox/{peer_username}",
-                json={
-                    "sender_username": owner_username,
-                    "encrypted_blob": enc_payload.hex(),
-                },
+            relay_resp = _queue_relay_envelope(
+                client,
+                relay_url,
+                peer_username,
+                owner_username,
+                enc_payload,
             )
             if relay_resp.status_code == 200:
                 queued_at_relay = True
