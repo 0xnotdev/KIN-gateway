@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import sys
+import types
+
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -15,6 +19,7 @@ from kin.adapters import (
 )
 from kin.adapters.embedded import EmbeddedAdapter
 from kin.adapters.local_command import LocalCommandAdapter
+from kin.adapters.sdk import SdkAdapter
 from kin.adapters.webhook import WebhookAdapter
 from kin.schemas import (
     ActionClass,
@@ -67,8 +72,7 @@ def test_adapter_factory_dispatch():
     assert isinstance(a_cmd, LocalCommandAdapter)
 
     c_sdk = _make_card("sdk")
-    with pytest.raises(NotImplementedError, match="SDK adapter type is out of scope"):
-        get_adapter(c_sdk)
+    assert isinstance(get_adapter(c_sdk), SdkAdapter)
 
 
 def test_adapter_request_schema_validation():
@@ -90,6 +94,69 @@ def test_adapter_request_schema_validation():
             objective="test",
             extra_field="forbidden",
         )
+
+
+def test_sdk_adapter_invokes_owner_entry_point_through_normalized_contract():
+    module = types.ModuleType("pkg.module")
+
+    def agent(request):
+        assert isinstance(request, AdapterRequest)
+        return {
+            "schema_version": "1.1",
+            "protocol_version": "1.1",
+            "events": [{"event_kind": "activity", "label": "SDK work complete"}],
+            "message": {"kind": "proposal", "content": request.objective},
+        }
+
+    module.Agent = agent
+    sys.modules["pkg"] = types.ModuleType("pkg")
+    sys.modules["pkg.module"] = module
+    try:
+        adapter = get_adapter(_make_card("sdk"))
+        response = adapter.invoke(
+            AdapterRequest(
+                session={"id": "s1", "type": "ask", "turn": 1},
+                self_participant={"agent_id": "test_ag", "card_snapshot": {}},
+                peer={"person": "bob", "agent_id": "bob_agent", "card_snapshot": {}},
+                objective="bounded SDK objective",
+            )
+        )
+    finally:
+        sys.modules.pop("pkg.module", None)
+        sys.modules.pop("pkg", None)
+
+    assert response.message is not None
+    assert response.message.content == "bounded SDK objective"
+    assert response.events[0].label == "SDK work complete"
+
+
+def test_webhook_adapter_uses_validated_webhook_url(monkeypatch):
+    observed = {}
+
+    def post(self, url, **kwargs):
+        observed["url"] = url
+        return httpx.Response(
+            200,
+            json={
+                "schema_version": "1.1",
+                "protocol_version": "1.1",
+                "message": {"kind": "proposal", "content": "webhook result"},
+            },
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", post)
+    response = get_adapter(_make_card("webhook")).invoke(
+        AdapterRequest(
+            session={"id": "s1", "type": "ask", "turn": 1},
+            self_participant={"agent_id": "test_ag", "card_snapshot": {}},
+            peer={"person": "bob", "agent_id": "bob_agent", "card_snapshot": {}},
+            objective="call the configured webhook",
+        )
+    )
+
+    assert observed["url"] == "https://agent.example.com/webhook"
+    assert response.message is not None and response.message.content == "webhook result"
 
 
 from kin.schemas import RiskLabel

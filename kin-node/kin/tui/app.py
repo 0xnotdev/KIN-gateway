@@ -83,7 +83,7 @@ class KinApp(App[None]):
     # BINDINGS are programmatically driven directly by DEFAULT_KEYMAP from keymap.py (§14.4)
     BINDINGS = build_textual_bindings()
 
-    def __init__(self, theme_name: str = "kin-graphite", profile_name: str = "default", profile_dir: Optional[Path] = None, **kwargs) -> None:
+    def __init__(self, theme_name: str = "kin-graphite", profile_name: str = "default", profile_dir: Optional[Path] = None, auto_first_flight: bool = False, **kwargs) -> None:
         resolution = resolve_theme(theme_name)
         self.theme_tokens = resolution.theme
         self.requested_theme = resolution.requested_name
@@ -91,6 +91,7 @@ class KinApp(App[None]):
         super().__init__(**kwargs)
         self.profile_name = profile_name
         self.profile_dir = profile_dir or (Path.home() / ".kin" / "profiles" / profile_name)
+        self.auto_first_flight = auto_first_flight
 
         self.tab_manager = WorkspaceTabManager()
 
@@ -404,6 +405,20 @@ class KinApp(App[None]):
         if status_msg:
             self.status_bar.status_message = status_msg
             self.status_bar.refresh()
+
+        if self.auto_first_flight:
+            from kin.tui.first_flight import FirstFlightController
+            from kin.tui.widgets.first_flight_modal import FirstFlightScreen
+
+            controller = FirstFlightController(self.profile_name, self.profile_dir)
+            start_step = controller.determine_start_step(self.prefs)
+            if start_step != "complete":
+                def completed(_result: bool) -> None:
+                    self.status_bar.status_message = "First Flight complete. KIN is ready for dispatch."
+                    self.status_bar.refresh()
+                    self.canvas.refresh(recompose=True)
+
+                self.push_screen(FirstFlightScreen(controller, self.prefs), completed)
 
     def sync_tab_bar(self) -> None:
         """Synchronize WorkspaceTabBar UI with WorkspaceTabManager state."""
@@ -837,7 +852,18 @@ class KinApp(App[None]):
     def action_focus_prev(self) -> None: self.action_focus_previous()
 
     def action_replay_item(self) -> None:
-        self.status_bar.status_message = "Replay not yet available."
+        arena = self._get_active_arena_widget()
+        if arena is None:
+            self.status_bar.status_message = "Replay requires an active Session Arena."
+        elif not arena.events:
+            self.status_bar.status_message = "Replay is empty; no verified session events are available yet."
+        else:
+            arena.action_replay_item()
+            self.status_bar.status_message = (
+                "Replay opened at the selected verified event."
+                if arena.is_replay_mode
+                else "Replay closed; returned to the live timeline."
+            )
         self.status_bar.refresh()
 
     def action_fork_item(self) -> None:
@@ -875,8 +901,35 @@ class KinApp(App[None]):
         self.status_bar.refresh()
 
     def action_open_actions(self) -> None:
-        self.status_bar.status_message = "Actions menu not yet available."
-        self.status_bar.refresh()
+        """Open a contextual, keyboard-operable action menu for the active item."""
+        active = self.tab_manager.get_active_tab()
+        items = [
+            CommandItem("export_active", "Export peer-visible view", "Active item", "Ctrl+E", contextual=True),
+        ]
+        if active.kind == "session":
+            items = [
+                CommandItem("replay_active", "Open / close verified replay", "Session", "r", contextual=True),
+                CommandItem("fork_active", "Create fresh-authority rerun", "Session", "f", contextual=True),
+                CommandItem("compose_active", "Compose peer-visible message", "Session", "m", contextual=True),
+                CommandItem("state_active", "Open session state menu", "Session", "s", contextual=True),
+                *items,
+            ]
+
+        def handle_selected(item: Optional[CommandItem]) -> None:
+            if item is None:
+                return
+            handlers = {
+                "replay_active": self.action_replay_item,
+                "fork_active": self.action_fork_item,
+                "compose_active": self.action_compose_message,
+                "state_active": self.action_session_state_menu,
+                "export_active": self.action_export_view,
+            }
+            handler = handlers.get(item.command_id)
+            if handler:
+                handler()
+
+        self.push_screen(CommandPaletteModal(items), handle_selected)
 
     def action_smart_quit(self) -> None:
         """Smart Quit (§5.1): Quit only from Home; otherwise return Home cleanly."""
@@ -1114,7 +1167,7 @@ def run_tui_app(theme_name: str = "kin-graphite", profile_name: str = "default")
     profile_dir = get_profile_dir(profile_name)
 
     with tui_error_boundary(profile_dir=profile_dir):
-        app = KinApp(theme_name=theme_name, profile_name=profile_name)
+        app = KinApp(theme_name=theme_name, profile_name=profile_name, auto_first_flight=True)
         app.run()
 
     return 0

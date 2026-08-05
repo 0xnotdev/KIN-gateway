@@ -6,10 +6,11 @@ from typing import Union
 
 from kin.adapters.embedded import EmbeddedAdapter
 from kin.adapters.local_command import LocalCommandAdapter
+from kin.adapters.sdk import SdkAdapter
 from kin.adapters.webhook import WebhookAdapter
 from kin.schemas import AgentCard
 
-AdapterInstance = Union[EmbeddedAdapter, WebhookAdapter, LocalCommandAdapter]
+AdapterInstance = Union[EmbeddedAdapter, WebhookAdapter, LocalCommandAdapter, SdkAdapter]
 
 
 def get_adapter(card: AgentCard) -> AdapterInstance:
@@ -24,6 +25,6 @@ def get_adapter(card: AgentCard) -> AdapterInstance:
     elif type_str == "local_command":
         return LocalCommandAdapter(card)
     elif type_str == "sdk":
-        raise NotImplementedError("SDK adapter type is out of scope for M4 — see master spec §6.2")
+        return SdkAdapter(card)
     else:
         raise ValueError(f"Unknown adapter type '{type_str}'.")

@@ -24,7 +24,8 @@ class WebhookAdapter:
         """Invoke remote webhook endpoint bounded by card max_runtime_seconds."""
         timeout_seconds = self.card.boundaries.max_runtime_seconds or 30.0
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
             future = executor.submit(self._execute_webhook_call, request, vault_key)
             try:
                 return future.result(timeout=timeout_seconds)
@@ -43,10 +44,12 @@ class WebhookAdapter:
                     events=[AdapterActivityEvent(label=f"Webhook call failed: {e}")],
                     error={"code": "ADAPTER_EXECUTION_ERROR", "message": str(e)},
                 )
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def _execute_webhook_call(self, request: AdapterRequest, vault_key: bytes | None) -> AdapterResponse:
         adapter_cfg = self.card.adapter
-        endpoint_url = adapter_cfg.endpoint_url
+        endpoint_url = adapter_cfg.webhook_url
 
         headers = {"Content-Type": "application/json"}
 

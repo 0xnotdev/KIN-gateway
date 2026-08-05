@@ -38,7 +38,7 @@ from kin.session.reducer import (
     process_node_command,
     reconstruct_session_state,
 )
-from kin.storage.vault import decrypt_field, encrypt_field
+from kin.storage.vault import decrypt_field, decrypt_field_or_plaintext, encrypt_field
 from kin.transport.v11 import (
     _apply_node_command_transition,
     _iso_now,
@@ -153,7 +153,7 @@ def advance_session_turn(
         cumulative_cost_estimate,
     ) = s_row
 
-    objective_text = objective_text or ""
+    objective_text = decrypt_field_or_plaintext(vault_key, objective_text) or ""
     session_type = sess_type_raw or (state.type if hasattr(state, "type") else "ask")
     peer_un = rec_un if owner_username == init_un else init_un
     peer_participant = state.participants.get(peer_un)
@@ -521,6 +521,11 @@ def tag_in_handoff(
     *,
     now: datetime.datetime | None = None,
     get_public_key_fn: Callable[[str], ed25519.Ed25519PublicKey] | None = None,
+    owner_x25519_privkey: bytes | None = None,
+    peer_endpoint: str | None = None,
+    relay_url: str | None = None,
+    recipient_x25519_pubkey: bytes | None = None,
+    http_client: Any | None = None,
 ) -> dict[str, Any]:
     """Perform a participant tag-in handoff (§2.4)."""
     now_str = _iso_now(now)
@@ -538,11 +543,15 @@ def tag_in_handoff(
     cur = conn.cursor()
     cur.execute("SELECT objective FROM sessions WHERE session_id = ?", (session_id,))
     s_row = cur.fetchone()
-    objective_text = s_row[0] if s_row and s_row[0] else ""
+    objective_text = decrypt_field_or_plaintext(vault_key, s_row[0]) if s_row else ""
 
     history_summary = []
     open_questions = []
+    accepted_artifacts = []
+    decisions = []
     for ev in state.events:
+        if ev.get("visibility") != "peer_visible":
+            continue
         ev_kind = ev.get("kind", "")
         if ev_kind not in ("activity", "status_event"):
             payload_data = ev.get("payload", {})
@@ -554,44 +563,96 @@ def tag_in_handoff(
             })
             if ev_kind == MessageKind.QUESTION.value:
                 open_questions.append(content_str)
+            elif ev_kind == MessageKind.ARTIFACT_ACCEPT.value:
+                accepted_artifacts.append(payload_data)
+            elif ev_kind == MessageKind.APPROVAL_DECISION.value:
+                decisions.append(payload_data)
+
+    # A handoff is intentionally bounded and may never include local-only notes.
+    history_summary = history_summary[-50:]
+    open_questions = [item for item in open_questions[-20:] if item]
+    accepted_artifacts = accepted_artifacts[-20:]
+    decisions = decisions[-20:]
 
     handoff_package = {
         "objective": objective_text,
         "open_questions": open_questions,
         "replacement_agent_id": replacement_agent_id,
-        "recent_history_summary": history_summary,
+        "verified_transcript": history_summary,
+        "accepted_artifacts": accepted_artifacts,
+        "decisions": decisions,
     }
 
-    # 3. Update session table with new agent ID
+    # 3. Identify the local participant column, but update it only after the
+    # signed event has been durably accepted locally.
     role = "sender" if owner_username == state.initiator_username else "receiver"
     col_name = "sender_agent_id" if role == "sender" else "receiver_agent_id"
-
-    conn.execute(f"UPDATE sessions SET {col_name} = ? WHERE session_id = ?", (replacement_agent_id, session_id))
-    conn.commit()
+    participant_row = conn.execute(
+        "SELECT sender_agent_id, receiver_agent_id FROM sessions WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()
+    current_agent_id = participant_row[0] if role == "sender" else participant_row[1]
+    if current_agent_id == replacement_agent_id:
+        raise OrchestratorError("Replacement agent must differ from the current participant.", code="SAME_AGENT")
 
     # 4. Emit signed PARTICIPANT_CHANGED envelope
-    cur = conn.cursor()
-    cur.execute("SELECT COALESCE(MAX(sequence), 0) + 1 FROM session_events WHERE session_id = ? AND actor_username = ?", (session_id, owner_username))
-    seq = cur.fetchone()[0]
+    if owner_x25519_privkey is not None:
+        from kin.transport.v11 import send_session_message
 
-    env_dict = {
-        "schema_version": "1.1",
-        "protocol_version": "1.1",
-        "session_id": session_id,
-        "sequence": seq,
-        "actor_username": owner_username,
-        "actor_agent_id": replacement_agent_id,
-        "timestamp": now_str,
-        "kind": MessageKind.PARTICIPANT_CHANGED.value,
-        "content_hash": compute_content_hash(handoff_package),
-        "payload": handoff_package,
-    }
-    env_dict["signature"] = sign_envelope(env_dict, owner_identity_key)
+        result = send_session_message(
+            conn,
+            vault_key,
+            owner_identity_key,
+            owner_x25519_privkey,
+            owner_username,
+            session_id,
+            MessageKind.PARTICIPANT_CHANGED,
+            handoff_package,
+            actor_agent_id=current_agent_id,
+            peer_endpoint=peer_endpoint,
+            relay_url=relay_url,
+            recipient_x25519_pubkey=recipient_x25519_pubkey,
+            now=now,
+            http_client=http_client,
+        )
+        status = result["status"]
+        sequence = conn.execute(
+            "SELECT MAX(sequence) FROM session_events WHERE session_id = ? AND actor_username = ?",
+            (session_id, owner_username),
+        ).fetchone()[0]
+    else:
+        cur = conn.cursor()
+        cur.execute("SELECT COALESCE(MAX(sequence), 0) + 1 FROM session_events WHERE session_id = ? AND actor_username = ?", (session_id, owner_username))
+        sequence = cur.fetchone()[0]
+        env_dict = {
+            "schema_version": "1.1",
+            "protocol_version": "1.1",
+            "session_id": session_id,
+            "sequence": sequence,
+            "actor_username": owner_username,
+            "actor_agent_id": current_agent_id,
+            "timestamp": now_str,
+            "kind": MessageKind.PARTICIPANT_CHANGED.value,
+            "content_hash": compute_content_hash(handoff_package),
+            "payload": handoff_package,
+        }
+        env_dict["signature"] = sign_envelope(env_dict, owner_identity_key)
 
-    def default_get_pubkey(un: str) -> ed25519.Ed25519PublicKey:
-        return owner_identity_key.public_key()
+        def default_get_pubkey(un: str) -> ed25519.Ed25519PublicKey:
+            return owner_identity_key.public_key()
 
-    pubkey_fn = get_public_key_fn or default_get_pubkey
-    ing_ack = ingest_envelope(conn, vault_key, env_dict, get_public_key_fn=pubkey_fn, now=now)
+        pubkey_fn = get_public_key_fn or default_get_pubkey
+        status = ingest_envelope(conn, vault_key, env_dict, get_public_key_fn=pubkey_fn, now=now).status
 
-    return {"status": ing_ack.status, "replacement_agent_id": replacement_agent_id, "sequence": seq}
+    if col_name == "sender_agent_id":
+        conn.execute(
+            "UPDATE sessions SET sender_agent_id = ? WHERE session_id = ?",
+            (replacement_agent_id, session_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE sessions SET receiver_agent_id = ? WHERE session_id = ?",
+            (replacement_agent_id, session_id),
+        )
+    conn.commit()
+    return {"status": status, "replacement_agent_id": replacement_agent_id, "sequence": sequence}

@@ -28,6 +28,7 @@ from kin.session.history import (
     replay_session,
 )
 from kin.storage.db import create_schema, get_connection
+from kin.storage.vault import decrypt_field
 
 
 VAULT_KEY = b"\x17" * 32
@@ -220,9 +221,9 @@ def test_fresh_authority_rerun_copies_limits_but_no_authority_or_history(tmp_pat
            FROM sessions WHERE session_id = ?""",
         (rerun.rerun_session_id,),
     ).fetchone()
-    assert row == (
-        "draft",
-        "Review the release evidence",
+    assert row[0] == "draft"
+    assert decrypt_field(VAULT_KEY, row[1]) == "Review the release evidence"
+    assert row[2:] == (
         20,
         90,
         4096,

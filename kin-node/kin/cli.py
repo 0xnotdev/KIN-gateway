@@ -25,16 +25,23 @@ from kin.identity.setup import setup_new_identity, verify_phrase_confirmation
 from kin.identity.keys import derive_key_pair, derive_x25519_key_pair
 from kin.identity.fingerprint import compute_fingerprint
 from kin.storage.db import get_connection, create_schema, get_setting, set_setting
+from kin.version import KIN_VERSION, V11_PROTOCOL_VERSION
 
 DEFAULT_RELAY_URL = "http://localhost:8000"
 DEFAULT_ENDPOINT = "http://127.0.0.1:8321"
-PROTOCOL_VERSION = "0.1.0"
+PROTOCOL_VERSION = V11_PROTOCOL_VERSION
 
 app = typer.Typer(
     name="kin",
     help="KIN — Personal Agent Network",
     no_args_is_help=True,
 )
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"KIN {KIN_VERSION} (protocol {V11_PROTOCOL_VERSION})")
+        raise typer.Exit()
 
 
 def open_profile_db(db_path: Path | str) -> sqlite3.Connection:
@@ -127,6 +134,13 @@ def main(
         "-p",
         help="Profile name to use for isolating data directories.",
     ),
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the installed KIN release and protocol version.",
+    ),
 ) -> None:
     """KIN CLI entry point with profile isolation."""
     if os.environ.get("KIN_UNSAFE_TEST_KEYRING") == "1":
@@ -147,6 +161,17 @@ def main(
         "profile_name": profile,
         "profile_dir": profile_dir,
     }
+
+
+@app.command("tui")
+def launch_tui(
+    ctx: typer.Context,
+    theme: str = typer.Option("kin-graphite", "--theme", help="Built-in TUI theme name."),
+) -> None:
+    """Launch the keyboard-first KIN workspace and resumable First Flight."""
+    from kin.tui.app import run_tui_app
+
+    raise typer.Exit(run_tui_app(theme_name=theme, profile_name=ctx.obj["profile_name"]))
 
 
 def _emit_contract_output(
@@ -414,7 +439,7 @@ def pair(
         # Commit to local database since registration succeeded
         cursor.execute(
             "INSERT INTO identity (username, public_key, keychain_ref, protocol_version) VALUES (?, ?, ?, ?)",
-            (username, public_key.hex(), f"kin-{profile_name}-private-key", "0.1.0"),
+            (username, public_key.hex(), f"kin-{profile_name}-private-key", PROTOCOL_VERSION),
         )
         conn.commit()
         set_setting(conn, "public_endpoint", payload["endpoint"])
@@ -1814,7 +1839,7 @@ def session_list(
     """List durable V1.1 sessions using the same records as Home/Arena."""
     from kin.cli_v11 import list_sessions
 
-    sessions = list_sessions(ctx.obj["profile_dir"])
+    sessions = list_sessions(ctx.obj["profile_name"], ctx.obj["profile_dir"])
     lines = ["SESSIONS:"]
     lines.extend(
         f"{item['session_id']} | {item['status']} | {item['type']} | "

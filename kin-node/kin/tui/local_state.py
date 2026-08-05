@@ -21,9 +21,10 @@ from kin.agent_registry.registry import scan_local_cards
 from kin.cli import DEFAULT_RELAY_URL, open_profile_db
 from kin.context_pantry import PantryValidationError, build_reviewed_context_pack
 from kin.identity.fingerprint import compute_fingerprint
-from kin.identity.storage import load_private_key
+from kin.identity.storage import get_or_create_vault_key, load_private_key
 from kin.schemas import ActionClass, ApprovalRequest, InternalEventKind, MessageKind, RiskLabel
 from kin.storage.db import create_schema
+from kin.storage.vault import decrypt_field_or_plaintext
 from kin.tui.state import (
     AgentCardView,
     ApprovalView,
@@ -441,6 +442,7 @@ def get_pending_approvals(profile_dir: Path, profile_name: str = "default") -> L
     now_dt = datetime.now(timezone.utc)
     now_str = now_dt.isoformat()
     conn = ensure_profile_db(db_path)
+    vault_key = get_or_create_vault_key(profile_name)
     views: List[ApprovalView] = []
     try:
         cur = conn.cursor()
@@ -470,7 +472,9 @@ def get_pending_approvals(profile_dir: Path, profile_name: str = "default") -> L
             req_obj = None
             if req_json:
                 try:
-                    req_obj = ApprovalRequest.model_validate_json(req_json)
+                    req_obj = ApprovalRequest.model_validate_json(
+                        decrypt_field_or_plaintext(vault_key, req_json)
+                    )
                 except Exception:
                     req_obj = None
 
@@ -896,6 +900,70 @@ def cancel_session_command(
         conn.close()
 
 
+def tag_in_session_agent(
+    profile_dir: Path,
+    profile_name: str,
+    *,
+    session_id: str,
+    replacement_agent_id: str,
+    relay_url: Optional[str] = None,
+    http_client: Optional[httpx.Client] = None,
+    now: Optional[datetime] = None,
+) -> Tuple[bool, Optional[dict[str, Any]], Optional[RecoverableError]]:
+    """Sign, persist, and deliver an owner-confirmed participant tag-in."""
+    ok, owner_username, _ = get_local_identity_info(profile_name, profile_dir)
+    if not ok or not owner_username:
+        return False, None, RecoverableError(
+            what_happened="Local identity key not initialized.",
+            impact="Cannot sign the participant change.",
+            preserved="The current session participant remains unchanged.",
+            next_action="Complete First Flight identity setup, then retry.",
+        )
+
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+        from kin.identity.storage import get_or_create_vault_key, load_x25519_private_key
+        from kin.session.orchestrator import tag_in_handoff
+
+        owner_key = ed25519.Ed25519PrivateKey.from_private_bytes(load_private_key(profile_name))
+        owner_x25519 = load_x25519_private_key(profile_name)
+        vault_key = get_or_create_vault_key(profile_name)
+    except Exception as exc:
+        return False, None, RecoverableError(
+            what_happened="Failed to load private identity keys.",
+            impact="Cannot sign or encrypt the participant change.",
+            preserved="The current session participant remains unchanged.",
+            next_action="Check profile permissions and keychain access.",
+            technical_detail=str(exc),
+        )
+
+    conn = ensure_profile_db(profile_dir / "kin.db")
+    try:
+        result = tag_in_handoff(
+            conn,
+            vault_key,
+            owner_key,
+            owner_username,
+            session_id,
+            replacement_agent_id,
+            owner_x25519_privkey=owner_x25519,
+            relay_url=relay_url or os.environ.get("KIN_RELAY_URL", DEFAULT_RELAY_URL),
+            http_client=http_client,
+            now=now,
+        )
+        return True, result, None
+    except Exception as exc:
+        return False, None, RecoverableError(
+            what_happened=f"Failed to hand the session to '{replacement_agent_id}'.",
+            impact="The participant change was not completed.",
+            preserved="Existing session history and current participant are retained.",
+            next_action="Review the replacement agent and connectivity, then retry.",
+            technical_detail=str(exc),
+        )
+    finally:
+        conn.close()
+
+
 def dispatch_new_session(
     profile_dir: Path,
     profile_name: str = "default",
@@ -1273,6 +1341,7 @@ def get_session_list(
         return []
 
     conn = ensure_profile_db(db_path)
+    vault_key = get_or_create_vault_key(profile_name)
     sessions: List[SessionSummary] = []
     try:
         cur = conn.cursor()
@@ -1293,7 +1362,7 @@ def get_session_list(
                     type=s_type,
                     initiator_username=init_user or "",
                     receiver_username=recv_user or "",
-                    objective=obj or "",
+                    objective=decrypt_field_or_plaintext(vault_key, obj) or "",
                     turn_limit=t_lim or 12,
                     created_at=c_at or "",
                     updated_at=u_at or "",
@@ -1313,6 +1382,7 @@ def get_session_detail(
         return None
 
     conn = ensure_profile_db(db_path)
+    vault_key = get_or_create_vault_key(profile_name)
     try:
         cur = conn.cursor()
         cur.execute(
@@ -1334,7 +1404,7 @@ def get_session_detail(
             type=s_type,
             initiator_username=init_user or "",
             receiver_username=recv_user or "",
-            objective=obj or "",
+            objective=decrypt_field_or_plaintext(vault_key, obj) or "",
             turn_limit=t_lim or 12,
             created_at=c_at or "",
             updated_at=u_at or "",
@@ -1510,6 +1580,79 @@ def get_session_events(
         # Sort combined events strictly by ISO created_at timestamp
         events.sort(key=lambda e: e.created_at)
         return events
+    finally:
+        conn.close()
+
+
+def get_session_events_page(
+    profile_dir: Path,
+    session_id: str,
+    profile_name: str = "default",
+    *,
+    page_size: int = 500,
+    before_event_order: Optional[int] = None,
+) -> Tuple[List[UiEvent], bool]:
+    """Return one newest-first SQL page, presented in stable ascending order.
+
+    The extra fetched row is used only to report whether an older page exists.
+    Local-only events are excluded at the query boundary.
+    """
+    if not 1 <= page_size <= 2_000:
+        raise ValueError("page_size must be between 1 and 2000")
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return [], False
+    conn = ensure_profile_db(db_path)
+    vault_key = None
+    try:
+        try:
+            from kin.identity.storage import get_or_create_vault_key
+            vault_key = get_or_create_vault_key(profile_name)
+        except Exception:
+            pass
+        if before_event_order is not None:
+            rows = conn.execute(
+                """SELECT event_id, session_id, kind, created_at, actor_username,
+                          event_order, payload_json
+                   FROM session_events
+                   WHERE session_id = ? AND event_order < ?
+                     AND COALESCE(visibility, 'peer_visible') != 'local_only'
+                   ORDER BY event_order DESC
+                   LIMIT ?""",
+                (session_id, before_event_order, page_size + 1),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT event_id, session_id, kind, created_at, actor_username,
+                          event_order, payload_json
+                   FROM session_events
+                   WHERE session_id = ?
+                     AND COALESCE(visibility, 'peer_visible') != 'local_only'
+                   ORDER BY event_order DESC
+                   LIMIT ?""",
+                (session_id, page_size + 1),
+            ).fetchall()
+        has_older = len(rows) > page_size
+        rows = rows[:page_size]
+        events: List[UiEvent] = []
+        for e_id, s_id, kind_str, created_at, actor, event_order, payload_json in reversed(rows):
+            try:
+                presentation_class = map_event_kind_to_presentation_class(kind_str)
+            except ValueError:
+                presentation_class = "security"
+            events.append(
+                UiEvent(
+                    event_id=e_id,
+                    session_id=s_id,
+                    kind=kind_str,
+                    created_at=created_at,
+                    actor_username=actor,
+                    presentation_class=presentation_class,
+                    event_order=event_order,
+                    content=_parse_payload_content(payload_json, vault_key),
+                )
+            )
+        return events, has_older
     finally:
         conn.close()
 
@@ -1900,6 +2043,7 @@ def get_approvals_for_session(
         return []
 
     conn = ensure_profile_db(db_path)
+    vault_key = get_or_create_vault_key(profile_name)
     views: List[ApprovalView] = []
     try:
         cur = conn.cursor()
@@ -1917,7 +2061,9 @@ def get_approvals_for_session(
             req_obj = None
             if req_json:
                 try:
-                    req_obj = ApprovalRequest.model_validate_json(req_json)
+                    req_obj = ApprovalRequest.model_validate_json(
+                        decrypt_field_or_plaintext(vault_key, req_json)
+                    )
                 except Exception:
                     req_obj = None
 

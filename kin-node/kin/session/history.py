@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from kin.audit.writer import append_session_event, write_audit_event
 from kin.schemas import InternalEventKind
 from kin.session.transition_matrix import TERMINAL_STATES
-from kin.storage.vault import decrypt_field
+from kin.storage.vault import decrypt_field, decrypt_field_or_plaintext, encrypt_field
 
 
 def _utc_now(now: datetime | None = None) -> str:
@@ -203,27 +203,32 @@ def replay_session(
 ) -> ReplaySnapshot:
     """Rebuild deterministic reviewed evidence from immutable stored events."""
     _require_session(conn, session_id)
-    params: list[Any] = [session_id]
-    order_clause = ""
+    filter_values = [
+        InternalEventKind.PRIVATE_NOTE.value,
+        InternalEventKind.CHECKPOINT.value,
+        InternalEventKind.DECISION.value,
+        InternalEventKind.OUTCOME.value,
+    ]
     if through_event_order is not None:
-        order_clause = "AND event_order <= ?"
-        params.append(through_event_order)
-    rows = conn.execute(
-        f"""SELECT event_order, sequence, actor_username, actor_agent_id, kind,
-                   visibility, payload_json, signature, created_at
-            FROM session_events
-            WHERE session_id = ? {order_clause}
-              AND kind != ?
-              AND (visibility != 'local_only' OR kind IN (?, ?, ?))
-            ORDER BY event_order ASC""",
-        [
-            *params,
-            InternalEventKind.PRIVATE_NOTE.value,
-            InternalEventKind.CHECKPOINT.value,
-            InternalEventKind.DECISION.value,
-            InternalEventKind.OUTCOME.value,
-        ],
-    ).fetchall()
+        rows = conn.execute(
+            """SELECT event_order, sequence, actor_username, actor_agent_id, kind,
+                      visibility, payload_json, signature, created_at
+               FROM session_events
+               WHERE session_id = ? AND event_order <= ? AND kind != ?
+                 AND (visibility != 'local_only' OR kind IN (?, ?, ?))
+               ORDER BY event_order ASC""",
+            [session_id, through_event_order, *filter_values],
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT event_order, sequence, actor_username, actor_agent_id, kind,
+                      visibility, payload_json, signature, created_at
+               FROM session_events
+               WHERE session_id = ? AND kind != ?
+                 AND (visibility != 'local_only' OR kind IN (?, ?, ?))
+               ORDER BY event_order ASC""",
+            [session_id, *filter_values],
+        ).fetchall()
     events: list[dict[str, Any]] = []
     for row in rows:
         payload = json.loads(decrypt_field(vault_key, row[6]) or "{}") if row[6] else {}
@@ -351,6 +356,11 @@ def create_fresh_authority_rerun(
         raise ValueError(f"Session '{source_session_id}' was not found.")
     new_id = rerun_session_id or f"sess_rerun_{uuid.uuid4().hex[:16]}"
     created_at = _utc_now(now)
+    copied_fields = list(row)
+    copied_fields[3] = encrypt_field(
+        vault_key,
+        decrypt_field_or_plaintext(vault_key, copied_fields[3]),
+    )
     conn.execute(
         """INSERT INTO sessions (
                session_id, type, initiator_username, receiver_username, status,
@@ -359,7 +369,7 @@ def create_fresh_authority_rerun(
                cumulative_artifact_bytes, cost_budget_estimate, cumulative_cost_estimate,
                created_at, updated_at
            ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 0, ?, 0.0, ?, ?)""",
-        (new_id, *row, created_at, created_at),
+        (new_id, *copied_fields, created_at, created_at),
     )
     conn.commit()
     append_session_event(

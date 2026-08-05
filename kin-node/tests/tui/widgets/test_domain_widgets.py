@@ -56,12 +56,8 @@ def test_event_class_filtering_split_between_exchange_and_activity_feed():
     assert "ARTIFACT_OFFER" not in act_rendered
 
 
-def test_dispatch_wizard_confirm_boundary_is_ui_only():
-    """DISPATCH WIZARD CONFIRM BOUNDARY TEST (§14.5).
-
-    Verifies pressing confirm in DispatchWizardWidget transitions to a UI-only draft preview state ('would_dispatch')
-    with zero side-effects toward network or backend session creation.
-    """
+def test_dispatch_wizard_failed_preview_preserves_retryable_draft():
+    """A preview-only harness must report honest failure and retain the draft."""
     wizard = DispatchWizardWidget(agent_id="peer_scout", prompt="Run safety audit", risk_level="HIGH", for_preview=True)
     assert wizard.is_submitted is False
     assert wizard.step_index == 0
@@ -75,13 +71,15 @@ def test_dispatch_wizard_confirm_boundary_is_ui_only():
     # Confirm dispatch
     wizard.confirm_dispatch()
 
-    # ASSERTIONS: UI-only submitted state active without side-effects
-    assert wizard.is_submitted is True
-    assert "Dispatch draft prepared (UI preview only)" in wizard.status_message
+    # ASSERTIONS: no false success/submission claim and the draft is retryable.
+    assert "Dispatch failed:" in wizard.status_message
+    assert "Draft preserved for retry" in wizard.status_message
+    assert wizard.is_submitted is False
     rendered = wizard.render()
-    assert "DISPATCH DRAFT READY" in rendered
-    assert "peer_scout" in rendered
-    assert "Run safety audit" in rendered
+    assert "Dispatch Error:" in rendered
+    assert "PRESERVED:" in rendered
+    assert wizard.agent_id == "peer_scout"
+    assert wizard.prompt == "Run safety audit"
 
 
 def test_domain_widgets_disabled_with_reason():

@@ -19,14 +19,17 @@ def _redact_value(value: Any) -> Any:
     return value
 
 
-def list_sessions(profile_dir: Path) -> list[dict[str, object]]:
+def list_sessions(profile_name: str, profile_dir: Path) -> list[dict[str, object]]:
     """Return the same durable session summaries that back the TUI Home/Arena."""
     from kin.tui.local_state import ensure_profile_db
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.storage.vault import decrypt_field_or_plaintext
 
     db_path = profile_dir / "kin.db"
     if not db_path.is_file():
         return []
     conn = ensure_profile_db(db_path)
+    vault_key = get_or_create_vault_key(profile_name)
     try:
         rows = conn.execute(
             """SELECT session_id, type, initiator_username, receiver_username,
@@ -43,7 +46,7 @@ def list_sessions(profile_dir: Path) -> list[dict[str, object]]:
             "initiator_username": row[2],
             "receiver_username": row[3],
             "status": row[4],
-            "objective": redact_ui_text(row[5] or ""),
+            "objective": redact_ui_text(decrypt_field_or_plaintext(vault_key, row[5]) or ""),
             "sender_agent_id": row[6],
             "receiver_agent_id": row[7],
             "turn_limit": row[8],

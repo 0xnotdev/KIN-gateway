@@ -8,6 +8,8 @@ from fastapi import FastAPI
 from kin_relay.db import create_schema, get_connection
 from kin_relay.routes import router
 
+KIN_RELAY_VERSION = "1.1.0"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -23,7 +25,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="KIN Relay & Directory Service",
-    version="0.1.0",
+    version=KIN_RELAY_VERSION,
     lifespan=lifespan,
 )
 

@@ -11,6 +11,7 @@ import random
 import shutil
 import sqlite3
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import httpx
@@ -32,6 +33,7 @@ from kin.identity.storage import (
 from kin.storage.db import create_schema, get_setting, set_setting
 from kin.tui.persistence import UiStatePreferences, load_ui_preferences, save_ui_preferences
 from kin.tui.state import RecoverableError
+from kin.version import V11_PROTOCOL_VERSION
 
 
 class FirstFlightController:
@@ -161,7 +163,7 @@ class FirstFlightController:
             try:
                 conn.execute(
                     "INSERT OR REPLACE INTO identity (username, public_key, keychain_ref, protocol_version) VALUES (?, ?, ?, ?)",
-                    (username, pub_bytes.hex(), f"kin-{self.profile_name}-private-key", "0.1.0"),
+                    (username, pub_bytes.hex(), f"kin-{self.profile_name}-private-key", V11_PROTOCOL_VERSION),
                 )
                 conn.commit()
             finally:
@@ -198,7 +200,7 @@ class FirstFlightController:
             try:
                 conn.execute(
                     "INSERT OR REPLACE INTO identity (username, public_key, keychain_ref, protocol_version) VALUES (?, ?, ?, ?)",
-                    (username, pub_bytes.hex(), f"kin-{self.profile_name}-private-key", "0.1.0"),
+                    (username, pub_bytes.hex(), f"kin-{self.profile_name}-private-key", V11_PROTOCOL_VERSION),
                 )
                 conn.commit()
             finally:
@@ -245,12 +247,12 @@ class FirstFlightController:
         from kin.tui.local_state import check_relay_reachability_status
         return check_relay_reachability_status(self.relay_url, client=client)
 
-    def pair_trusted_contact(
+    def prepare_contact_pairing(
         self,
         contact_username: str,
         client: Optional[httpx.Client] = None,
-    ) -> Tuple[Optional[str], Optional[RecoverableError]]:
-        """Lookup contact on relay directory, compute fingerprint, and save to contacts table (§14.6)."""
+    ) -> Tuple[Optional[Dict[str, str]], Optional[str], Optional[RecoverableError]]:
+        """Look up a contact and compute the OOB fingerprint without recording trust."""
         lookup_url = f"{self.relay_url}/directory/lookup/{contact_username}"
         try:
             if client:
@@ -259,7 +261,7 @@ class FirstFlightController:
                 resp = httpx.get(lookup_url, timeout=3.0)
 
             if resp.status_code == 404:
-                return None, RecoverableError(
+                return None, None, RecoverableError(
                     what_happened=f"Contact '{contact_username}' not found in relay directory.",
                     impact="Pairing aborted.",
                     preserved="Contacts database untouched.",
@@ -271,7 +273,7 @@ class FirstFlightController:
             contact_x25519_hex = data["x25519_public_key"]
             contact_endpoint = data.get("endpoint", "http://127.0.0.1:8321")
         except Exception as exc:
-            return None, RecoverableError(
+            return None, None, RecoverableError(
                 what_happened=f"Error connecting to relay directory: {exc}",
                 impact="Could not retrieve contact public key.",
                 preserved="Contacts database untouched.",
@@ -284,7 +286,7 @@ class FirstFlightController:
             cursor.execute("SELECT public_key FROM identity LIMIT 1")
             row = cursor.fetchone()
             if not row:
-                return None, RecoverableError(
+                return None, None, RecoverableError(
                     what_happened="No local identity initialized.",
                     impact="Cannot pair trusted contact without local identity.",
                     preserved="Contacts database untouched.",
@@ -295,22 +297,15 @@ class FirstFlightController:
             our_pub_bytes = bytes.fromhex(our_pub_hex)
             contact_pub_bytes = bytes.fromhex(contact_pubkey_hex)
 
-            # Compute fingerprint
             fingerprint = compute_fingerprint(our_pub_bytes, contact_pub_bytes)
-
-            now_str = "2026-07-29T00:00:00Z"
-            cursor.execute(
-                """
-                INSERT OR REPLACE INTO contacts 
-                (username, display_name, public_key, x25519_public_key, endpoint, autonomy_level, fingerprint_verified_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (contact_username, contact_username, contact_pubkey_hex, contact_x25519_hex, contact_endpoint, "always_ask", now_str),
-            )
-            conn.commit()
-            return fingerprint, None
+            return {
+                "username": contact_username,
+                "public_key": contact_pubkey_hex,
+                "x25519_public_key": contact_x25519_hex,
+                "endpoint": contact_endpoint,
+            }, fingerprint, None
         except Exception as exc:
-            return None, RecoverableError(
+            return None, None, RecoverableError(
                 what_happened=f"Failed pairing contact '{contact_username}': {exc}",
                 impact="Contact was not added to trusted database.",
                 preserved="Existing contacts remain untouched.",
@@ -318,6 +313,62 @@ class FirstFlightController:
             )
         finally:
             conn.close()
+
+    def confirm_contact_pairing(
+        self,
+        prepared: Dict[str, str],
+        expected_fingerprint: str,
+        verified_fingerprint: str,
+    ) -> Optional[RecoverableError]:
+        """Record trust only after the complete out-of-band fingerprint matches."""
+        normalize = lambda value: " ".join(value.strip().lower().split())
+        if normalize(verified_fingerprint) != normalize(expected_fingerprint):
+            return RecoverableError(
+                what_happened="Fingerprint verification did not match.",
+                impact="The contact was not trusted or added.",
+                preserved="Existing identity and contacts remain unchanged.",
+                next_action="Compare the complete fingerprint again over a separate trusted channel.",
+            )
+        try:
+            conn = self._ensure_db()
+            try:
+                conn.execute(
+                    """INSERT OR REPLACE INTO contacts
+                       (username, display_name, public_key, x25519_public_key, endpoint,
+                        autonomy_level, fingerprint_verified_at)
+                       VALUES (?, ?, ?, ?, ?, 'always_ask', ?)""",
+                    (
+                        prepared["username"],
+                        prepared["username"],
+                        prepared["public_key"],
+                        prepared["x25519_public_key"],
+                        prepared["endpoint"],
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            return None
+        except Exception as exc:
+            return RecoverableError(
+                what_happened=f"Failed pairing contact '{prepared.get('username', '')}': {exc}",
+                impact="The contact was not added to the trusted database.",
+                preserved="Existing contacts remain untouched.",
+                next_action="Retry fingerprint verification.",
+            )
+
+    def pair_trusted_contact(
+        self,
+        contact_username: str,
+        verified_fingerprint: str,
+        client: Optional[httpx.Client] = None,
+    ) -> Tuple[Optional[str], Optional[RecoverableError]]:
+        """Pair through the preparation seam while requiring explicit fingerprint proof."""
+        prepared, fingerprint, error = self.prepare_contact_pairing(contact_username, client=client)
+        if error or prepared is None or fingerprint is None:
+            return fingerprint, error
+        return fingerprint, self.confirm_contact_pairing(prepared, fingerprint, verified_fingerprint)
 
     def mark_progress(self, key: str, value: Any = True) -> UiStatePreferences:
         """Persist non-durable progress flag to ui-state.json without leaking secrets (§14.6)."""

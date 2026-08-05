@@ -147,6 +147,15 @@ CAPABILITY_DECLARATIONS: dict[str, AdapterCapabilityDeclaration] = {
         },
         allowed_event_kinds={"activity", "approval_request", "error"},
     ),
+    "sdk": AdapterCapabilityDeclaration(
+        adapter_type="sdk",
+        allowed_action_classes={
+            ActionClass.INFORMATIONAL_RELAY,
+            ActionClass.SESSION_PARTICIPATION,
+            ActionClass.ARTIFACT_RECEIPT,
+        },
+        allowed_event_kinds={"activity", "approval_request", "error"},
+    ),
 }
 
 # Closed list of forbidden scratchpad / chain-of-thought field names

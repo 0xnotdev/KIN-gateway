@@ -418,7 +418,8 @@ def reconstruct_session_state(
     turn_kinds = [k.value for k in TURN_CONSUMING_KINDS]
     placeholders = ",".join("?" * len(turn_kinds))
     cur.execute(
-        f"SELECT COUNT(*) FROM session_events WHERE session_id = ? AND kind IN ({placeholders})",
+        # Placeholder count derives only from the closed MessageKind list; values stay bound.
+        f"SELECT COUNT(*) FROM session_events WHERE session_id = ? AND kind IN ({placeholders})",  # nosec B608
         [session_id, *turn_kinds],
     )
     current_turn = cur.fetchone()[0] or 0

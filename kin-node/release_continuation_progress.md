@@ -1,7 +1,7 @@
 # KIN V1.1 Release Continuation Progress
 
 Date: 2026-08-05
-Branch: `codex/release-continuation-m6-m7`
+Branch: superseded by `codex/v11-final-release-readiness`; retained as milestone history
 Authority: Master Spec §§15.9–15.12 and TUI System §§14.10–14.11
 
 ## Outcome
@@ -23,8 +23,10 @@ Authority: Master Spec §§15.9–15.12 and TUI System §§14.10–14.11
 3. Context Pantry had a TUI dataclass that did not even retain content and used
    non-schema classifications such as `attached`. Slice 3 replaces that boundary.
 4. Real budget enforcement already existed. Slice 4 gauges consume that state.
-5. A complete signed `participant_changed`/tag-in primitive does not exist.
-   Tag-in UX is explicitly deferred; a visual-only control was not built.
+5. The earlier tag-in assessment was incorrect: the signed backend primitive
+   existed but was not wired. Final release work added an owner-gated picker,
+   exact boundary review, real delivery/durable retry, bounded handoff content,
+   and explicit exclusion of local-only memory.
 6. Advanced export templates are P2 under §10.3 and remain deferred. Existing
    deterministic audited export/redaction remains active.
 
@@ -48,9 +50,9 @@ KIN DOCTOR
 STATUS: DEGRADED
 PROFILE: deliberately-broken
 CHECKS:
-[WARN] version_profile: KIN 0.1.0; selected profile 'deliberately-broken'.
+[WARN] version_profile: KIN 1.1.0; selected profile 'deliberately-broken'.
   ACTION: Run 'kin init' to initialize this profile.
-  FACTS: {"profile": "deliberately-broken", "profile_exists": false, "profile_location": "~/.kin/profiles/deliberately-broken", "version": "0.1.0"}
+  FACTS: {"profile": "deliberately-broken", "profile_exists": false, "profile_location": "~/.kin/profiles/deliberately-broken", "version": "1.1.0"}
 [PASS] keychain: Secure OS credential backend is available.
   ACTION: No action required.
   FACTS: {"secure_backend": true}

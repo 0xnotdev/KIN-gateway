@@ -4,10 +4,10 @@ Provides state management dialog for active/paused sessions:
 - Pause Session: pauses session via local_state.pause_session
 - Resume Session: resumes session via local_state.resume_session
 - Cancel Session: cancels session via local_state.cancel_session_command
-- Hand Back Session: rendered present-but-disabled ("not yet available" pending backend transport support)
+- Tag In Specialist: owner-gated replacement through the signed participant-change path
 """
 
-from typing import Callable, Optional
+from typing import Optional
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -58,8 +58,8 @@ class SessionStateMenuModal(LifecycleWidgetMixin, ModalScreen[Optional[str]]):
             if self.current_status not in ("completed", "cancelled", "failed", "rejected"):
                 yield Button("Cancel Session (c)", id="btn-cancel-session", variant="error", classes="state-btn")
 
-            # Hand Back option: present-but-disabled per §14.8 Phase D
-            yield Button("Hand Back Session (h) - [not yet available]", id="btn-handback", variant="default", disabled=True, classes="state-btn")
+            if self.current_status not in ("completed", "cancelled", "failed", "rejected"):
+                yield Button("Tag In Specialist (h)", id="btn-handback", variant="primary", classes="state-btn")
 
             with Horizontal():
                 yield Button("Close (Esc)", id="btn-close", variant="default")
@@ -72,6 +72,8 @@ class SessionStateMenuModal(LifecycleWidgetMixin, ModalScreen[Optional[str]]):
             self.dismiss("resume")
         elif btn_id == "btn-cancel-session":
             self.dismiss("cancel")
+        elif btn_id == "btn-handback":
+            self.dismiss("tag_in")
         else:
             self.dismiss(None)
 
@@ -84,6 +86,9 @@ class SessionStateMenuModal(LifecycleWidgetMixin, ModalScreen[Optional[str]]):
             event.stop()
         elif event.key == "c" and self.current_status not in ("completed", "cancelled", "failed", "rejected"):
             self.dismiss("cancel")
+            event.stop()
+        elif event.key == "h" and self.current_status not in ("completed", "cancelled", "failed", "rejected"):
+            self.dismiss("tag_in")
             event.stop()
         elif event.key == "escape":
             self.dismiss(None)

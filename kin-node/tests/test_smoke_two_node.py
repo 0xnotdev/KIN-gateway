@@ -58,7 +58,16 @@ def test_two_node_v11_phase_b_real_relay_restart_expiry_and_artifact():
     assert res.returncode == 0, (
         f"V1.1 Phase B smoke failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
     )
-    assert "dispatch=queued, queued_messages=1, first_poll=1" in res.stdout
+    relay_evidence = re.search(
+        r"dispatch=queued, queued_messages=1, first_poll=([01]), "
+        r"consumer=(production-background-loop|explicit-worker-poll)",
+        res.stdout,
+    )
+    assert relay_evidence is not None, "Phase B output omitted valid relay-consumer evidence"
+    assert (relay_evidence.group(1), relay_evidence.group(2)) in {
+        ("0", "production-background-loop"),
+        ("1", "explicit-worker-poll"),
+    }
     assert "mailbox_after_ack=0, second_poll=0, bob_event_count=1" in res.stdout
     assert "reconstructed_status=active, reconstructed_events=4" in res.stdout
     assert "final_status=completed, final_events=6" in res.stdout

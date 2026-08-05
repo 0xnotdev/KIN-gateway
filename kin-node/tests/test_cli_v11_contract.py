@@ -23,6 +23,7 @@ from kin.identity.storage import (
 from kin.policy.persistence import create_pending_approval
 from kin.schemas import ActionClass, ApprovalRequest, RiskLabel
 from kin.storage.db import create_schema, get_connection
+from kin.storage.vault import decrypt_field
 
 
 def _profile_with_real_identity_and_contact(
@@ -110,10 +111,16 @@ def test_non_tty_dispatch_uses_real_signed_v11_persistence_path(
         "SELECT delivery_state FROM outbound_envelope_queue WHERE session_id = ?",
         (session_id,),
     ).fetchone()
+    stored_objective = conn.execute(
+        "SELECT objective FROM sessions WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()[0]
     conn.close()
     assert event[0:2] == ("task_request", "peer_visible")
     assert event[2]
     assert queued == ("pending",)
+    assert stored_objective != "Review the release evidence"
+    assert decrypt_field(get_or_create_vault_key(profile_name), stored_objective) == "Review the release evidence"
 
 
 def test_non_tty_approval_decision_uses_real_owner_persistence_path(

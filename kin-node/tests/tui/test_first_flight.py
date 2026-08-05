@@ -12,6 +12,8 @@ from kin.tui.persistence import UiStatePreferences, load_ui_preferences, save_ui
 from kin.tui.redaction import contains_secrets_or_paths
 from kin.tui.state import RecoverableError
 from kin.tui.widgets.first_flight_wizard import FirstFlightWizardWidget
+from kin.tui.widgets.first_flight_modal import FirstFlightFieldsModal, FirstFlightScreen
+from textual.widgets import Input
 
 SAMPLE_AGENT_YAML = """schema_version: "1.1"
 id: "test-agent"
@@ -99,10 +101,13 @@ def test_first_flight_empty_profile_walkthrough(tmp_path: Path):
                     pass
             return Response()
 
-    fingerprint, contact_err = controller.pair_trusted_contact("alice", client=MockPairClient())
+    prepared, fingerprint, contact_err = controller.prepare_contact_pairing("alice", client=MockPairClient())
     assert contact_err is None
+    assert prepared is not None
     assert fingerprint is not None
     assert len(fingerprint) > 0
+    contact_err = controller.confirm_contact_pairing(prepared, fingerprint, fingerprint)
+    assert contact_err is None
 
     durable_after_pair = controller.check_durable_state()
     assert durable_after_pair["has_contacts"] is True
@@ -178,9 +183,31 @@ def test_first_flight_failure_paths_produce_recoverable_errors(tmp_path: Path):
                 status_code = 404
             return Response()
 
-    _, err4 = controller.pair_trusted_contact("nobody", client=NotFoundClient())
+    _, _, err4 = controller.prepare_contact_pairing("nobody", client=NotFoundClient())
     assert isinstance(err4, RecoverableError)
     assert "not found" in err4.what_happened.lower()
+
+
+def test_first_flight_never_records_contact_before_exact_oob_fingerprint(tmp_path: Path):
+    controller = FirstFlightController(profile_name="oob_owner", profile_dir=tmp_path / "oob_owner")
+    phrase, indices = controller.prepare_identity_creation()
+    words = phrase.split()
+    assert controller.confirm_identity_creation(
+        "oob_owner", phrase, indices, [words[indices[0]], words[indices[1]]]
+    ) is None
+
+    prepared = {
+        "username": "bob",
+        "public_key": "0" * 64,
+        "x25519_public_key": "1" * 64,
+        "endpoint": "https://bob.example",
+    }
+    error = controller.confirm_contact_pairing(prepared, "alpha beta gamma", "alpha beta wrong")
+    assert isinstance(error, RecoverableError)
+    assert controller.check_durable_state()["has_contacts"] is False
+
+    assert controller.confirm_contact_pairing(prepared, "alpha beta gamma", "  ALPHA   beta gamma ") is None
+    assert controller.check_durable_state()["has_contacts"] is True
 
 
 def test_first_flight_restore_identity_valid_end_to_end(tmp_path: Path):
@@ -295,3 +322,47 @@ def test_first_flight_persistence_zero_secrets_leakage(tmp_path: Path, monkeypat
     assert "private_key" not in raw_text
     assert "x25519" not in raw_text
     assert f"kin-{prof_name}-private-key" not in raw_text
+
+
+@pytest.mark.asyncio
+async def test_production_launcher_first_flight_is_keyboard_reachable_and_completes(
+    tmp_path: Path,
+    build_tui_app,
+):
+    profile_dir = tmp_path / "profiles" / "keyboard_owner"
+    card_path = tmp_path / "keyboard-agent.yaml"
+    card_path.write_text(SAMPLE_AGENT_YAML, encoding="utf-8")
+    app = build_tui_app(
+        profile_name="keyboard_owner",
+        profile_dir=profile_dir,
+        auto_first_flight=True,
+    )
+
+    async with app.run_test(size=(80, 24)) as pilot:
+        assert isinstance(app.screen, FirstFlightScreen)
+        wizard = app.screen.wizard
+        assert wizard.current_step == "identity"
+
+        await pilot.press("c")
+        assert isinstance(app.screen, FirstFlightFieldsModal)
+        phrase_words = wizard.active_phrase.split()
+        requested = [phrase_words[index] for index in wizard.verification_indices]
+        app.screen.query_one("#ff-word1", Input).value = requested[0]
+        app.screen.query_one("#ff-word2", Input).value = requested[1]
+        app.screen.query_one("#ff-word2", Input).focus()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert wizard.current_step == "agent"
+
+        await pilot.press("i")
+        app.screen.query_one("#ff-path", Input).value = str(card_path)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert wizard.current_step == "relay"
+
+        await pilot.press("s", "s", "s", "f")
+        assert wizard.current_step == "complete"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert not isinstance(app.screen, FirstFlightScreen)
+        assert "First Flight complete" in app.status_bar.status_message

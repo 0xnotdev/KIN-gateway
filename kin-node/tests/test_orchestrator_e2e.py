@@ -8,6 +8,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from kin.agent_registry.registry import register_card
+from kin.audit.writer import append_session_event
 from kin.schemas import (
     AgentAutonomy,
     AgentBoundaries,
@@ -15,6 +16,8 @@ from kin.schemas import (
     AgentCard,
     AutonomyLevel,
     EmbeddedAdapterConfig,
+    InternalEventKind,
+    MessageKind,
 )
 from kin.session.orchestrator import (
     OrchestratorError,
@@ -100,6 +103,28 @@ def test_tag_in_handoff_workflow(node_db):
     )
     conn.commit()
 
+    append_session_event(
+        conn,
+        vault_key,
+        session_id="s_tag_1",
+        actor_username="alice",
+        actor_agent_id="alice_agent",
+        kind=InternalEventKind.PRIVATE_NOTE.value,
+        visibility="local_only",
+        payload={"note_text": "never transfer this private scratch note"},
+    )
+    for index in range(55):
+        append_session_event(
+            conn,
+            vault_key,
+            session_id="s_tag_1",
+            actor_username="alice",
+            actor_agent_id="alice_agent",
+            kind=MessageKind.FINDING.value,
+            visibility="peer_visible",
+            payload={"content": f"verified finding {index}"},
+        )
+
     res = tag_in_handoff(conn, vault_key, alice_priv, "alice", "s_tag_1", "alice_scout")
     assert res["status"] == "delivered"
     assert res["replacement_agent_id"] == "alice_scout"
@@ -115,6 +140,8 @@ def test_tag_in_handoff_workflow(node_db):
 
     assert payload["objective"] == expected_obj
     assert payload["replacement_agent_id"] == "alice_scout"
+    assert len(payload["verified_transcript"]) == 50
+    assert "never transfer this private scratch note" not in json.dumps(payload)
 
 
 def test_orchestrator_restart_recovery(node_db):

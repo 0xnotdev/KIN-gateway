@@ -160,7 +160,7 @@ def test_node_fixture_successful_dispatch_happy_path(dual_profile_setup, monkeyp
     from cryptography.hazmat.primitives.asymmetric import ed25519
     from kin.schemas import MessageKind
     from kin.transport.v11 import send_session_message, ingest_envelope
-    from kin.identity.storage import load_private_key, load_x25519_private_key
+    from kin.identity.storage import get_or_create_vault_key, load_private_key, load_x25519_private_key
     from kin.storage.db import get_connection
 
     alice_dir = dual_profile_setup["alice_dir"]
@@ -240,6 +240,50 @@ def test_node_fixture_relay_queued_fallback(dual_profile_setup, monkeypatch):
 
     assert res is not None
     assert res.get("status") in ("sent", "queued", "delivered", "queued_outbound")
+
+
+def test_node_fixture_offline_message_enters_durable_retry_queue(dual_profile_setup):
+    """A temporary direct/relay outage must retain the signed envelope for restart retry."""
+    import httpx
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from kin.identity.storage import get_or_create_vault_key, load_private_key, load_x25519_private_key
+    from kin.schemas import MessageKind
+    from kin.storage.db import get_connection
+    from kin.storage.vault import decrypt_field
+    from kin.transport.v11 import send_session_message
+
+    class OfflineClient:
+        def post(self, *args, **kwargs):
+            raise httpx.ConnectError("offline")
+
+    alice_dir = dual_profile_setup["alice_dir"]
+    alice_conn = get_connection(alice_dir / "kin.db")
+    alice_ed = ed25519.Ed25519PrivateKey.from_private_bytes(load_private_key("alice"))
+    alice_x = load_x25519_private_key("alice")
+    vault_key = get_or_create_vault_key("alice")
+
+    result = send_session_message(
+        conn=alice_conn,
+        vault_key=vault_key,
+        owner_identity_key=alice_ed,
+        owner_x25519_privkey=alice_x,
+        owner_username="alice",
+        session_id="sess-comp-1",
+        kind=MessageKind.PROPOSAL,
+        payload={"message": "retain across restart"},
+        relay_url="http://relay.invalid",
+        http_client=OfflineClient(),
+    )
+    queued = alice_conn.execute(
+        "SELECT envelope_kind, envelope_json_enc, delivery_state FROM outbound_envelope_queue WHERE session_id = ?",
+        ("sess-comp-1",),
+    ).fetchone()
+    alice_conn.close()
+
+    assert result["status"] == "sent"
+    assert result["queued_locally"] is True
+    assert queued is not None and queued[0] == MessageKind.PROPOSAL.value and queued[2] == "pending"
+    assert "retain across restart" in decrypt_field(vault_key, queued[1])
 
 
 def test_node_fixture_peer_decline(dual_profile_setup, monkeypatch):
