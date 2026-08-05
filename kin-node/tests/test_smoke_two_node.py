@@ -38,8 +38,8 @@ def test_two_node_v11_session_lifecycle_real_sockets():
         f"V1.1 smoke test failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
     )
     assert "Bob subprocess storage proof" in res.stdout
-    assert 'kinds=["task_request", "acceptance", "question", "answer", "final_result"]' in res.stdout
-    assert "status=completed, event_count=5" in res.stdout
+    assert 'kinds=["task_request", "acceptance", "question", "answer", "final_result", "outcome"]' in res.stdout
+    assert "status=completed, event_count=6" in res.stdout
     assert "PASS: V1.1" in res.stdout
 
 
@@ -61,7 +61,7 @@ def test_two_node_v11_phase_b_real_relay_restart_expiry_and_artifact():
     assert "dispatch=queued, queued_messages=1, first_poll=1" in res.stdout
     assert "mailbox_after_ack=0, second_poll=0, bob_event_count=1" in res.stdout
     assert "reconstructed_status=active, reconstructed_events=4" in res.stdout
-    assert "final_status=completed, final_events=5" in res.stdout
+    assert "final_status=completed, final_events=6" in res.stdout
     assert "success=False" in res.stdout and "has expired" in res.stdout and "decision=None" in res.stdout
     assert "delivery=direct" in res.stdout and "offered_by=alice, source=peer_received" in res.stdout
     hash_evidence = re.search(

@@ -19,6 +19,7 @@ import httpx
 from kin.agent_registry.loader import load_card_file
 from kin.agent_registry.registry import scan_local_cards
 from kin.cli import DEFAULT_RELAY_URL, open_profile_db
+from kin.context_pantry import PantryValidationError, build_reviewed_context_pack
 from kin.identity.fingerprint import compute_fingerprint
 from kin.identity.storage import load_private_key
 from kin.schemas import ActionClass, ApprovalRequest, InternalEventKind, MessageKind, RiskLabel
@@ -83,6 +84,12 @@ def get_local_agents_summaries(profile_dir: Path, profile_name: str = "default")
     if db_path.exists():
         conn = ensure_profile_db(db_path)
         try:
+            from kin.collaboration_depth import readiness_recommendations
+
+            recommendations = {
+                item.agent_id: item.availability
+                for item in readiness_recommendations(conn)
+            }
             cur = conn.cursor()
             cur.execute("SELECT agent_id, enabled, availability FROM agents")
             for row in cur.fetchall():
@@ -91,7 +98,7 @@ def get_local_agents_summaries(profile_dir: Path, profile_name: str = "default")
                     av_enum = AgentAvailability(av)
                 except Exception:
                     av_enum = AgentAvailability.READY
-                db_status[a_id] = (bool(en), av_enum)
+                db_status[a_id] = (bool(en), recommendations.get(a_id, av_enum))
         except Exception:
             pass
         finally:
@@ -545,7 +552,7 @@ def decide_pending_approval(
 
     _, local_username, _ = get_local_identity_info(profile_name, profile_dir)
     owner_user = local_username or "default_user"
-    now_str = datetime.now(timezone.utc).isoformat()
+    now_str = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     vault_key = get_or_create_vault_key(profile_name)
 
     conn = ensure_profile_db(db_path)
@@ -900,6 +907,7 @@ def dispatch_new_session(
     goal: str,
     max_turns: Optional[int] = None,
     http_client: Optional[httpx.Client] = None,
+    pantry_items: Optional[list] = None,
 ) -> Tuple[bool, Optional[dict], Optional[RecoverableError]]:
     """Dispatch a new session using kin.transport.v11.dispatch_session (§A4)."""
     from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -943,6 +951,11 @@ def dispatch_new_session(
     db_path = profile_dir / "kin.db"
     conn = ensure_profile_db(db_path)
     try:
+        context_pack = build_reviewed_context_pack(
+            conn,
+            vault_key,
+            pantry_items or [],
+        )
         result = dispatch_session(
             conn=conn,
             vault_key=vault_key,
@@ -956,6 +969,7 @@ def dispatch_new_session(
             goal=goal,
             max_turns=max_turns,
             http_client=http_client,
+            context_pack=context_pack,
         )
         return True, result, None
     except CapabilityMismatchError as exc:
@@ -973,6 +987,13 @@ def dispatch_new_session(
             preserved="Draft session state preserved.",
             next_action="Review the peer card in Network before retrying.",
             technical_detail=str(exc),
+        )
+    except PantryValidationError as exc:
+        return False, None, RecoverableError(
+            what_happened=str(exc),
+            impact="Session was not dispatched with unreviewed or expired context.",
+            preserved="The draft and local references remain local.",
+            next_action="Review each shared context item, remove expired items, and retry.",
         )
     except ValueError as exc:
         return False, None, RecoverableError(
@@ -1547,6 +1568,266 @@ def get_private_notes(
                 )
             )
         return notes
+    finally:
+        conn.close()
+
+
+def get_session_history_events(
+    profile_dir: Path,
+    session_id: str,
+    profile_name: str = "default",
+) -> List[UiEvent]:
+    """Project owner-local checkpoints, decisions, and outcomes into Arena lanes."""
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.storage.vault import decrypt_field
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return []
+    try:
+        vault_key = get_or_create_vault_key(profile_name)
+    except Exception:
+        return []
+    conn = ensure_profile_db(db_path)
+    events: List[UiEvent] = []
+    try:
+        rows = conn.execute(
+            """SELECT event_id, kind, created_at, actor_username, event_order, payload_json
+               FROM session_events
+               WHERE session_id = ? AND visibility = 'local_only'
+                 AND kind IN (?, ?, ?)
+               ORDER BY event_order ASC""",
+            (
+                session_id,
+                InternalEventKind.CHECKPOINT.value,
+                InternalEventKind.DECISION.value,
+                InternalEventKind.OUTCOME.value,
+            ),
+        ).fetchall()
+        for event_id, kind, created_at, actor, event_order, encrypted_payload in rows:
+            try:
+                payload = json.loads(decrypt_field(vault_key, encrypted_payload) or "{}")
+            except Exception:
+                continue
+            content = (
+                payload.get("content")
+                or payload.get("summary")
+                or payload.get("label")
+                or ""
+            )
+            events.append(
+                UiEvent(
+                    event_id=event_id,
+                    session_id=session_id,
+                    kind=kind,
+                    created_at=created_at,
+                    actor_username=actor,
+                    presentation_class=map_event_kind_to_presentation_class(kind),
+                    event_order=event_order,
+                    content=content,
+                )
+            )
+        return events
+    finally:
+        conn.close()
+
+
+def get_session_outcome_card(
+    profile_dir: Path,
+    session_id: str,
+    profile_name: str = "default",
+):
+    """Load the real persisted OutcomeCard backend object for Arena."""
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.session.history import get_outcome_card
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return None
+    try:
+        vault_key = get_or_create_vault_key(profile_name)
+    except Exception:
+        return None
+    conn = ensure_profile_db(db_path)
+    try:
+        return get_outcome_card(conn, vault_key, session_id)
+    finally:
+        conn.close()
+
+
+def create_session_checkpoint(
+    profile_dir: Path,
+    profile_name: str,
+    session_id: str,
+    created_by: str,
+    label: str,
+) -> Tuple[bool, Optional[RecoverableError]]:
+    """Persist an owner-local checkpoint through the M7 history backend."""
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.session.history import create_checkpoint
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return False, RecoverableError(
+            what_happened="Database file not found.",
+            impact="Checkpoint was not created.",
+            preserved="Session history remains unchanged.",
+            next_action="Initialize the profile first.",
+        )
+    conn = ensure_profile_db(db_path)
+    try:
+        create_checkpoint(
+            conn,
+            get_or_create_vault_key(profile_name),
+            session_id=session_id,
+            created_by=created_by,
+            label=label,
+        )
+        return True, None
+    except Exception as exc:
+        return False, RecoverableError(
+            what_happened=f"Failed to create checkpoint: {exc}",
+            impact="No checkpoint was added.",
+            preserved="Existing session evidence remains intact.",
+            next_action="Refresh the Arena and retry.",
+        )
+    finally:
+        conn.close()
+
+
+def create_session_decision(
+    profile_dir: Path,
+    profile_name: str,
+    session_id: str,
+    decided_by: str,
+    summary: str,
+) -> Tuple[bool, Optional[RecoverableError]]:
+    """Persist an ordered owner-local decision through the M7 history backend."""
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.session.history import create_decision
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return False, RecoverableError(
+            what_happened="Database file not found.",
+            impact="Decision was not recorded.",
+            preserved="Session history remains unchanged.",
+            next_action="Initialize the profile first.",
+        )
+    conn = ensure_profile_db(db_path)
+    try:
+        create_decision(
+            conn,
+            get_or_create_vault_key(profile_name),
+            session_id=session_id,
+            decided_by=decided_by,
+            summary=summary,
+        )
+        return True, None
+    except Exception as exc:
+        return False, RecoverableError(
+            what_happened=f"Failed to record decision: {exc}",
+            impact="No decision was added.",
+            preserved="Existing session evidence remains intact.",
+            next_action="Refresh the Arena and retry.",
+        )
+    finally:
+        conn.close()
+
+
+def create_fresh_session_rerun(
+    profile_dir: Path,
+    profile_name: str,
+    source_session_id: str,
+    created_by: str,
+) -> Tuple[bool, Optional[str], Optional[RecoverableError]]:
+    """Create a fresh-authority draft with no copied approval rows."""
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.session.history import create_fresh_authority_rerun
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return False, None, RecoverableError(
+            what_happened="Database file not found.",
+            impact="Rerun draft was not created.",
+            preserved="Source session remains unchanged.",
+            next_action="Initialize the profile first.",
+        )
+    conn = ensure_profile_db(db_path)
+    try:
+        rerun = create_fresh_authority_rerun(
+            conn,
+            get_or_create_vault_key(profile_name),
+            source_session_id=source_session_id,
+            created_by=created_by,
+        )
+        return True, rerun.rerun_session_id, None
+    except Exception as exc:
+        return False, None, RecoverableError(
+            what_happened=f"Failed to create fresh-authority rerun: {exc}",
+            impact="No rerun draft was created.",
+            preserved="Source session and approvals remain unchanged.",
+            next_action="Refresh the Arena and retry.",
+        )
+    finally:
+        conn.close()
+
+
+def get_session_budget_gauges(
+    profile_dir: Path,
+    profile_name: str,
+    session_id: str,
+):
+    """Load informative gauges from the same persisted budgets enforced by orchestration."""
+    from kin.collaboration_depth import budget_gauges
+    from kin.identity.storage import get_or_create_vault_key
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return None
+    conn = ensure_profile_db(db_path)
+    try:
+        return budget_gauges(conn, get_or_create_vault_key(profile_name), session_id)
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def create_session_playbook(
+    profile_dir: Path,
+    profile_name: str,
+    session_id: str,
+    name: str,
+) -> Tuple[bool, Optional[str], Optional[RecoverableError]]:
+    """Create an encrypted local playbook from a persisted completed outcome."""
+    from kin.collaboration_depth import create_playbook_from_session
+    from kin.identity.storage import get_or_create_vault_key
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return False, None, RecoverableError(
+            what_happened="Database file not found.",
+            impact="Playbook was not created.",
+            preserved="Session outcome remains unchanged.",
+            next_action="Initialize the profile first.",
+        )
+    conn = ensure_profile_db(db_path)
+    try:
+        playbook = create_playbook_from_session(
+            conn,
+            get_or_create_vault_key(profile_name),
+            session_id=session_id,
+            name=name,
+        )
+        return True, playbook.playbook_id, None
+    except Exception as exc:
+        return False, None, RecoverableError(
+            what_happened=f"Playbook creation failed: {exc}",
+            impact="No reusable template was created.",
+            preserved="Session history and authority remain unchanged.",
+            next_action="Create a playbook only after a completed outcome is available.",
+        )
     finally:
         conn.close()
 

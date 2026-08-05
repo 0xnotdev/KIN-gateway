@@ -53,7 +53,7 @@ EVENT_KIND_MAPPING: Dict[Union[MessageKind, InternalEventKind], PresentationClas
     MessageKind.FINAL_RESULT: "state_transition",
     MessageKind.CANCEL: "state_transition",
     MessageKind.PARTICIPANT_CHANGED: "state_transition",
-    # InternalEventKind members (7 total)
+    # InternalEventKind members
     InternalEventKind.MESSAGE: "message",
     InternalEventKind.ENVELOPE_RECEIVED: "activity",
     InternalEventKind.PUBLIC_MSG: "message",
@@ -61,6 +61,10 @@ EVENT_KIND_MAPPING: Dict[Union[MessageKind, InternalEventKind], PresentationClas
     InternalEventKind.OUTBOUND_ENVELOPE_QUEUED: "activity",
     InternalEventKind.ACTIVITY: "activity",
     InternalEventKind.ADAPTER_ERROR: "security",  # Crucial: errors mapped to security so they are never lost in activity noise
+    InternalEventKind.CHECKPOINT: "checkpoint",
+    InternalEventKind.DECISION: "checkpoint",
+    InternalEventKind.OUTCOME: "state_transition",
+    InternalEventKind.RERUN_CREATED: "activity",
 }
 
 
@@ -109,6 +113,8 @@ AUDIT_CATEGORY_MAPPING: Dict[str, PresentationClass] = {
     "relay_poll_error": "activity",         # Transient network/relay polling error
     "state_transition": "state_transition", # Audit log test fixture category (tests/test_audit.py)
     "ColonCommand": "activity",             # Internal command palette action audit log
+    "fresh_authority_rerun": "state_transition",
+    "outcome_card_error": "security",
 }
 
 
@@ -355,6 +361,10 @@ class ContextPantryItem:
     size_bytes: int
     classification: Literal["local_only", "share_with_peer", "private"] = "share_with_peer"
     expiry: Optional[str] = None
+    item_id: str = ""
+    content: Optional[str] = None
+    local_ref_id: Optional[str] = None
+    reviewed: bool = False
 
 
 @dataclass

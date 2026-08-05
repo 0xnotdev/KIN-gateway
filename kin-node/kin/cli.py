@@ -149,6 +149,22 @@ def main(
     }
 
 
+def _emit_contract_output(
+    payload: object,
+    plain_lines: list[str],
+    *,
+    json_output: bool,
+    plain: bool,
+) -> None:
+    """Emit one stable JSON or deterministic box-free text contract."""
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo("\n".join(plain_lines))
+
+
 @app.command()
 def pair(
     ctx: typer.Context,
@@ -156,6 +172,13 @@ def pair(
         default=None,
         help="Target contact username to pair with. Omit to initialize your own identity.",
     ),
+    verified_fingerprint: Optional[str] = typer.Option(
+        None,
+        "--verified-fingerprint",
+        help="Exact fingerprint verified out of band; enables noninteractive pairing.",
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
 ) -> None:
     """Pair with another KIN instance or initialize your identity.
 
@@ -165,6 +188,14 @@ def pair(
     """
     profile_name = ctx.obj["profile_name"]
     profile_dir = ctx.obj["profile_dir"]
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
+    if json_output and code is None:
+        raise typer.BadParameter(
+            "Use 'kin init --username ... --recovery-phrase-file ... --json' for noninteractive identity creation."
+        )
+    if json_output and verified_fingerprint is None:
+        raise typer.BadParameter("--json contact pairing requires --verified-fingerprint.")
 
     # Ensure profile directory exists
     profile_dir.mkdir(parents=True, exist_ok=True)
@@ -188,7 +219,15 @@ def pair(
             )
             row = cursor.fetchone()
             if row is not None and row[0] is not None:
-                typer.echo(f"Already verified as a trusted contact: '{contact_username}' — no action needed.")
+                if json_output:
+                    typer.echo(json.dumps({
+                        "schema_version": 1,
+                        "ok": True,
+                        "contact": contact_username,
+                        "already_verified": True,
+                    }, indent=2, sort_keys=True))
+                else:
+                    typer.echo(f"Already verified as a trusted contact: '{contact_username}' — no action needed.")
                 return
         finally:
             conn.close()
@@ -229,16 +268,24 @@ def pair(
             contact_pubkey_bytes = bytes.fromhex(contact_pubkey_hex)
             fingerprint = compute_fingerprint(our_pubkey_bytes, contact_pubkey_bytes)
             
-            typer.echo(f"Contact '{contact_username}' found!")
-            typer.echo(f"  Public Key: {contact_pubkey_hex}")
-            typer.echo(f"  Endpoint: {contact_endpoint}")
-            typer.echo(f"  Computed Fingerprint: {fingerprint}")
-            typer.echo("=====================================================================")
+            if not json_output:
+                typer.echo(f"Contact '{contact_username}' found!")
+                typer.echo(f"  Public Key: {contact_pubkey_hex}")
+                typer.echo(f"  Endpoint: {contact_endpoint}")
+                typer.echo(f"  Computed Fingerprint: {fingerprint}")
+                typer.echo("=====================================================================")
             
             # Prompt user to verify the fingerprint
-            matches = typer.confirm(
-                "Confirm with the other person out of band that they see the same fingerprint. Does it match?"
-            )
+            if verified_fingerprint is not None:
+                matches = verified_fingerprint.strip() == fingerprint
+                if not matches:
+                    raise typer.BadParameter(
+                        "The supplied out-of-band fingerprint does not match the computed fingerprint."
+                    )
+            else:
+                matches = typer.confirm(
+                    "Confirm with the other person out of band that they see the same fingerprint. Does it match?"
+                )
             
             if matches:
                 now_str = datetime.now(timezone.utc).isoformat()
@@ -251,9 +298,25 @@ def pair(
                     (contact_username, contact_username, contact_pubkey_hex, contact_x25519_pub_hex, contact_endpoint, "always_ask", now_str)
                 )
                 conn.commit()
-                typer.echo(f"Success! Contact '{contact_username}' added and marked verified.")
+                if json_output:
+                    typer.echo(json.dumps({
+                        "schema_version": 1,
+                        "ok": True,
+                        "contact": contact_username,
+                        "fingerprint_verified": True,
+                    }, indent=2, sort_keys=True))
+                else:
+                    typer.echo(f"Success! Contact '{contact_username}' added and marked verified.")
             else:
-                typer.echo("Pairing aborted for safety.")
+                if json_output:
+                    typer.echo(json.dumps({
+                        "schema_version": 1,
+                        "ok": False,
+                        "contact": contact_username,
+                        "fingerprint_verified": False,
+                    }, indent=2, sort_keys=True))
+                else:
+                    typer.echo("Pairing aborted for safety.")
                 raise typer.Exit(code=0)
         finally:
             conn.close()
@@ -362,9 +425,99 @@ def pair(
 
 
 @app.command("init")
-def initialize(ctx: typer.Context) -> None:
-    """Create this profile's identity (an explicit alias for ``kin pair``)."""
-    pair(ctx, None)
+def initialize(
+    ctx: typer.Context,
+    username: Optional[str] = typer.Option(None, "--username", help="Noninteractive username."),
+    recovery_phrase_file: Optional[Path] = typer.Option(
+        None,
+        "--recovery-phrase-file",
+        help="Read a 12-word phrase from a protected file; never echo it.",
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
+) -> None:
+    """Create an identity interactively or from explicit noninteractive inputs."""
+    if username is None and recovery_phrase_file is None and not json_output and not plain:
+        pair(ctx, None)
+        return
+    if not username or recovery_phrase_file is None:
+        raise typer.BadParameter(
+            "Noninteractive init requires --username and --recovery-phrase-file."
+        )
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
+
+    try:
+        phrase = recovery_phrase_file.read_text(encoding="utf-8").strip()
+    except Exception as exc:
+        raise typer.BadParameter(f"Unable to read recovery phrase file: {exc}") from exc
+    if len(phrase.split()) != 12:
+        raise typer.BadParameter("A KIN recovery phrase has exactly 12 words.")
+    try:
+        private_key, public_key = derive_key_pair(phrase)
+        x_private, x_public = derive_x25519_key_pair(phrase)
+    except Exception as exc:
+        raise typer.BadParameter("The recovery phrase file does not contain a valid KIN phrase.") from exc
+
+    profile_name = ctx.obj["profile_name"]
+    profile_dir = ctx.obj["profile_dir"]
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    db_path = profile_dir / "kin.db"
+    conn = open_profile_db(db_path)
+    try:
+        existing = conn.execute("SELECT username FROM identity LIMIT 1").fetchone()
+        if existing is not None:
+            raise typer.BadParameter(
+                f"Identity already initialized for username '{existing[0]}'."
+            )
+        try:
+            lookup = httpx.get(f"{get_relay_url()}/directory/lookup/{username}", timeout=15)
+            if lookup.status_code == 200:
+                raise typer.BadParameter(f"Username '{username}' is already taken.")
+            if lookup.status_code != 404:
+                lookup.raise_for_status()
+            endpoint = os.environ.get("KIN_PUBLIC_ENDPOINT", DEFAULT_ENDPOINT).rstrip("/")
+            registration = httpx.post(
+                f"{get_relay_url()}/directory/register",
+                json={
+                    "username": username,
+                    "public_key": public_key.hex(),
+                    "x25519_public_key": x_public.hex(),
+                    "endpoint": endpoint,
+                },
+                timeout=15,
+            )
+            registration.raise_for_status()
+        except typer.BadParameter:
+            raise
+        except httpx.HTTPError as exc:
+            raise typer.BadParameter(f"Relay registration failed: {exc}") from exc
+
+        save_private_key(profile_name, private_key)
+        save_x25519_private_key(profile_name, x_private)
+        conn.execute(
+            "INSERT INTO identity (username, public_key, keychain_ref, protocol_version) VALUES (?, ?, ?, ?)",
+            (username, public_key.hex(), f"kin-{profile_name}-private-key", PROTOCOL_VERSION),
+        )
+        set_setting(conn, "public_endpoint", endpoint)
+        conn.commit()
+    finally:
+        conn.close()
+
+    payload = {
+        "schema_version": 1,
+        "ok": True,
+        "profile": profile_name,
+        "username": username,
+        "identity_initialized": True,
+        "recovery_phrase_exposed": False,
+    }
+    _emit_contract_output(
+        payload,
+        [f"IDENTITY INITIALIZED: {username}", f"PROFILE: {profile_name}", "RECOVERY PHRASE: read from protected file; not displayed"],
+        json_output=json_output,
+        plain=plain,
+    )
 
 
 def select_agent(profile_name: str, agent_option: Optional[str] = None) -> Optional[str]:
@@ -1083,11 +1236,17 @@ def serve(
     public_endpoint: Optional[str] = typer.Option(None, "--public-endpoint", help="Public HTTPS endpoint to publish in the directory."),
     tunnel: bool = typer.Option(False, "--tunnel", help="Create a Cloudflare quick tunnel and publish its HTTPS URL."),
     fetch_on_start: bool = typer.Option(True, "--fetch/--no-fetch", help="Fetch pending relay messages before serving."),
+    json_output: bool = typer.Option(False, "--json", help="Emit one startup contract before serving; requires --no-fetch."),
+    plain: bool = typer.Option(False, "--plain", help="Emit deterministic box-free startup text."),
 ) -> None:
     """Start the KIN node server for the active profile."""
     profile_name = ctx.obj["profile_name"]
     profile_dir = ctx.obj["profile_dir"]
     db_path = profile_dir / "kin.db"
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
+    if json_output and fetch_on_start:
+        raise typer.BadParameter("--json requires --no-fetch so stdout remains one valid JSON document.")
 
     # Ensure the profile directory exists and schema is initialized
     profile_dir.mkdir(parents=True, exist_ok=True)
@@ -1123,7 +1282,8 @@ def serve(
 
         if public_endpoint:
             register_identity_endpoint(conn, profile_name, public_endpoint)
-            typer.echo(f"Published endpoint: {public_endpoint}")
+            if not json_output:
+                typer.echo(f"Published endpoint: {public_endpoint}")
         elif get_setting(conn, "public_endpoint") is None:
             set_setting(conn, "public_endpoint", f"http://{host}:{port}")
     except Exception:
@@ -1146,7 +1306,35 @@ def serve(
         except typer.Exit as exc:
             typer.echo(f"Relay inbox check skipped ({exc.exit_code}). The node will still start.", err=True)
 
-    typer.echo(f"Starting KIN node server for profile '{profile_name}' on {host}:{port}...")
+    startup_conn = open_profile_db(db_path)
+    try:
+        endpoint_configured = bool(get_setting(startup_conn, "public_endpoint"))
+    finally:
+        startup_conn.close()
+    startup_payload = {
+        "schema_version": 1,
+        "status": "starting",
+        "profile": profile_name,
+        "host": host,
+        "port": port,
+        "public_endpoint_configured": bool(public_endpoint or endpoint_configured),
+    }
+    if json_output:
+        _emit_contract_output(
+            startup_payload,
+            [],
+            json_output=True,
+            plain=False,
+        )
+    elif plain:
+        _emit_contract_output(
+            startup_payload,
+            [f"KIN SERVE", f"PROFILE: {profile_name}", f"BIND: {host}:{port}", "STATUS: STARTING"],
+            json_output=False,
+            plain=True,
+        )
+    else:
+        typer.echo(f"Starting KIN node server for profile '{profile_name}' on {host}:{port}...")
     try:
         uvicorn.run(fastapi_app, host=host, port=port)
     finally:
@@ -1155,12 +1343,21 @@ def serve(
 
 
 @app.command()
-def contacts(ctx: typer.Context) -> None:
+def contacts(
+    ctx: typer.Context,
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
+) -> None:
     """List paired contacts."""
     profile_dir = ctx.obj["profile_dir"]
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
     db_path = profile_dir / "kin.db"
     if not db_path.exists():
-        typer.echo("No identity or contacts yet. Run 'kin pair' first.")
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "contacts": []}, indent=2, sort_keys=True))
+        else:
+            typer.echo("No identity or contacts yet. Run 'kin pair' first.")
         return
     conn = open_profile_db(db_path)
     try:
@@ -1168,7 +1365,23 @@ def contacts(ctx: typer.Context) -> None:
             "SELECT username, display_name, endpoint, autonomy_level, fingerprint_verified_at FROM contacts ORDER BY username"
         ).fetchall()
         if not rows:
-            typer.echo("No paired contacts. Use 'kin pair <username>' to add one.")
+            if json_output:
+                typer.echo(json.dumps({"schema_version": 1, "contacts": []}, indent=2, sort_keys=True))
+            else:
+                typer.echo("No paired contacts. Use 'kin pair <username>' to add one.")
+            return
+        if json_output:
+            payload = [
+                {
+                    "username": username,
+                    "display_name": display_name,
+                    "endpoint": endpoint,
+                    "autonomy_level": autonomy,
+                    "verified": bool(verified_at),
+                }
+                for username, display_name, endpoint, autonomy, verified_at in rows
+            ]
+            typer.echo(json.dumps({"schema_version": 1, "contacts": payload}, indent=2, sort_keys=True))
             return
         typer.echo("CONTACTS")
         for username, display_name, endpoint, autonomy, verified_at in rows:
@@ -1178,15 +1391,43 @@ def contacts(ctx: typer.Context) -> None:
         conn.close()
 
 
+@app.command()
+def doctor(
+    ctx: typer.Context,
+    json_output: bool = typer.Option(False, "--json", help="Emit stable structured JSON."),
+    plain: bool = typer.Option(False, "--plain", help="Emit deterministic box-free text."),
+) -> None:
+    """Diagnose profile dependencies without exposing credentials or key material."""
+    from kin.doctor import format_doctor_plain, run_doctor
+
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
+    report = run_doctor(
+        ctx.obj["profile_name"],
+        ctx.obj["profile_dir"],
+        get_relay_url(),
+    )
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        typer.echo(format_doctor_plain(report))
+    if report["status"] == "degraded":
+        raise typer.Exit(1)
+
+
 @app.command("contact-policy")
 def contact_policy(
     ctx: typer.Context,
     username: str = typer.Argument(help="Paired contact username"),
     policy: str = typer.Argument(help="always_ask or auto_relay_info"),
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
 ) -> None:
     """Set the human-approval policy for a paired contact."""
     if policy not in {"always_ask", "auto_relay_info"}:
         raise typer.BadParameter("Policy must be 'always_ask' or 'auto_relay_info'.")
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
     db_path = ctx.obj["profile_dir"] / "kin.db"
     conn = open_profile_db(db_path)
     try:
@@ -1196,7 +1437,15 @@ def contact_policy(
         conn.commit()
     finally:
         conn.close()
-    typer.echo(f"Policy for '{username}' is now {policy}.")
+    if json_output:
+        typer.echo(json.dumps({
+            "schema_version": 1,
+            "ok": True,
+            "contact": username,
+            "policy": policy,
+        }, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Policy for '{username}' is now {policy}.")
 
 
 @app.command()
@@ -1204,9 +1453,26 @@ def configure(
     ctx: typer.Context,
     provider: str = typer.Option("openrouter", help="LiteLLM provider name, e.g. openrouter or openai."),
     model: str = typer.Option("openrouter/google/gemini-2.5-flash:free", help="LiteLLM model identifier."),
+    api_key_file: Optional[Path] = typer.Option(
+        None,
+        "--api-key-file",
+        help="Read the credential from a protected file instead of prompting.",
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
 ) -> None:
     """Store this profile's BYOK agent configuration in the OS keychain."""
-    api_key = typer.prompt(f"API key for {provider}", hide_input=True, confirmation_prompt=True)
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
+    if json_output and api_key_file is None:
+        raise typer.BadParameter("--json configure requires --api-key-file to avoid an interactive prompt.")
+    if api_key_file is not None:
+        try:
+            api_key = api_key_file.read_text(encoding="utf-8").strip()
+        except Exception as exc:
+            raise typer.BadParameter(f"Unable to read API key file: {exc}") from exc
+    else:
+        api_key = typer.prompt(f"API key for {provider}", hide_input=True, confirmation_prompt=True)
     if not api_key.strip():
         raise typer.BadParameter("API key cannot be empty.")
     save_llm_api_key(ctx.obj["profile_name"], provider, api_key.strip())
@@ -1218,7 +1484,16 @@ def configure(
         set_setting(conn, "llm_model", model)
     finally:
         conn.close()
-    typer.echo(f"Agent configured for provider '{provider}' and model '{model}'.")
+    if json_output:
+        typer.echo(json.dumps({
+            "schema_version": 1,
+            "ok": True,
+            "provider": provider,
+            "model": model,
+            "credential_present": True,
+        }, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Agent configured for provider '{provider}' and model '{model}'.")
 
 
 @app.command()
@@ -1281,10 +1556,27 @@ def status(ctx: typer.Context, task_id: str = typer.Argument(help="Task ID to in
 def restore(
     ctx: typer.Context,
     phrase: Optional[str] = typer.Argument(None, help="Recovery phrase. Omit to enter it without saving it in shell history."),
+    username: Optional[str] = typer.Option(None, "--username", help="Registered username; avoids an interactive prompt."),
+    recovery_phrase_file: Optional[Path] = typer.Option(
+        None,
+        "--recovery-phrase-file",
+        help="Read the phrase from a protected file instead of an argument.",
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
 ) -> None:
     """Restore identity from a recovery phrase."""
     profile_name = ctx.obj["profile_name"]
     profile_dir = ctx.obj["profile_dir"]
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
+    if phrase is not None and recovery_phrase_file is not None:
+        raise typer.BadParameter("Use either the phrase argument or --recovery-phrase-file, not both.")
+    if recovery_phrase_file is not None:
+        try:
+            phrase = recovery_phrase_file.read_text(encoding="utf-8").strip()
+        except Exception as exc:
+            raise typer.BadParameter(f"Unable to read recovery phrase file: {exc}") from exc
     if phrase is None:
         phrase = typer.prompt("Enter your 12-word recovery phrase", hide_input=True)
     try:
@@ -1295,11 +1587,17 @@ def restore(
     if len(phrase.strip().split()) != 12:
         raise typer.BadParameter("A KIN recovery phrase has exactly 12 words.")
 
-    username = typer.prompt("Enter the username registered to this identity")
-    lookup = httpx.get(f"{get_relay_url()}/directory/lookup/{username}", timeout=15)
-    if lookup.status_code == 404:
-        raise typer.BadParameter("That username is not registered in the KIN directory.")
-    lookup.raise_for_status()
+    if username is None:
+        username = typer.prompt("Enter the username registered to this identity")
+    try:
+        lookup = httpx.get(f"{get_relay_url()}/directory/lookup/{username}", timeout=15)
+        if lookup.status_code == 404:
+            raise typer.BadParameter("That username is not registered in the KIN directory.")
+        lookup.raise_for_status()
+    except typer.BadParameter:
+        raise
+    except httpx.HTTPError as exc:
+        raise typer.BadParameter(f"Relay directory lookup failed: {exc}") from exc
     remote = lookup.json()
     if remote["public_key"] != public_key.hex() or remote["x25519_public_key"] != x_public.hex():
         raise typer.BadParameter("The recovery phrase does not match that username's registered identity.")
@@ -1319,25 +1617,57 @@ def restore(
         set_setting(conn, "public_endpoint", remote["endpoint"])
     finally:
         conn.close()
-    typer.echo(f"Identity '{username}' restored. Pair contacts again on this device before sending messages.")
+    payload = {
+        "schema_version": 1,
+        "ok": True,
+        "profile": profile_name,
+        "username": username,
+        "identity_restored": True,
+        "recovery_phrase_exposed": False,
+    }
+    _emit_contract_output(
+        payload,
+        [
+            f"IDENTITY RESTORED: {username}",
+            f"PROFILE: {profile_name}",
+            "NEXT: Pair contacts again on this device before sending messages.",
+        ],
+        json_output=json_output,
+        plain=plain,
+    )
 
 
 
 @app.command("migrate")
-def migrate(ctx: typer.Context) -> None:
+def migrate(
+    ctx: typer.Context,
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
+) -> None:
     """Migrate local profile storage schema using staging validation and atomic commit."""
     from kin.identity.resolver import ProfileContextResolver
     from kin.storage.migrations import run_migrations, ALL_MIGRATIONS
     from kin.identity.storage import get_or_create_vault_key
 
     profile_name = ctx.obj["profile_name"]
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
     root_dir = Path.home() / ".kin"
     resolver = ProfileContextResolver(profile_name, root_dir)
     profile_dir = resolver.profile_dir
     db_path = resolver.resolve_profile_path(profile_name, "kin.db")
 
     if not db_path.exists():
-        typer.echo(f"No database found for profile '{profile_name}' at {db_path}. Nothing to migrate.")
+        if json_output:
+            typer.echo(json.dumps({
+                "schema_version": 1,
+                "ok": True,
+                "profile": profile_name,
+                "database_present": False,
+                "migration_needed": False,
+            }, indent=2, sort_keys=True))
+        else:
+            typer.echo(f"No database found for profile '{profile_name}' at {db_path}. Nothing to migrate.")
         return
 
     timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -1406,11 +1736,22 @@ def migrate(ctx: typer.Context) -> None:
         # Atomic commit: swap staged kin.db file with original db_path
         os.replace(staged_db_path, db_path)
 
-        typer.echo(
-            f"Migration report for profile '{profile_name}': "
-            f"applied={report.applied}, skipped={report.skipped}, "
-            f"version={report.starting_version}->{report.ending_version}"
-        )
+        if json_output:
+            typer.echo(json.dumps({
+                "schema_version": 1,
+                "ok": True,
+                "profile": profile_name,
+                "applied": report.applied,
+                "skipped": report.skipped,
+                "starting_version": report.starting_version,
+                "ending_version": report.ending_version,
+            }, indent=2, sort_keys=True))
+        else:
+            typer.echo(
+                f"Migration report for profile '{profile_name}': "
+                f"applied={report.applied}, skipped={report.skipped}, "
+                f"version={report.starting_version}->{report.ending_version}"
+            )
 
     except Exception as err:
         if conn is not None:
@@ -1437,12 +1778,390 @@ def migrate(ctx: typer.Context) -> None:
         }
         failure_report_path.write_text(json.dumps(failure_data, indent=2))
 
-        typer.echo(f"ERROR: Migration failed for profile '{profile_name}': {err}", err=True)
-        typer.echo(f"Original profile database left untouched. Failure report written to: {failure_report_path}", err=True)
+        if json_output:
+            typer.echo(json.dumps({
+                "schema_version": 1,
+                "ok": False,
+                "profile": profile_name,
+                "recoverable": True,
+                "error": str(err),
+                "original_profile_preserved": True,
+                "failure_report": str(failure_report_path),
+            }, indent=2, sort_keys=True))
+        else:
+            typer.echo(f"ERROR: Migration failed for profile '{profile_name}': {err}", err=True)
+            typer.echo(f"Original profile database left untouched. Failure report written to: {failure_report_path}", err=True)
         raise typer.Exit(1)
     finally:
         if staging_dir.exists():
             shutil.rmtree(staging_dir, ignore_errors=True)
+
+
+# ------------------------------------------------------------------------------
+# V1.1 scriptable parity commands (Milestone M6)
+# ------------------------------------------------------------------------------
+
+session_app = typer.Typer(name="session", help="List, inspect, export, control, and recover V1.1 sessions.")
+app.add_typer(session_app)
+
+
+@session_app.command("list")
+def session_list(
+    ctx: typer.Context,
+    json_output: bool = typer.Option(False, "--json", help="Emit stable structured JSON."),
+    plain: bool = typer.Option(False, "--plain", help="Emit deterministic box-free text."),
+) -> None:
+    """List durable V1.1 sessions using the same records as Home/Arena."""
+    from kin.cli_v11 import list_sessions
+
+    sessions = list_sessions(ctx.obj["profile_dir"])
+    lines = ["SESSIONS:"]
+    lines.extend(
+        f"{item['session_id']} | {item['status']} | {item['type']} | "
+        f"{item['initiator_username']} -> {item['receiver_username']} | {item['objective']}"
+        for item in sessions
+    )
+    if not sessions:
+        lines.append("No sessions.")
+    _emit_contract_output(
+        {"schema_version": 1, "sessions": sessions},
+        lines,
+        json_output=json_output,
+        plain=plain,
+    )
+
+
+@session_app.command("open")
+def session_open(
+    ctx: typer.Context,
+    session_id: str = typer.Argument(help="Session ID to inspect."),
+    json_output: bool = typer.Option(False, "--json", help="Emit stable structured JSON."),
+    plain: bool = typer.Option(False, "--plain", help="Emit deterministic box-free text."),
+) -> None:
+    """Open the redacted peer-visible session history without the TUI."""
+    from kin.cli_v11 import open_session, session_plain_lines
+
+    try:
+        session = open_session(ctx.obj["profile_name"], ctx.obj["profile_dir"], session_id)
+    except Exception as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    _emit_contract_output(session, session_plain_lines(session), json_output=json_output, plain=plain)
+
+
+@session_app.command("export")
+def session_export(
+    ctx: typer.Context,
+    session_id: str = typer.Argument(help="Session ID to export."),
+    export_format: str = typer.Option("markdown", "--format", help="markdown or json"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write the export atomically to this path."),
+    json_output: bool = typer.Option(False, "--json", help="Emit structured command-result JSON."),
+    plain: bool = typer.Option(False, "--plain", help="Emit deterministic box-free text."),
+) -> None:
+    """Export the audited peer-visible transcript; private notes stay excluded."""
+    from kin.cli_v11 import export_session_content, write_export_atomic
+
+    try:
+        content = export_session_content(
+            ctx.obj["profile_name"],
+            ctx.obj["profile_dir"],
+            session_id,
+            export_format=export_format,
+        )
+    except Exception as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if output is not None:
+        write_export_atomic(output, content)
+    payload = {
+        "schema_version": 1,
+        "session_id": session_id,
+        "format": export_format,
+        "written": output is not None,
+        "output": str(output) if output is not None else None,
+        "content": None if output is not None else content,
+    }
+    lines = [
+        f"SESSION EXPORT: {session_id}",
+        f"FORMAT: {export_format}",
+        f"OUTPUT: {output}" if output is not None else content,
+    ]
+    _emit_contract_output(payload, lines, json_output=json_output, plain=plain)
+
+
+@session_app.command("recover")
+def session_recover(
+    ctx: typer.Context,
+    session_id: str = typer.Argument(help="Session ID to reconstruct from durable events."),
+    json_output: bool = typer.Option(False, "--json", help="Emit stable structured JSON."),
+    plain: bool = typer.Option(False, "--plain", help="Emit deterministic box-free text."),
+) -> None:
+    """Reconstruct session state from SQLite after process interruption/restart."""
+    from kin.cli_v11 import recover_session
+
+    try:
+        state = recover_session(ctx.obj["profile_name"], ctx.obj["profile_dir"], session_id)
+    except Exception as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    lines = [
+        f"RECOVERED SESSION: {state['session_id']}",
+        f"STATUS: {state['status']}",
+        f"TURN: {state['current_turn']}/{state['max_turns']}",
+        f"EVENTS: {len(state['events'])}",
+        "SOURCE: durable persistence",
+    ]
+    _emit_contract_output(state, lines, json_output=json_output, plain=plain)
+
+
+def _session_control(
+    ctx: typer.Context,
+    session_id: str,
+    action: str,
+    reason: Optional[str],
+    json_output: bool,
+    plain: bool,
+) -> None:
+    from kin.tui.local_state import cancel_session_command, pause_session, resume_session
+
+    functions = {"pause": pause_session, "resume": resume_session, "cancel": cancel_session_command}
+    ok, error = functions[action](
+        ctx.obj["profile_dir"],
+        ctx.obj["profile_name"],
+        session_id=session_id,
+        reason=reason,
+    )
+    payload = {
+        "schema_version": 1,
+        "ok": ok,
+        "action": action,
+        "session_id": session_id,
+        "error": error.__dict__ if error else None,
+    }
+    _emit_contract_output(
+        payload,
+        [f"SESSION {action.upper()}: {session_id}", f"STATUS: {'OK' if ok else 'FAILED'}"]
+        + ([f"ACTION: {error.next_action}"] if error else []),
+        json_output=json_output,
+        plain=plain,
+    )
+    if not ok:
+        raise typer.Exit(1)
+
+
+@session_app.command("pause")
+def session_pause(
+    ctx: typer.Context,
+    session_id: str,
+    reason: Optional[str] = typer.Option(None, "--reason"),
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
+) -> None:
+    """Pause a session through the same owner command used by Arena."""
+    _session_control(ctx, session_id, "pause", reason, json_output, plain)
+
+
+@session_app.command("resume")
+def session_resume(
+    ctx: typer.Context,
+    session_id: str,
+    reason: Optional[str] = typer.Option(None, "--reason"),
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
+) -> None:
+    """Resume a session through the same owner command used by Arena."""
+    _session_control(ctx, session_id, "resume", reason, json_output, plain)
+
+
+@session_app.command("cancel")
+def session_cancel(
+    ctx: typer.Context,
+    session_id: str,
+    reason: Optional[str] = typer.Option(None, "--reason"),
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
+) -> None:
+    """Cancel a session through the same owner command used by Arena."""
+    _session_control(ctx, session_id, "cancel", reason, json_output, plain)
+
+
+@session_app.command("message")
+def session_message(
+    ctx: typer.Context,
+    session_id: str,
+    text: str = typer.Argument(help="Exact peer-visible message text."),
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
+) -> None:
+    """Send a signed peer-visible message through Arena's compose path."""
+    from kin.tui.local_state import send_human_message_to_session_action
+
+    ok, result, error = send_human_message_to_session_action(
+        ctx.obj["profile_name"],
+        session_id,
+        text,
+        profile_dir=ctx.obj["profile_dir"],
+    )
+    payload = {
+        "schema_version": 1,
+        "ok": ok,
+        "session_id": session_id,
+        "result": result,
+        "error": error.__dict__ if error else None,
+    }
+    _emit_contract_output(
+        payload,
+        [f"SESSION MESSAGE: {session_id}", f"STATUS: {'SENT' if ok else 'FAILED'}"],
+        json_output=json_output,
+        plain=plain,
+    )
+    if not ok:
+        raise typer.Exit(1)
+
+
+approval_app = typer.Typer(name="approval", help="List and decide owner-local approvals.")
+app.add_typer(approval_app)
+
+
+@approval_app.command("list")
+def approval_list(
+    ctx: typer.Context,
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
+) -> None:
+    """List the same pending/expired approvals shown in Inbox."""
+    from kin.cli_v11 import list_approvals
+
+    approvals = list_approvals(ctx.obj["profile_name"], ctx.obj["profile_dir"])
+    lines = ["APPROVALS:"]
+    for item in approvals:
+        request = item["request"]
+        lines.append(
+            f"{request['approval_id']} | session={request['session_id']} | "
+            f"action={request['action_class']} | risk={request['risk_label']} | decision={item['decision']}"
+        )
+        lines.append(f"  {request['summary']}")
+    if not approvals:
+        lines.append("No pending or expired approvals.")
+    _emit_contract_output(
+        {"schema_version": 1, "approvals": approvals},
+        lines,
+        json_output=json_output,
+        plain=plain,
+    )
+
+
+@approval_app.command("decide")
+def approval_decide(
+    ctx: typer.Context,
+    approval_id: str,
+    session_id: str = typer.Option(..., "--session"),
+    decision: str = typer.Option(..., "--decision", help="approve_once, always_allow_bounded, or deny"),
+    reason: Optional[str] = typer.Option(None, "--reason"),
+    constraints_json: Optional[str] = typer.Option(None, "--constraints-json"),
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
+) -> None:
+    """Record a bounded owner decision through the TUI's persistence path."""
+    from kin.tui.local_state import decide_pending_approval
+
+    try:
+        constraints = json.loads(constraints_json) if constraints_json else None
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter("--constraints-json must be a JSON object.") from exc
+    if constraints is not None and not isinstance(constraints, dict):
+        raise typer.BadParameter("--constraints-json must be a JSON object.")
+    ok, error = decide_pending_approval(
+        ctx.obj["profile_dir"],
+        ctx.obj["profile_name"],
+        approval_id=approval_id,
+        session_id=session_id,
+        decision=decision,
+        reason=reason,
+        constraints=constraints,
+    )
+    payload = {
+        "schema_version": 1,
+        "ok": ok,
+        "approval_id": approval_id,
+        "session_id": session_id,
+        "decision": decision if ok else None,
+        "error": error.__dict__ if error else None,
+    }
+    _emit_contract_output(
+        payload,
+        [f"APPROVAL: {approval_id}", f"STATUS: {'RECORDED' if ok else 'FAILED'}"]
+        + ([f"ACTION: {error.next_action}"] if error else []),
+        json_output=json_output,
+        plain=plain,
+    )
+    if not ok:
+        raise typer.Exit(1)
+
+
+@app.command()
+def inbox(
+    ctx: typer.Context,
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
+) -> None:
+    """List the same owner-attention queue shown by TUI Inbox/Needs You."""
+    from kin.cli_v11 import list_inbox
+
+    items = list_inbox(ctx.obj["profile_name"], ctx.obj["profile_dir"])
+    lines = ["INBOX:"]
+    lines.extend(
+        f"{item['item_id']} | {item['urgency']} | {item['kind']} | session={item['session_id']} | {item['reason']}"
+        for item in items
+    )
+    if not items:
+        lines.append("No owner-attention items.")
+    _emit_contract_output(
+        {"schema_version": 1, "items": items},
+        lines,
+        json_output=json_output,
+        plain=plain,
+    )
+
+
+@app.command()
+def dispatch(
+    ctx: typer.Context,
+    peer: str = typer.Option(..., "--peer"),
+    sender_agent: str = typer.Option(..., "--sender-agent"),
+    receiver_agent: str = typer.Option(..., "--receiver-agent"),
+    session_type: str = typer.Option("ask", "--type"),
+    goal: str = typer.Option(..., "--goal"),
+    max_turns: Optional[int] = typer.Option(None, "--max-turns"),
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
+) -> None:
+    """Dispatch a signed V1.1 session through the TUI's production path."""
+    from kin.tui.local_state import dispatch_new_session
+
+    ok, result, error = dispatch_new_session(
+        ctx.obj["profile_dir"],
+        ctx.obj["profile_name"],
+        peer_username=peer,
+        sender_agent_id=sender_agent,
+        receiver_agent_id=receiver_agent,
+        session_type=session_type,
+        goal=goal,
+        max_turns=max_turns,
+    )
+    payload = {
+        "schema_version": 1,
+        "ok": ok,
+        "result": result,
+        "error": error.__dict__ if error else None,
+    }
+    lines = [
+        "DISPATCH:",
+        f"STATUS: {(result or {}).get('status', 'failed').upper()}",
+        f"SESSION: {(result or {}).get('session_id', '')}",
+    ]
+    if error:
+        lines.extend([f"ERROR: {error.what_happened}", f"ACTION: {error.next_action}"])
+    _emit_contract_output(payload, lines, json_output=json_output, plain=plain)
+    if not ok:
+        raise typer.Exit(1)
 
 
 # ------------------------------------------------------------------------------
@@ -1456,6 +2175,7 @@ app.add_typer(agent_app)
 def agent_list(
     ctx: typer.Context,
     json_output: bool = typer.Option(False, "--json", help="Emit stable JSON list format."),
+    plain: bool = typer.Option(False, "--plain", help="Emit deterministic box-free text."),
 ) -> None:
     """Scan agents_dir, register/refresh valid cards, list them with availability."""
     from kin.identity.resolver import ProfileContextResolver
@@ -1470,6 +2190,8 @@ def agent_list(
     )
 
     profile_name = ctx.obj["profile_name"]
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
     root_dir = Path.home() / ".kin"
     resolver = ProfileContextResolver(profile_name, root_dir)
     profile_dir = resolver.profile_dir
@@ -1522,6 +2244,7 @@ def agent_inspect(
     ctx: typer.Context,
     agent_id: str = typer.Argument(..., help="Agent ID to inspect."),
     json_output: bool = typer.Option(False, "--json", help="Emit PublishedAgentCard projection JSON ONLY."),
+    plain: bool = typer.Option(False, "--plain", help="Emit deterministic box-free text."),
 ) -> None:
     """Inspect a local agent card."""
     from kin.identity.resolver import ProfileContextResolver
@@ -1532,6 +2255,8 @@ def agent_inspect(
     from kin.agent_registry.registry import get_card, publish_card
 
     profile_name = ctx.obj["profile_name"]
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
     root_dir = Path.home() / ".kin"
     resolver = ProfileContextResolver(profile_name, root_dir)
     db_path = resolver.resolve_profile_path(profile_name, "kin.db")
@@ -1584,14 +2309,21 @@ def agent_inspect(
 def agent_validate(
     ctx: typer.Context,
     path: Path = typer.Argument(..., help="Path to agent YAML file to validate."),
+    json_output: bool = typer.Option(False, "--json", help="Emit stable structured JSON."),
+    plain: bool = typer.Option(False, "--plain", help="Emit deterministic box-free text."),
 ) -> None:
     """Validate an agent card YAML file without importing it."""
     from kin.agent_registry.loader import CardLoadError, load_card_file
 
     profile_name = ctx.obj["profile_name"]
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
     try:
         card = load_card_file(path, profile_name=profile_name)
-        typer.echo(f"Card '{path}' is valid (Agent ID: '{card.id}').")
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "valid": True, "agent_id": card.id}, indent=2, sort_keys=True))
+        else:
+            typer.echo(f"Card '{path}' is valid (Agent ID: '{card.id}').")
     except CardLoadError as err:
         typer.echo(f"ERROR: Card validation failed for '{path}': {err}", err=True)
         raise typer.Exit(1)
@@ -1604,6 +2336,8 @@ def agent_validate(
 def agent_enable(
     ctx: typer.Context,
     agent_id: str = typer.Argument(..., help="Agent ID to enable."),
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
 ) -> None:
     """Enable a local agent card."""
     from kin.identity.resolver import ProfileContextResolver
@@ -1611,6 +2345,8 @@ def agent_enable(
     from kin.agent_registry.registry import set_enabled
 
     profile_name = ctx.obj["profile_name"]
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
     root_dir = Path.home() / ".kin"
     resolver = ProfileContextResolver(profile_name, root_dir)
     db_path = resolver.resolve_profile_path(profile_name, "kin.db")
@@ -1623,7 +2359,10 @@ def agent_enable(
     vault_key = get_or_create_vault_key(profile_name)
     try:
         set_enabled(conn, agent_id, True, profile_name=profile_name, vault_key=vault_key)
-        typer.echo(f"Agent '{agent_id}' enabled.")
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "ok": True, "agent_id": agent_id, "enabled": True}, indent=2, sort_keys=True))
+        else:
+            typer.echo(f"Agent '{agent_id}' enabled.")
     except Exception as err:
         typer.echo(f"ERROR: Failed to enable agent '{agent_id}': {err}", err=True)
         raise typer.Exit(1)
@@ -1635,6 +2374,8 @@ def agent_enable(
 def agent_disable(
     ctx: typer.Context,
     agent_id: str = typer.Argument(..., help="Agent ID to disable."),
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
 ) -> None:
     """Disable a local agent card."""
     from kin.identity.resolver import ProfileContextResolver
@@ -1642,6 +2383,8 @@ def agent_disable(
     from kin.agent_registry.registry import set_enabled
 
     profile_name = ctx.obj["profile_name"]
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
     root_dir = Path.home() / ".kin"
     resolver = ProfileContextResolver(profile_name, root_dir)
     db_path = resolver.resolve_profile_path(profile_name, "kin.db")
@@ -1654,7 +2397,10 @@ def agent_disable(
     vault_key = get_or_create_vault_key(profile_name)
     try:
         set_enabled(conn, agent_id, False, profile_name=profile_name, vault_key=vault_key)
-        typer.echo(f"Agent '{agent_id}' disabled.")
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "ok": True, "agent_id": agent_id, "enabled": False}, indent=2, sort_keys=True))
+        else:
+            typer.echo(f"Agent '{agent_id}' disabled.")
     except Exception as err:
         typer.echo(f"ERROR: Failed to disable agent '{agent_id}': {err}", err=True)
         raise typer.Exit(1)
@@ -1666,6 +2412,8 @@ def agent_disable(
 def agent_import(
     ctx: typer.Context,
     path: Path = typer.Argument(..., help="Path to agent YAML file to import."),
+    json_output: bool = typer.Option(False, "--json"),
+    plain: bool = typer.Option(False, "--plain"),
 ) -> None:
     """Validate, copy, and register an agent card into profile agents directory."""
     from kin.identity.resolver import ProfileContextResolver
@@ -1674,6 +2422,8 @@ def agent_import(
     from kin.agent_registry.registry import import_card
 
     profile_name = ctx.obj["profile_name"]
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
     root_dir = Path.home() / ".kin"
     resolver = ProfileContextResolver(profile_name, root_dir)
     profile_dir = resolver.profile_dir
@@ -1685,7 +2435,10 @@ def agent_import(
 
     try:
         card = import_card(conn, vault_key, resolver, path)
-        typer.echo(f"Agent '{card.id}' imported and registered successfully.")
+        if json_output:
+            typer.echo(json.dumps({"schema_version": 1, "ok": True, "agent_id": card.id, "imported": True}, indent=2, sort_keys=True))
+        else:
+            typer.echo(f"Agent '{card.id}' imported and registered successfully.")
     except CardLoadError as err:
         typer.echo(f"ERROR: Import failed: {err}", err=True)
         raise typer.Exit(1)
@@ -1701,6 +2454,7 @@ def agent_publish(
     ctx: typer.Context,
     agent_id: str = typer.Argument(..., help="Agent ID to publish/project."),
     json_output: bool = typer.Option(False, "--json", help="Emit PublishedAgentCard JSON format."),
+    plain: bool = typer.Option(False, "--plain", help="Emit deterministic box-free text."),
 ) -> None:
     """Compute and display the PublishedAgentCard projection (local display only, no network transport)."""
     from kin.identity.resolver import ProfileContextResolver
@@ -1711,6 +2465,8 @@ def agent_publish(
     from kin.agent_registry.registry import get_card, publish_card
 
     profile_name = ctx.obj["profile_name"]
+    if json_output and plain:
+        raise typer.BadParameter("Choose only one of --json or --plain.")
     root_dir = Path.home() / ".kin"
     resolver = ProfileContextResolver(profile_name, root_dir)
     db_path = resolver.resolve_profile_path(profile_name, "kin.db")

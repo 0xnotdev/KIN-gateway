@@ -508,6 +508,10 @@ class InternalEventKind(str, Enum):
     OUTBOUND_ENVELOPE_QUEUED = "outbound_envelope_queued"
     ACTIVITY = "activity"
     ADAPTER_ERROR = "adapter_error"
+    CHECKPOINT = "checkpoint"
+    DECISION = "decision"
+    OUTCOME = "outcome"
+    RERUN_CREATED = "rerun_created"
 
 
 class SessionEvent(BaseModel):

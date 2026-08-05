@@ -156,7 +156,7 @@ async def test_sigterm_restart_arena_polling_reopens_without_gap_or_duplicate(
             assert len({event.event_id for event in reopened.events}) == len(reopened.events)
 
             assert persisted["status"] == "completed"
-            assert persisted["event_count"] == 5
+            assert persisted["event_count"] == 6
             visible_session_events = [
                 event for event in reopened.events if event.event_id in set(persisted["event_ids"])
             ]

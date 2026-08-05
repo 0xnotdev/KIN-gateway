@@ -5,9 +5,7 @@ opens ComposeMessageModal, and isolates arena bindings from global navigation.
 """
 
 from pathlib import Path
-from io import StringIO
 import pytest
-from rich.console import Console
 from textual.widgets import Input, Static
 
 from kin.tui.help import generate_help_markdown
@@ -16,19 +14,6 @@ from kin.tui.tokens import DRACULA_THEME, KIN_GRAPHITE_THEME
 from kin.tui.widgets.compose_modal import ComposeMessageModal
 from kin.tui.widgets.inbox_screen import InboxScreenWidget
 from kin.tui.widgets.session_arena import SessionArenaWidget
-
-
-def _render_to_svg(renderable) -> str:
-    """Render Rich output with truecolor preserved for theme assertions."""
-    console = Console(
-        width=120,
-        record=True,
-        force_terminal=True,
-        color_system="truecolor",
-        file=StringIO(),
-    )
-    console.print(renderable)
-    return console.export_svg()
 
 
 def _seed_test_session(profile_dir: Path, session_id: str = "sess-real-100") -> None:
@@ -88,7 +73,7 @@ async def test_live_theme_switch_rethemes_mounted_session_arena(
         await pilot.pause()
 
         arena = app.canvas.query_one(SessionArenaWidget)
-        graphite_output = _render_to_svg(arena.render())
+        graphite_output = app.export_screenshot()
         assert KIN_GRAPHITE_THEME.accent_primary in graphite_output
 
         refresh_calls = 0
@@ -103,7 +88,7 @@ async def test_live_theme_switch_rethemes_mounted_session_arena(
         app.set_theme("dracula")
         await pilot.pause()
 
-        dracula_output = _render_to_svg(arena.render())
+        dracula_output = app.export_screenshot()
         assert refresh_calls > 0, "Live theme switch must refresh mounted SessionArena content"
         assert DRACULA_THEME.accent_primary in dracula_output
         assert KIN_GRAPHITE_THEME.accent_primary not in dracula_output

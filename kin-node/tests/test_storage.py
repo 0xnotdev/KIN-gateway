@@ -81,6 +81,18 @@ EXPECTED_SCHEMA: dict[str, set[str]] = {
     "audit_events": {"audit_id", "correlation_id", "session_id", "category", "actor_username", "summary", "payload_json", "created_at"},
     "outbound_envelope_queue": {"queue_id", "session_id", "sequence", "recipient_username", "envelope_kind", "envelope_json_enc", "delivery_state", "attempt_count", "next_retry_at", "last_error", "created_at", "updated_at"},
     "peer_capabilities": {"peer_username", "capability_json", "fetched_at"},
+    "context_pantry_refs": {
+        "ref_id", "encrypted_path", "size_bytes", "expires_at", "created_at"
+    },
+    "context_packs": {"pack_id", "name", "items_json_enc", "created_at", "updated_at"},
+    "agent_reservations": {
+        "reservation_id", "agent_id", "owner_username", "starts_at", "ends_at",
+        "status", "created_at"
+    },
+    "playbooks": {
+        "playbook_id", "name", "source_session_id", "template_json_enc",
+        "created_at", "updated_at"
+    },
 }
 
 

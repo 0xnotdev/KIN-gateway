@@ -85,20 +85,18 @@ def test_dispatch_wizard_context_pantry_operations(tmp_path: Path):
     widget.add_context_pantry_item("message", "High priority request")
     assert len(widget.controller.draft.pantry_items) == 1
     assert widget.controller.draft.pantry_items[0].kind == "message"
-    assert widget.controller.draft.pantry_items[0].classification == "attached"
+    assert widget.controller.draft.pantry_items[0].classification == "share_with_peer"
+    assert widget.controller.draft.pantry_items[0].reviewed is False
 
-    # Add local reference item -> verifies M7 explanation
+    # A raw path is rejected; local references must be registered as opaque IDs.
     widget.add_context_pantry_item("local_reference", "file:///d:/KIN/doc.txt")
-    assert len(widget.controller.draft.pantry_items) == 2
-    local_ref_item = widget.controller.draft.pantry_items[1]
-    assert local_ref_item.kind == "local_reference"
-    assert "Milestone M7" in local_ref_item.classification
+    assert len(widget.controller.draft.pantry_items) == 1
+    assert "opaque reference" in widget.status_message
 
     # Remove item
     removed = widget.controller.remove_pantry_item(0)
     assert removed is True
-    assert len(widget.controller.draft.pantry_items) == 1
-    assert widget.controller.draft.pantry_items[0].kind == "local_reference"
+    assert widget.controller.draft.pantry_items == []
 
 
 def test_dispatch_wizard_dirty_state_tracking(tmp_path: Path):
@@ -224,6 +222,8 @@ async def test_dispatch_wizard_keyboard_only_end_to_end_pilot_flow(mock_profile_
         assert wizard.step_index == 5
         await pilot.press("a")
         assert len(wizard.controller.draft.pantry_items) >= 1
+        await pilot.press("v")
+        assert wizard.controller.draft.pantry_items[0].reviewed is True
 
         # Step 6 (Review & Dispatch): Press Enter to confirm dispatch
         await pilot.press("right")

@@ -471,8 +471,15 @@ class TwoNodeSmokeHarness:
         alice_final = self.run_worker("alice", "inspect", "--session", session_id)
         bob_final = self.run_worker("bob", "inspect", "--session", session_id)
         for profile, evidence in (("Alice", alice_final), ("Bob", bob_final)):
-            if evidence.get("status") != "completed" or evidence.get("event_count") != 5:
-                raise RuntimeError(f"{profile} did not reach the complete five-event state: {evidence}")
+            expected_kinds = [
+                "task_request", "acceptance", "question", "answer", "final_result", "outcome"
+            ]
+            if (
+                evidence.get("status") != "completed"
+                or evidence.get("event_count") != 6
+                or evidence.get("event_kinds") != expected_kinds
+            ):
+                raise RuntimeError(f"{profile} did not reach the complete persisted outcome state: {evidence}")
         return {
             "session_id": session_id,
             "dispatch": dispatch,
@@ -560,7 +567,7 @@ class TwoNodeSmokeHarness:
             "--actor-agent", "bob_agent", "--text", "Restart reconstruction completed.",
         )
         restart_final = self.run_worker("alice", "inspect", "--session", restart_session_id)
-        if restart_final.get("status") != "completed" or restart_final.get("event_count") != 5:
+        if restart_final.get("status") != "completed" or restart_final.get("event_count") != 6:
             raise RuntimeError(f"Restarted Alice missed or duplicated terminal event: {restart_final}")
 
         # 3. A genuinely elapsed, test-shortened approval is rejected by the real TUI command.
