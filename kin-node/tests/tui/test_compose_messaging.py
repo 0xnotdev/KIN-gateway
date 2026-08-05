@@ -1,11 +1,19 @@
 """Dual-profile cross-node integration tests for human message composition (§14.8 Step 5/6, Line 227)."""
 
+import io
 import json
 import pytest
+from rich.console import Console
 from kin.schemas import MessageKind
-from kin.tui.local_state import send_human_message_to_session_action
+from kin.tui.local_state import (
+    create_private_note,
+    get_private_notes,
+    promote_private_note_to_peer_visible,
+    send_human_message_to_session_action,
+)
 from kin.tui.state import UiEvent
 from kin.tui.widgets.compose_modal import ComposeMessageModal
+from kin.tui.widgets.private_note_modal import PrivateNoteAuthoringModal
 from kin.tui.widgets.session_arena import SessionArenaWidget
 
 
@@ -261,3 +269,228 @@ async def test_compose_modal_keyboard_trigger_and_review_flow(dual_profile_setup
         # Cancel modal
         await pilot.click("#btn-cancel")
         await pilot.pause()
+
+
+@pytest.mark.asyncio
+async def test_private_note_exclusion_from_peer_views_and_plain_export(
+    dual_profile_setup,
+    build_tui_app,
+    monkeypatch,
+):
+    """Ctrl+S creates one owner-only note visible solely in the Notes lane."""
+    from kin.storage.db import get_connection
+    from kin.tui.local_state import get_session_events
+    from kin.tui.shell import ConfirmationModal
+    from textual.widgets import Input
+
+    alice_dir = dual_profile_setup["alice_dir"]
+    note_text = 'Keep the API [draft] and fallback concern private for now.'
+    promoted_calls: list[str] = []
+
+    def fake_promote(_profile_dir, _profile_name, _session_id, note_event_id):
+        promoted_calls.append(note_event_id)
+        return True, None
+
+    monkeypatch.setattr(
+        "kin.tui.widgets.session_arena.promote_private_note_to_peer_visible",
+        fake_promote,
+    )
+
+    app = build_tui_app(profile_name="alice", profile_dir=alice_dir)
+    async with app.run_test(size=(120, 36)) as pilot:
+        app.tab_manager.open_tab(
+            "tab:sess-comp-1",
+            "Private note session",
+            "session",
+        )
+        app.sync_tab_bar()
+        await app.canvas.recompose()
+        await pilot.pause()
+        arena = app.canvas.get_session_arena_widget()
+        assert arena is not None
+        arena.focus()
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert isinstance(app.screen, PrivateNoteAuthoringModal)
+        app.screen.query_one("#private-note-input", Input).value = note_text
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert len(app.screen_stack) == 1
+        assert arena.active_lane == "notes"
+        assert [note.note_text for note in arena.private_notes] == [note_text]
+        assert get_session_events(alice_dir, "sess-comp-1", "alice") == []
+        assert arena.events == []
+        assert arena.exchange_timeline_widget.events == []
+        assert arena.activity_feed_widget.raw_events == []
+
+        for lane in ("transcript", "activity", "outputs", "decisions", "needs_you"):
+            arena.switch_lane(lane)
+            output = io.StringIO()
+            Console(file=output, width=120, color_system=None).print(arena.render())
+            assert note_text not in output.getvalue(), lane
+
+        arena.switch_lane("notes")
+        output = io.StringIO()
+        Console(file=output, width=120, color_system=None).print(arena.render())
+        assert note_text in output.getvalue()
+
+        # Even with Notes active, export uses the peer-visible audit exporter.
+        await pilot.press("ctrl+e")
+        export_path = alice_dir / "exports" / "latest-view.txt"
+        assert export_path.exists()
+        assert note_text not in export_path.read_text(encoding="utf-8")
+
+        # Promotion is Arena-specific and shows the exact boundary-crossing text.
+        app.set_focus(arena)
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmationModal)
+        confirmation_body = app.screen.query_one("#modal-body")
+        assert confirmation_body.size.height >= 2
+        visible_confirmation = "\n".join(
+            confirmation_body.render_line(line).text
+            for line in range(confirmation_body.size.height)
+        )
+        assert note_text in " ".join(visible_confirmation.split())
+        await pilot.press("n")
+        await pilot.pause()
+        assert promoted_calls == []
+
+        arena.action_promote_private_note()
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmationModal)
+        await pilot.press("y")
+        await pilot.pause()
+        assert promoted_calls == [arena.private_notes[0].event_id]
+
+    notes = get_private_notes(alice_dir, "sess-comp-1", "alice")
+    assert len(notes) == 1
+    conn = get_connection(alice_dir / "kin.db")
+    row = conn.execute(
+        "SELECT kind, visibility, signature FROM session_events WHERE event_id = ?",
+        (notes[0].event_id,),
+    ).fetchone()
+    conn.close()
+    assert row == ("private_note", "local_only", None)
+
+
+@pytest.mark.asyncio
+async def test_deliberate_private_note_promotion_uses_real_ed25519_signature(
+    dual_profile_setup,
+    build_tui_app,
+    monkeypatch,
+):
+    """Promotion reuses the real signed envelope and Bob decrypts its content."""
+    import httpx
+    from kin.audit.export import export_session
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.schemas import verify_envelope_signature
+    from kin.storage.db import get_connection
+    from kin.transport.v11 import ingest_envelope
+    from kin.tui.local_state import get_session_events
+
+    alice_dir = dual_profile_setup["alice_dir"]
+    bob_dir = dual_profile_setup["bob_dir"]
+    alice_ed_pub = dual_profile_setup["alice_ed_pub"]
+    bob_vault_key = dual_profile_setup["bob_vault_key"]
+    note_text = "Promote this exact architecture concern to Bob."
+
+    created, create_error = create_private_note(
+        alice_dir,
+        "alice",
+        "sess-comp-1",
+        "alice",
+        note_text,
+    )
+    assert created is True
+    assert create_error is None
+    note = get_private_notes(alice_dir, "sess-comp-1", "alice")[0]
+
+    captured_envelopes: list[dict] = []
+
+    def mock_post(url, json=None, **kwargs):
+        if "sessions" not in url:
+            return httpx.Response(404)
+        captured_envelopes.append(dict(json))
+        bob_conn = get_connection(bob_dir / "kin.db")
+
+        def get_bob_pubkey(username: str):
+            return alice_ed_pub if username == "alice" else None
+
+        ack = ingest_envelope(
+            bob_conn,
+            bob_vault_key,
+            json,
+            get_public_key_fn=get_bob_pubkey,
+        )
+        bob_conn.close()
+        return httpx.Response(200, json={"status": ack.status})
+
+    client = httpx.Client()
+    monkeypatch.setattr(client, "post", mock_post)
+
+    promoted, promotion_error = promote_private_note_to_peer_visible(
+        alice_dir,
+        "alice",
+        "sess-comp-1",
+        note.event_id,
+        http_client=client,
+    )
+    assert promoted is True
+    assert promotion_error is None
+    assert len(captured_envelopes) == 1
+    envelope = captured_envelopes[0]
+    assert envelope["kind"] == MessageKind.QUESTION.value
+    assert envelope["payload"]["message"] == note_text
+    assert envelope["signature"]
+    assert verify_envelope_signature(envelope, alice_ed_pub) is True
+
+    bob_events = get_session_events(bob_dir, "sess-comp-1", "bob")
+    assert len(bob_events) == 1
+    assert bob_events[0].kind == MessageKind.QUESTION.value
+    assert bob_events[0].content == note_text
+
+    bob_conn = get_connection(bob_dir / "kin.db")
+    bob_signature = bob_conn.execute(
+        "SELECT signature FROM session_events WHERE event_id = ?",
+        (bob_events[0].event_id,),
+    ).fetchone()[0]
+    bob_conn.close()
+    assert bob_signature == envelope["signature"]
+
+    alice_conn = get_connection(alice_dir / "kin.db")
+    exported = export_session(
+        alice_conn,
+        get_or_create_vault_key("alice"),
+        "sess-comp-1",
+        format="json",
+    )
+    alice_conn.close()
+    exported_data = json.loads(exported)
+    assert [event["kind"] for event in exported_data["events"]] == [
+        MessageKind.QUESTION.value
+    ]
+    assert exported_data["events"][0]["payload"]["message"] == note_text
+    assert exported_data["events"][0]["signature"] == envelope["signature"]
+
+    # The same public event must be present in the actual Ctrl+E plain-text
+    # session export, while the original private_note row remains excluded.
+    app = build_tui_app(profile_name="alice", profile_dir=alice_dir)
+    async with app.run_test(size=(120, 36)) as pilot:
+        app.tab_manager.open_tab(
+            "tab:sess-comp-1",
+            "Promoted note session",
+            "session",
+        )
+        app.sync_tab_bar()
+        await app.canvas.recompose()
+        await pilot.pause()
+        await pilot.press("ctrl+e")
+        plain_export = (alice_dir / "exports" / "latest-view.txt").read_text(
+            encoding="utf-8"
+        )
+        assert note_text in plain_export
+        assert "private_note" not in plain_export

@@ -719,10 +719,18 @@ class KinApp(App[None]):
             active.dirty = False
             self.status_bar.status_message = "Dispatch draft saved locally."
             self.status_bar.refresh()
+        elif active.kind == "session":
+            arena = self.canvas.get_session_arena_widget()
+            if arena is not None:
+                arena.open_private_note_authoring()
+            else:
+                self.status_bar.status_message = "Private notes require an active Session Arena."
+                self.status_bar.refresh()
 
     def action_export_view(self) -> None:
         """Export the active workspace as ordered, redacted plain text."""
         active = self.tab_manager.get_active_tab()
+        session_arena: Optional[SessionArenaWidget] = None
         if active.kind == "home":
             widget = self.canvas.home_widget
         elif active.kind == "agents":
@@ -734,19 +742,75 @@ class KinApp(App[None]):
         elif active.kind == "dispatch":
             widget = self.canvas.dispatch_widget
         elif active.kind == "session":
-            widget = self.canvas.get_session_arena_widget()
+            session_arena = self.canvas.get_session_arena_widget()
+            widget = session_arena
         else:
             widget = self.canvas
 
-        output = StringIO()
-        console = Console(
-            file=output,
-            width=80,
-            color_system=None,
-            force_terminal=False,
-        )
-        console.print(widget.render())
-        export_text = output.getvalue()
+        export_text: Optional[str] = None
+        if session_arena is not None and session_arena.session_id:
+            db_path = self.profile_dir / "kin.db"
+            if db_path.exists():
+                try:
+                    from kin.audit.export import export_session
+                    from kin.identity.storage import get_or_create_vault_key
+                    from kin.tui.local_state import ensure_profile_db
+                    from kin.tui.redaction import redact_ui_text
+
+                    vault_key = get_or_create_vault_key(self.profile_name)
+                    conn = ensure_profile_db(db_path)
+                    try:
+                        markdown = redact_ui_text(
+                            export_session(
+                                conn,
+                                vault_key,
+                                session_arena.session_id,
+                                format="markdown",
+                                include_private_notes=False,
+                            )
+                        )
+                    finally:
+                        conn.close()
+                    semantic_lines = [
+                        line for line in markdown.splitlines()
+                        if not line.startswith("- **Event ID**:")
+                    ]
+                    export_text = (
+                        "SESSION ARENA\n"
+                        f"SESSION: {session_arena.session_id}\n"
+                        "EVENTS\n"
+                        + "\n".join(semantic_lines)
+                        + "\nACTIONS: exported read-only peer-visible session view\n"
+                    )
+                except Exception:
+                    # Session export is fail-closed: never fall back to rendering
+                    # the local-only Notes lane when the audited exporter fails.
+                    export_text = (
+                        "SESSION ARENA\n"
+                        f"SESSION: {session_arena.session_id}\n"
+                        "EVENTS\n"
+                        "Peer-visible export unavailable; no private notes were exported.\n"
+                        "ACTIONS: Retry export after checking local profile state\n"
+                    )
+            elif session_arena.active_lane == "notes":
+                export_text = (
+                    "SESSION ARENA\n"
+                    f"SESSION: {session_arena.session_id}\n"
+                    "EVENTS\n"
+                    "No persisted peer-visible export is available; private notes were excluded.\n"
+                    "ACTIONS: Initialize the session database before exporting\n"
+                )
+
+        if export_text is None:
+            output = StringIO()
+            console = Console(
+                file=output,
+                width=80,
+                color_system=None,
+                force_terminal=False,
+            )
+            console.print(widget.render())
+            export_text = output.getvalue()
 
         export_dir = self.profile_dir / "exports"
         export_dir.mkdir(parents=True, exist_ok=True)

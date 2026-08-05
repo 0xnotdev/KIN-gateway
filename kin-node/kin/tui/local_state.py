@@ -5,6 +5,7 @@ and relay reachability. Used by First Flight and Home Screen (§14.6 Phase B).
 """
 
 from datetime import datetime, timezone
+import json
 import logging
 import os
 import sqlite3
@@ -20,7 +21,7 @@ from kin.agent_registry.registry import scan_local_cards
 from kin.cli import DEFAULT_RELAY_URL, open_profile_db
 from kin.identity.fingerprint import compute_fingerprint
 from kin.identity.storage import load_private_key
-from kin.schemas import ActionClass, ApprovalRequest, MessageKind, RiskLabel
+from kin.schemas import ActionClass, ApprovalRequest, InternalEventKind, MessageKind, RiskLabel
 from kin.storage.db import create_schema
 from kin.tui.state import (
     AgentCardView,
@@ -29,6 +30,7 @@ from kin.tui.state import (
     ContactSummary,
     HealthSnapshot,
     NeedsYouItem,
+    PrivateNoteView,
     RecoverableError,
     SessionSummary,
     UiEvent,
@@ -599,6 +601,90 @@ def decide_pending_approval(
         conn.close()
 
 
+def create_private_note(
+    profile_dir: Path,
+    profile_name: str,
+    session_id: str,
+    actor_username: str,
+    note_text: str,
+) -> Tuple[bool, Optional[RecoverableError]]:
+    """Append an encrypted owner-only scratch note without signing or transport."""
+    from kin.audit.writer import append_session_event
+    from kin.identity.storage import get_or_create_vault_key
+
+    if not note_text or not note_text.strip():
+        return False, RecoverableError(
+            what_happened="Private note text cannot be empty.",
+            impact="No private note was created.",
+            preserved="Session history remains unchanged.",
+            next_action="Enter note text and save again.",
+        )
+    if not actor_username or not actor_username.strip():
+        return False, RecoverableError(
+            what_happened="Private note author is unavailable.",
+            impact="No private note was created.",
+            preserved="Session history remains unchanged.",
+            next_action="Initialize the local profile identity first.",
+        )
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return False, RecoverableError(
+            what_happened="Database file not found.",
+            impact="Cannot save private note.",
+            preserved="No local state changed.",
+            next_action="Initialize profile first.",
+        )
+
+    try:
+        vault_key = get_or_create_vault_key(profile_name)
+    except Exception as exc:
+        return False, RecoverableError(
+            what_happened=f"Failed to access private-note encryption key: {exc}",
+            impact="Private note was not recorded.",
+            preserved="Existing session history remains intact.",
+            next_action="Unlock the profile keychain and retry.",
+        )
+    conn = ensure_profile_db(db_path)
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            return False, RecoverableError(
+                what_happened=f"Session '{session_id}' not found.",
+                impact="Private note was not saved.",
+                preserved="Local database remains unchanged.",
+                next_action="Select a valid session.",
+            )
+
+        result = append_session_event(
+            conn,
+            vault_key,
+            session_id=session_id,
+            actor_username=actor_username.strip(),
+            actor_agent_id=None,
+            kind=InternalEventKind.PRIVATE_NOTE.value,
+            visibility="local_only",
+            payload={"content": note_text.strip()},
+            signature=None,
+            sequence=None,
+        )
+        if result.get("status") != "appended":
+            raise RuntimeError(f"Unexpected private-note append status: {result.get('status')}")
+        return True, None
+    except Exception as exc:
+        return False, RecoverableError(
+            what_happened=f"Failed to save private note: {exc}",
+            impact="Private note was not recorded.",
+            preserved="Existing session history remains intact.",
+            next_action="Retry saving the note.",
+        )
+    finally:
+        conn.close()
+
+
 def pause_session(
     profile_dir: Path,
     profile_name: str = "default",
@@ -1030,6 +1116,95 @@ def send_human_message_to_session_action(
         conn.close()
 
 
+def promote_private_note_to_peer_visible(
+    profile_dir: Path,
+    profile_name: str,
+    session_id: str,
+    note_event_id: str,
+    *,
+    relay_url: Optional[str] = None,
+    http_client: Optional[httpx.Client] = None,
+    now: Optional[datetime] = None,
+) -> Tuple[bool, Optional[RecoverableError]]:
+    """Promote one local note through the canonical signed message transport."""
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.storage.vault import decrypt_field
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return False, RecoverableError(
+            what_happened="Database file not found.",
+            impact="Cannot promote private note.",
+            preserved="The note remains local-only.",
+            next_action="Initialize profile first.",
+        )
+
+    try:
+        vault_key = get_or_create_vault_key(profile_name)
+    except Exception as exc:
+        return False, RecoverableError(
+            what_happened=f"Failed to access private-note encryption key: {exc}",
+            impact="Nothing was sent to the peer.",
+            preserved="The original note remains local-only.",
+            next_action="Unlock the profile keychain and retry promotion.",
+        )
+    conn = ensure_profile_db(db_path)
+    try:
+        row = conn.execute(
+            """
+            SELECT payload_json
+            FROM session_events
+            WHERE event_id = ? AND session_id = ? AND kind = ? AND visibility = 'local_only'
+            """,
+            (note_event_id, session_id, InternalEventKind.PRIVATE_NOTE.value),
+        ).fetchone()
+        if row is None:
+            return False, RecoverableError(
+                what_happened=f"Private note '{note_event_id}' not found.",
+                impact="Nothing was sent to the peer.",
+                preserved="Local session history remains unchanged.",
+                next_action="Refresh the Notes lane and select an existing note.",
+            )
+
+        decrypted = decrypt_field(vault_key, row[0])
+        payload = json.loads(decrypted) if decrypted else {}
+        note_text = payload.get("content") if isinstance(payload, dict) else None
+        if not isinstance(note_text, str) or not note_text.strip():
+            return False, RecoverableError(
+                what_happened=f"Private note '{note_event_id}' has no promotable text.",
+                impact="Nothing was sent to the peer.",
+                preserved="The note remains local-only.",
+                next_action="Create a new non-empty private note.",
+            )
+    except Exception as exc:
+        return False, RecoverableError(
+            what_happened=f"Failed to read private note: {exc}",
+            impact="Nothing was sent to the peer.",
+            preserved="The note remains local-only.",
+            next_action="Refresh the Notes lane and retry.",
+        )
+    finally:
+        conn.close()
+
+    ok, _result, error = send_human_message_to_session_action(
+        profile_name=profile_name,
+        session_id=session_id,
+        message_text=note_text.strip(),
+        profile_dir=profile_dir,
+        relay_url=relay_url,
+        http_client=http_client,
+        now=now,
+    )
+    if not ok:
+        return False, error or RecoverableError(
+            what_happened="Failed to promote private note.",
+            impact="Nothing was sent to the peer.",
+            preserved="The original note remains local-only.",
+            next_action="Check connectivity and retry promotion.",
+        )
+    return True, None
+
+
 def query_health_snapshot(
     profile_name: str = "default",
     profile_dir: Optional[Path] = None,
@@ -1221,6 +1396,7 @@ def get_session_events(
                 SELECT event_id, session_id, kind, created_at, actor_username, event_order, payload_json
                 FROM session_events
                 WHERE session_id = ? AND event_order > ?
+                  AND COALESCE(visibility, 'peer_visible') != 'local_only'
                 ORDER BY event_order ASC
                 """,
                 (session_id, after_event_order),
@@ -1231,6 +1407,7 @@ def get_session_events(
                 SELECT event_id, session_id, kind, created_at, actor_username, event_order, payload_json
                 FROM session_events
                 WHERE session_id = ?
+                  AND COALESCE(visibility, 'peer_visible') != 'local_only'
                 ORDER BY event_order ASC
                 """,
                 (session_id,),
@@ -1312,6 +1489,59 @@ def get_session_events(
         # Sort combined events strictly by ISO created_at timestamp
         events.sort(key=lambda e: e.created_at)
         return events
+    finally:
+        conn.close()
+
+
+def get_private_notes(
+    profile_dir: Path,
+    session_id: str,
+    profile_name: str = "default",
+) -> List[PrivateNoteView]:
+    """Return decrypted owner-only notes without projecting them as timeline events."""
+    from kin.identity.storage import get_or_create_vault_key
+    from kin.storage.vault import decrypt_field
+
+    db_path = profile_dir / "kin.db"
+    if not db_path.exists():
+        return []
+
+    try:
+        vault_key = get_or_create_vault_key(profile_name)
+    except Exception:
+        return []
+    conn = ensure_profile_db(db_path)
+    notes: List[PrivateNoteView] = []
+    try:
+        rows = conn.execute(
+            """
+            SELECT event_id, session_id, actor_username, payload_json, created_at, event_order
+            FROM session_events
+            WHERE session_id = ? AND kind = ? AND visibility = 'local_only'
+            ORDER BY event_order ASC
+            """,
+            (session_id, InternalEventKind.PRIVATE_NOTE.value),
+        ).fetchall()
+        for event_id, stored_session_id, actor, encrypted_payload, created_at, event_order in rows:
+            try:
+                decrypted = decrypt_field(vault_key, encrypted_payload)
+                payload = json.loads(decrypted) if decrypted else {}
+            except Exception:
+                continue
+            note_text = payload.get("content") if isinstance(payload, dict) else None
+            if not isinstance(note_text, str):
+                continue
+            notes.append(
+                PrivateNoteView(
+                    event_id=event_id,
+                    session_id=stored_session_id,
+                    actor_username=actor,
+                    note_text=note_text,
+                    created_at=created_at,
+                    event_order=event_order,
+                )
+            )
+        return notes
     finally:
         conn.close()
 

@@ -134,7 +134,9 @@ class ModalScreenWidget(LifecycleWidgetMixin, ModalScreen[bool]):
         err = self._c("state.error", "#f7768e")
         with Vertical(id="modal-container"):
             yield Static(f"[bold {err}]{self.title}[/bold {err}]", id="modal-header")
-            yield Static(self.body_text, id="modal-body")
+            body = Static(self.body_text, id="modal-body")
+            body.styles.height = "auto"
+            yield body
             with Horizontal(id="modal-buttons"):
                 yield Button(self.confirm_label, id="btn-confirm", variant=self.variant)
                 yield Button(self.cancel_label, id="btn-cancel", variant="default")

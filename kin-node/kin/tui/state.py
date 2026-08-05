@@ -267,6 +267,18 @@ class UiEvent:
         )
 
 
+@dataclass(frozen=True)
+class PrivateNoteView:
+    """Owner-only projection that never enters peer-visible event views."""
+
+    event_id: str
+    session_id: str
+    actor_username: str
+    note_text: str
+    created_at: str
+    event_order: int
+
+
 @dataclass
 class ArtifactView:
     """UI projection wrapping kin.artifacts.vault.ArtifactMetadata."""

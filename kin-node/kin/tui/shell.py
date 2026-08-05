@@ -642,6 +642,17 @@ class ConfirmationModal(ModalScreenWidget):
     Extends foundation ModalScreenWidget to guarantee unified keyboard handling (y/n/escape) and button consistency.
     """
 
+    DEFAULT_CSS = """
+    ConfirmationModal #modal-container {
+        width: 80;
+        max-height: 28;
+    }
+    ConfirmationModal #modal-body {
+        height: auto;
+        min-height: 3;
+    }
+    """
+
     def __init__(self, action_name: str, target_name: str, **kwargs) -> None:
         accent = self._c("accent.primary", "#bb9af7")
         super().__init__(
