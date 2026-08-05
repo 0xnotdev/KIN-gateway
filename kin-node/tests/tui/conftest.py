@@ -20,12 +20,18 @@ TApp = TypeVar("TApp", bound=App)
 
 
 @pytest.fixture(autouse=True)
-def isolate_tui_network(monkeypatch):
+def isolate_tui_network(monkeypatch, request):
     """Systemic autouse guard preventing unmocked real network I/O during TUI tests (§14.6 Phase B & C).
 
     Monkeypatches httpx.get and httpx.Client.get so unmocked socket connections fail fast
     with a 404 response, while explicit mock transports passed to httpx.Client are respected.
     """
+    if request.node.get_closest_marker("smoke") is not None:
+        # Smoke tests explicitly prove real node/relay boundaries. Their child
+        # processes and TUI transport must retain genuine socket access.
+        yield
+        return
+
     orig_client_get = httpx.Client.get
 
     def fast_mock_get(url, *args, **kwargs):
@@ -39,6 +45,7 @@ def isolate_tui_network(monkeypatch):
 
     monkeypatch.setattr(httpx, "get", fast_mock_get)
     monkeypatch.setattr(httpx.Client, "get", smart_client_get)
+    yield
 
 
 @pytest.fixture(autouse=True)

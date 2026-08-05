@@ -96,7 +96,10 @@ class KinApp(App[None]):
 
         self.tab_bar = WorkspaceTabBar()
         self.sidebar = Sidebar(profile_dir=self.profile_dir, profile_name=self.profile_name)
-        self.canvas = MainCanvas()
+        self.canvas = MainCanvas(
+            profile_dir=self.profile_dir,
+            profile_name=self.profile_name,
+        )
         self.inspector = Inspector()
         self.status_bar = StatusBar(profile_name=profile_name)
         self.minimal_breadcrumb = Static("KIN > Home | Esc: Back", id="minimal-breadcrumb")

@@ -412,9 +412,9 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
             self.is_submitted = True
             self.last_dispatch_result = res
             status_str = res.get("status", "sent")
-            if status_str == "delivered_direct":
+            if status_str in ("delivered", "delivered_direct"):
                 self.status_message = "✔ Delivered directly to peer"
-            elif status_str == "queued_relay":
+            elif status_str in ("queued", "queued_relay"):
                 self.status_message = "✔ Queued safely at relay"
             else:
                 self.status_message = "✔ Queued locally (relay unreachable)"
