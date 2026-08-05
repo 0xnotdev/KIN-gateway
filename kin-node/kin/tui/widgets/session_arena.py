@@ -21,6 +21,9 @@ from kin.tui.redaction import redact_ui_text
 from kin.tui.local_state import (
     cancel_session_command,
     create_private_note,
+    create_session_checkpoint,
+    create_session_decision,
+    create_session_playbook,
     decide_pending_approval,
     get_approvals_for_session,
     get_artifacts_for_session,
@@ -29,7 +32,10 @@ from kin.tui.local_state import (
     get_private_notes,
     get_session_detail,
     get_session_events,
+    get_session_history_events,
+    get_session_budget_gauges,
     get_session_list,
+    get_session_outcome_card,
     get_stale_peer_card_count,
     pause_session,
     promote_private_note_to_peer_visible,
@@ -48,6 +54,8 @@ from kin.tui.widgets.exchange_timeline import ExchangeTimelineWidget
 from kin.tui.widgets.inspector import InspectorWidget
 from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
 from kin.tui.widgets.private_note_modal import PrivateNoteAuthoringModal
+from kin.tui.widgets.outcome_card import OutcomeCardWidget
+from kin.tui.widgets.session_record_modal import SessionRecordModal
 from kin.tui.widgets.session_map import SessionMapWidget
 from kin.tui.widgets.session_state_modal import SessionStateMenuModal
 from kin.tui.widgets.trust_strip import TrustStripWidget
@@ -104,6 +112,8 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self.artifacts: List[ArtifactView] = artifacts or []
         self.approvals: List[ApprovalView] = approvals or []
         self.private_notes: List[PrivateNoteView] = []
+        self.outcome_card = None
+        self.budget_gauges = None
         self.last_arena_error: Optional[RecoverableError] = None
         self.last_trust_error: Optional[str] = None
         self.breakpoint: Breakpoint = "wide"
@@ -181,6 +191,20 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             self.events = self._events_override
         else:
             self.events = get_session_events(self.profile_dir, self.session_id, self.profile_name)
+            history_events = get_session_history_events(
+                self.profile_dir,
+                self.session_id or "",
+                self.profile_name,
+            )
+            self.events = sorted(
+                [*self.events, *history_events],
+                key=lambda event: (
+                    event.event_order is None,
+                    event.event_order if event.event_order is not None else 0,
+                    event.created_at,
+                    event.event_id,
+                ),
+            )
 
         # 4. Artifacts resolution
         if self._artifacts_override is not None:
@@ -205,6 +229,16 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             self.selected_note_index = min(self.selected_note_index, len(self.private_notes) - 1)
         else:
             self.selected_note_index = 0
+        self.outcome_card = get_session_outcome_card(
+            self.profile_dir,
+            self.session_id or "",
+            self.profile_name,
+        )
+        self.budget_gauges = get_session_budget_gauges(
+            self.profile_dir,
+            self.profile_name,
+            self.session_id or "",
+        )
 
         # 7. Session map resolution
         all_sessions = get_session_list(self.profile_dir, self.profile_name)
@@ -603,6 +637,83 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
                 self.enter_replay_mode()
             self.refresh()
 
+    def _open_session_record_modal(self, record_kind: str) -> None:
+        if not (self.is_mounted and hasattr(self, "app") and self.app):
+            return
+
+        def handle_record(text: Optional[str]) -> None:
+            if not text:
+                return
+            _, identity_username, _ = get_local_identity_info(self.profile_name, self.profile_dir)
+            actor = identity_username or self.profile_name
+            if record_kind == "checkpoint":
+                ok, error = create_session_checkpoint(
+                    self.profile_dir, self.profile_name, self.session_id or "", actor, text
+                )
+            else:
+                ok, error = create_session_decision(
+                    self.profile_dir, self.profile_name, self.session_id or "", actor, text
+                )
+            if ok:
+                self.load_arena_data()
+                self.switch_lane("decisions")
+                self.app.status_bar.status_message = f"{record_kind.title()} persisted in ordered history."
+            elif error:
+                self.last_arena_error = error
+                self.app.status_bar.status_message = f"{record_kind.title()} failed: {error.what_happened}"
+            self.app.status_bar.refresh()
+            self.refresh()
+
+        self.app.push_screen(
+            SessionRecordModal(self.session_id or "sess-unknown", record_kind),
+            handle_record,
+        )
+
+    def action_record_checkpoint(self) -> None:
+        self._open_session_record_modal("checkpoint")
+
+    def action_record_decision(self) -> None:
+        self._open_session_record_modal("decision")
+
+    def action_create_playbook(self) -> None:
+        if self.outcome_card is None or not (self.is_mounted and hasattr(self, "app") and self.app):
+            return
+        objective = self.session_summary.objective if self.session_summary else "Session"
+        ok, playbook_id, error = create_session_playbook(
+            self.profile_dir,
+            self.profile_name,
+            self.session_id or "",
+            f"{(objective or 'Session')[:48]} playbook",
+        )
+        if ok:
+            self.app.status_bar.status_message = (
+                f"Local playbook {playbook_id} created; peer, agents, and approvals must be chosen fresh."
+            )
+        elif error:
+            self.app.status_bar.status_message = error.what_happened
+        self.app.status_bar.refresh()
+
+    def _render_budget_gauges(self) -> str:
+        if self.budget_gauges is None:
+            return "[dim]Budget gauges unavailable.[/dim]"
+        gauge = self.budget_gauges
+
+        def percent(value: Optional[float]) -> str:
+            return "uncapped" if value is None else f"{value * 100:.0f}%"
+
+        cost = (
+            "not reported"
+            if gauge.local_cost_estimate is None
+            else f"{gauge.local_cost_estimate:.2f} / {gauge.local_cost_limit or 'uncapped'} ({percent(gauge.cost_fraction)})"
+        )
+        peer = f" | Peer summary: {redact_ui_text(gauge.peer_cost_summary)}" if gauge.peer_cost_summary else ""
+        return (
+            "[bold]LOCAL BUDGET / IMPACT GAUGES[/bold]\n"
+            f"Time: {gauge.elapsed_seconds:.0f}s / {gauge.runtime_limit_seconds or 'uncapped'} ({percent(gauge.runtime_fraction)})\n"
+            f"Artifacts: {gauge.artifact_bytes}B / {gauge.artifact_limit_bytes or 'uncapped'} ({percent(gauge.artifact_fraction)})\n"
+            f"Local cost estimate: {cost}{peer}"
+        )
+
     def action_session_state_menu(self) -> None:
         self.open_session_state_menu()
 
@@ -729,6 +840,17 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
     def append_events(self, new_events: List[UiEvent], now: Optional[Union[datetime, str, float]] = None) -> None:
         """Forward new events to ExchangeTimelineWidget while updating master events list (§14.8 Phase C2)."""
         self.events.extend(new_events)
+        if any(event.kind == "outcome" for event in new_events):
+            self.outcome_card = get_session_outcome_card(
+                self.profile_dir,
+                self.session_id or "",
+                self.profile_name,
+            )
+            self.budget_gauges = get_session_budget_gauges(
+                self.profile_dir,
+                self.profile_name,
+                self.session_id or "",
+            )
         if not self.is_replay_mode:
             self.exchange_timeline_widget.append_events(new_events, now=now)
             self.activity_feed_widget.events = self.exchange_timeline_widget.events
@@ -816,6 +938,20 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
                     after_event_order=max_order,
                     after_created_at=max_created,
                 ) or []
+                local_history = get_session_history_events(
+                    self.profile_dir,
+                    self.session_id,
+                    self.profile_name,
+                ) or []
+                fetched.extend(event for event in local_history if event.event_id not in seen_ids)
+                fetched.sort(
+                    key=lambda event: (
+                        event.event_order is None,
+                        event.event_order if event.event_order is not None else 0,
+                        event.created_at,
+                        event.event_id,
+                    )
+                )
                 if fetched:
                     new_evts = [e for e in fetched if e.event_id not in seen_ids]
                     if new_evts:
@@ -956,6 +1092,21 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
                     lines.append(f"- {req.summary}; risk={risk}; reason={req.reason}")
             elif self.active_lane == "outputs":
                 lines.append(f"OUTPUTS: {len(self.artifacts)}")
+                if self.outcome_card is not None:
+                    lines.extend(
+                        [
+                            f"OUTCOME: {self.outcome_card.status} | {redact_ui_text(self.outcome_card.summary)}",
+                            f"EVIDENCE EVENTS: {self.outcome_card.evidence_event_count}",
+                            f"REPLAY SHA-256: {self.outcome_card.replay_digest}",
+                        ]
+                    )
+                if self.budget_gauges is not None:
+                    lines.append(
+                        "BUDGETS: "
+                        f"time={self.budget_gauges.elapsed_seconds:.0f}s; "
+                        f"artifacts={self.budget_gauges.artifact_bytes}B; "
+                        f"local_cost={self.budget_gauges.local_cost_estimate if self.budget_gauges.local_cost_estimate is not None else 'not reported'}"
+                    )
                 for artifact in self.artifacts:
                     meta = artifact.metadata
                     lines.append(
@@ -983,7 +1134,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             lines.append(
                 "ACTIONS: t Transcript | e Activity | o Outputs | c Decisions | "
                 "u Needs You | l Local Notes | p Promote Note | r Replay | "
-                "Ctrl+S New Note | Ctrl+E Export | Esc Back"
+                "w Checkpoint | y Decision | f Fresh Rerun | h Playbook | Ctrl+S New Note | Ctrl+E Export | Esc Back"
             )
             return "\n".join(lines)
 
@@ -1016,7 +1167,15 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         elif self.active_lane == "activity":
             center_renderable = self.activity_feed_widget.render()
         elif self.active_lane == "outputs":
-            center_renderable = self.artifact_list_widget.render()
+            outcome_renderable = OutcomeCardWidget(
+                session_summary=self.session_summary,
+                outcome_card=self.outcome_card,
+            ).render()
+            center_renderable = Group(
+                outcome_renderable,
+                self._render_budget_gauges(),
+                self.artifact_list_widget.render(),
+            )
         elif self.active_lane == "needs_you":
             center_renderable = self._render_needs_you_queue()
         elif self.active_lane == "notes":
@@ -1087,4 +1246,6 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             parts = [header_str + focus_mark, center_renderable]
             if self.inspector_visible:
                 parts.append(inspector_str)
+            if any(not isinstance(part, str) for part in parts):
+                return Group(*parts)
             return "\n\n".join(parts)

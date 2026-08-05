@@ -70,6 +70,19 @@ The previously recorded toast/spinner deferral is resolved. Both widgets now hav
 
 ## Verification
 
+### Addendum — CSS variables, mounted repaint, and modal cap
+
+- `KinApp.get_css_variables()` maps KIN's semantic roles and Textual aliases
+  into live CSS variables; `_refresh_theme_ui()` calls
+  `refresh_css(animate=False)` and refreshes mounted workspace children.
+- The original live-Arena retheming test proved only a direct `render()` call.
+  It now captures `KinApp.export_screenshot()` before and after `set_theme()`,
+  proving Textual's compositor repaints the already-mounted Session Arena and
+  removes the prior theme's accent from the actual screen paint.
+- `MODAL_ANIMATION_MAX_MS` is a compatibility alias for the enforced canonical
+  `MODAL_TRANSITION_MS_MAX`. The timing contract now asserts that equality and
+  the 120 ms maximum explicitly; production modals remain synchronous at 0 ms.
+
 The 80×24 closure matrix uses mounted `KinApp` instances at exactly 80 columns × 24 rows. It verifies the eight named flows, draft/focus preservation during resize, breadcrumb navigation, long-label details, approval decisions, replay/export, recovery ordering, and ASCII-only output.
 
 The motion matrix verifies live event-loop sampling, three-sample pressure hysteresis, independent blur/focus behavior, instant manual preference changes, propagation to mounted Arena/spinner/toast widgets, label retention, and animation recovery.

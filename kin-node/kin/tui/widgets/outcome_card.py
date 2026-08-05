@@ -40,12 +40,14 @@ class OutcomeCardWidget(LifecycleWidgetMixin, Static):
         self,
         session_summary: Optional[SessionSummary] = None,
         command_result: Optional[CommandResult] = None,
+        outcome_card=None,
         now: Optional[Union[datetime, str, float]] = None,
         **kwargs,
     ) -> None:
         super().__init__(now=now, **kwargs)
         self.session_summary = session_summary
         self.command_result = command_result
+        self.outcome_card = outcome_card
 
     def render(self) -> str:
         ok = self._c("state.live", "#73daca")
@@ -60,12 +62,26 @@ class OutcomeCardWidget(LifecycleWidgetMixin, Static):
             reason = self.disabled_reason or "OutcomeCard disabled"
             return f"[dim]OutcomeCard (DISABLED: {reason})[/dim]"
 
-        if state == WidgetLifecycleState.EMPTY or not self.session_summary:
+        if state == WidgetLifecycleState.EMPTY or (not self.session_summary and not self.outcome_card):
             return "[dim]OutcomeCard: No completed session summary available.[/dim]"
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
             return f"[bold {err}]{glyph} OutcomeCard Error: Session result telemetry unreadable. Press [Retry].[/bold {err}]"
+
+        if self.outcome_card is not None:
+            outcome = self.outcome_card
+            success = outcome.status == "completed"
+            badge = f"[bold {ok}]SUCCESS[/bold {ok}]" if success else f"[bold {err}]{outcome.status.upper()}[/bold {err}]"
+            if state == WidgetLifecycleState.NARROW:
+                return f"{badge} {outcome.session_id[:8]} evidence={outcome.evidence_event_count}"
+            return (
+                f"{badge} [bold]Persisted Session Outcome[/bold]\n"
+                f"Session ID: {outcome.session_id} | Final Status: {outcome.status}\n"
+                f"Summary: {redact_ui_text(outcome.summary)}\n"
+                f"Evidence Events: {outcome.evidence_event_count} | "
+                f"Replay SHA-256: {outcome.replay_digest}"
+            )
 
         sess = self.session_summary
         res = self.command_result

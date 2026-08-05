@@ -841,7 +841,37 @@ class KinApp(App[None]):
         self.status_bar.refresh()
 
     def action_fork_item(self) -> None:
-        self.status_bar.status_message = "Fork not yet available."
+        active = self.tab_manager.get_active_tab()
+        arena = self.canvas.get_session_arena_widget() if active.kind == "session" else None
+        if arena is None or not arena.session_id:
+            self.status_bar.status_message = "Fresh-authority rerun requires an active Session Arena."
+            self.status_bar.refresh()
+            return
+
+        from kin.tui.local_state import create_fresh_session_rerun, get_local_identity_info
+
+        _, identity_username, _ = get_local_identity_info(self.profile_name, self.profile_dir)
+        actor = identity_username or self.profile_name
+        ok, rerun_session_id, error = create_fresh_session_rerun(
+            self.profile_dir,
+            self.profile_name,
+            arena.session_id,
+            actor,
+        )
+        if ok and rerun_session_id:
+            self.tab_manager.open_tab(
+                f"tab:{rerun_session_id}",
+                f"Fresh rerun {rerun_session_id[-8:]}",
+                "session",
+            )
+            self.sync_tab_bar()
+            self.status_bar.status_message = (
+                "Fresh-authority draft created; no approvals or prior decisions were carried."
+            )
+        else:
+            self.status_bar.status_message = (
+                f"Fresh rerun failed: {error.what_happened}" if error else "Fresh rerun failed."
+            )
         self.status_bar.refresh()
 
     def action_open_actions(self) -> None:

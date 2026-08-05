@@ -25,16 +25,16 @@ def test_fresh_profile(tmp_path: Path) -> None:
     report = run_migrations(conn)
 
     assert not report.errors
-    assert report.applied == [1, 2, 3, 4, 5, 6, 7]
+    assert report.applied == [1, 2, 3, 4, 5, 6, 7, 8, 9]
     assert report.starting_version == 0
-    assert report.ending_version == 7
+    assert report.ending_version == 9
     assert set(report.applied).isdisjoint(set(report.skipped))
 
     # Check schema_migrations table
     cur = conn.cursor()
     cur.execute("SELECT version, name FROM schema_migrations ORDER BY version ASC")
     rows = cur.fetchall()
-    assert len(rows) == 7
+    assert len(rows) == 9
     assert rows[0] == (1, "v1_baseline")
     assert rows[1] == (2, "v11_session_records")
     assert rows[2] == (3, "v11_agent_registry_extensions")
@@ -81,7 +81,7 @@ def test_legacy_v1_profile(tmp_path: Path) -> None:
     assert 5 in report.applied
     assert 6 in report.applied
     assert 7 in report.applied
-    assert report.ending_version == 7
+    assert report.ending_version == 9
     assert set(report.applied).isdisjoint(set(report.skipped))
 
     # Assert legacy data remains byte-for-byte unchanged in content
@@ -104,16 +104,16 @@ def test_idempotency(tmp_path: Path) -> None:
     conn = get_connection(db_path)
 
     report1 = run_migrations(conn)
-    assert report1.applied == [1, 2, 3, 4, 5, 6, 7]
+    assert report1.applied == [1, 2, 3, 4, 5, 6, 7, 8, 9]
     assert report1.skipped == []
     assert set(report1.applied).isdisjoint(set(report1.skipped))
 
     report2 = run_migrations(conn)
     assert not report2.errors
     assert report2.applied == []
-    assert report2.skipped == [1, 2, 3, 4, 5, 6, 7]
-    assert report2.starting_version == 7
-    assert report2.ending_version == 7
+    assert report2.skipped == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert report2.starting_version == 9
+    assert report2.ending_version == 9
     assert set(report2.applied).isdisjoint(set(report2.skipped))
 
     conn.close()
@@ -348,10 +348,10 @@ def test_migration_0005_upgrade_path(tmp_path: Path) -> None:
     )
     conn.commit()
 
-    # Run migrations — should apply migration 5, 6, and 7
+    # Run migrations — should apply all forward migrations from version 5.
     report = run_migrations(conn)
     assert not report.errors
-    assert report.applied == [5, 6, 7]
+    assert report.applied == [5, 6, 7, 8, 9]
     assert report.skipped == [1, 2, 3, 4]
 
     # Verify column rename succeeded and preserved data
@@ -383,7 +383,7 @@ def test_migration_0006_upgrade_path(tmp_path: Path) -> None:
 
     report = run_migrations(conn)
     assert not report.errors
-    assert report.applied == [6, 7]
+    assert report.applied == [6, 7, 8, 9]
     assert report.skipped == [1, 2, 3, 4, 5]
 
     # Verify consumed_at column exists on approvals
@@ -415,7 +415,7 @@ def test_migration_0007_upgrade_path(tmp_path: Path) -> None:
 
     report = run_migrations(conn)
     assert not report.errors
-    assert report.applied == [7]
+    assert report.applied == [7, 8, 9]
     assert report.skipped == [1, 2, 3, 4, 5, 6]
 
     # Verify session budget columns exist on sessions table
@@ -428,4 +428,3 @@ def test_migration_0007_upgrade_path(tmp_path: Path) -> None:
     assert "cost_budget_estimate" in cols
     assert "cumulative_cost_estimate" in cols
     conn.close()
-

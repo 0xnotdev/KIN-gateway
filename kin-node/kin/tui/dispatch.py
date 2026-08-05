@@ -91,7 +91,10 @@ class DispatchController:
         elif self.current_step == DispatchStep.GOAL_INPUT:
             return bool(self.draft.goal and self.draft.goal.strip())
         elif self.current_step == DispatchStep.CONTEXT_PANTRY:
-            return True  # Pantry items are optional
+            return all(
+                item.classification in {"local_only", "private"} or item.reviewed
+                for item in self.draft.pantry_items
+            )
         elif self.current_step == DispatchStep.REVIEW_DISPATCH:
             return (
                 bool(self.draft.peer_username)
@@ -129,6 +132,14 @@ class DispatchController:
     def remove_pantry_item(self, index: int) -> bool:
         if 0 <= index < len(self.draft.pantry_items):
             self.draft.pantry_items.pop(index)
+            self.draft.dirty = True
+            return True
+        return False
+
+    def review_pantry_item(self, index: int) -> bool:
+        """Explicitly approve one item's current classification for dispatch."""
+        if 0 <= index < len(self.draft.pantry_items):
+            self.draft.pantry_items[index].reviewed = True
             self.draft.dirty = True
             return True
         return False

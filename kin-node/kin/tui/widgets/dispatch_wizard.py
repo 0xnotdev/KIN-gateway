@@ -6,6 +6,7 @@ Spec authority: KIN-V1.1-TUI-SYSTEM.md §14.5, §14.7 Phase C
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Union
+import uuid
 
 from textual import work
 from textual.events import Key
@@ -219,17 +220,16 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
     def add_context_pantry_item(self, kind: str, content: str) -> None:
         """Add Context Pantry item (§C3)."""
         if kind == "local_reference":
-            # Honest M7 scope explanation
-            item = ContextPantryItem(
-                kind="local_reference",
-                size_bytes=len(content.encode("utf-8")),
-                classification="disabled (Milestone M7 artifact integration planned)",
-            )
+            self.status_message = "Use the local-reference picker to create an opaque reference."
+            return
         else:
             item = ContextPantryItem(
                 kind=kind,
                 size_bytes=len(content.encode("utf-8")),
-                classification="attached",
+                classification="share_with_peer",
+                item_id=f"ctx_{uuid.uuid4().hex}",
+                content=content,
+                reviewed=False,
             )
         self.controller.add_pantry_item(item)
         self.refresh()
@@ -405,6 +405,7 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
             receiver_agent_id=r_agent,
             session_type=s_type,
             goal=goal,
+            pantry_items=draft.pantry_items,
         )
 
         self.is_sending = False
@@ -488,6 +489,12 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
             elif event.character in ("d", "x"):
                 if self.controller.draft.pantry_items:
                     self.controller.remove_pantry_item(0)
+                    self.refresh()
+                event.stop()
+                return
+            elif event.character == "v":
+                if self.controller.review_pantry_item(0):
+                    self.status_message = "Context item reviewed for peer sharing."
                     self.refresh()
                 event.stop()
                 return
@@ -596,8 +603,9 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
         elif self.controller.current_step == DispatchStep.CONTEXT_PANTRY:
             lines.append(f"Pantry Items ({pantry_count}):")
             for item in draft.pantry_items:
-                lines.append(f"  • [{item.kind}] ({item.size_bytes}B) - {item.classification}")
-            lines.append("[dim]Press 'a' to add item | 'd'/'x' to remove item[/dim]")
+                review = "reviewed" if item.reviewed else "REVIEW REQUIRED"
+                lines.append(f"  • [{item.kind}] ({item.size_bytes}B) - {item.classification} - {review}")
+            lines.append("[dim]Press 'a' to add | 'v' to review | 'd'/'x' to remove[/dim]")
         else:
             lines.append(f"Goal: [dim]{scrubbed_prompt or '(empty)'}[/dim] | Pantry Items: {pantry_count}")
 

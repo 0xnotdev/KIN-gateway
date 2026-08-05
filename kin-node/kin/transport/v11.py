@@ -612,6 +612,33 @@ def ingest_envelope(
     )
     conn.commit()
 
+    if env.kind == MessageKind.FINAL_RESULT:
+        try:
+            from kin.session.history import create_outcome_card
+
+            final_payload = env.payload or {}
+            outcome_summary = (
+                final_payload.get("outcome")
+                or final_payload.get("message")
+                or final_payload.get("content")
+                or "Session completed with a signed final result."
+            )
+            create_outcome_card(
+                conn,
+                vault_key,
+                session_id=session_id,
+                summary=str(outcome_summary),
+            )
+        except Exception as exc:
+            write_audit_event(
+                conn,
+                vault_key,
+                category="outcome_card_error",
+                session_id=session_id,
+                summary=f"Failed to derive local outcome card: {exc}",
+                correlation_id=session_id,
+            )
+
     # Kind-specific handling for ARTIFACT_OFFER on receiving side
     if env.kind == MessageKind.ARTIFACT_OFFER and env.actor_username != my_username:
         payload_dict = env.payload or {}
@@ -928,6 +955,7 @@ def dispatch_session(
     cost_budget_estimate: float | None = None,
     now: datetime.datetime | None = None,
     http_client: httpx.Client | None = None,
+    context_pack: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Initiate a new V1.1 session, run capability check (Step 1), stale card check (Step 2), symmetric self-processing, and deliver."""
     mode_str = collaboration_mode.value if isinstance(collaboration_mode, SessionType) else str(collaboration_mode)
@@ -1003,6 +1031,7 @@ def dispatch_session(
         "runtime_budget_seconds": eff_runtime_budget,
         "artifact_bytes_budget": eff_artifact_budget,
         "cost_budget_estimate": eff_cost_budget,
+        "context_pack": context_pack or [],
     }
     content_hash = compute_content_hash(payload)
 

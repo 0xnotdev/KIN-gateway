@@ -28,6 +28,7 @@ from kin.tui.widgets.quick_switcher import QuickSwitcherModal, QuickSwitcherWidg
 from kin.tui.widgets.search_field import SearchFieldWidget
 from kin.tui.widgets.session_arena import SessionArenaWidget
 from kin.tui.widgets.session_map import SessionMapWidget
+from kin.tui.widgets.session_record_modal import SessionRecordModal
 from kin.tui.widgets.sidebar_tree import SidebarNode, SidebarTreeWidget
 from kin.tui.widgets.spinner import SpinnerWidget
 from kin.tui.widgets.status_line import StatusLineWidget
@@ -69,6 +70,7 @@ __all__ = [
     "AgentPickerWidget",
     "DispatchWizardWidget",
     "SessionMapWidget",
+    "SessionRecordModal",
     "ExchangeTimelineWidget",
     "ActivityFeedWidget",
     "ArtifactListWidget",

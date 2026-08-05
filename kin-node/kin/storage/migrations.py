@@ -252,6 +252,46 @@ ALTER TABLE sessions ADD COLUMN cost_budget_estimate REAL NULL;
 ALTER TABLE sessions ADD COLUMN cumulative_cost_estimate REAL NOT NULL DEFAULT 0;
 """
 
+MIGRATION_0008_SQL = """\
+CREATE TABLE IF NOT EXISTS context_pantry_refs (
+    ref_id          TEXT PRIMARY KEY,
+    encrypted_path  TEXT NOT NULL,
+    size_bytes      INTEGER NOT NULL,
+    expires_at      TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS context_packs (
+    pack_id         TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    items_json_enc  TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+"""
+
+MIGRATION_0009_SQL = """\
+CREATE TABLE IF NOT EXISTS agent_reservations (
+    reservation_id  TEXT PRIMARY KEY,
+    agent_id         TEXT NOT NULL REFERENCES agents(agent_id),
+    owner_username   TEXT NOT NULL,
+    starts_at        TEXT NOT NULL,
+    ends_at          TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'active',
+    created_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_reservations_window
+    ON agent_reservations(agent_id, starts_at, ends_at, status);
+
+CREATE TABLE IF NOT EXISTS playbooks (
+    playbook_id       TEXT PRIMARY KEY,
+    name              TEXT NOT NULL,
+    source_session_id TEXT,
+    template_json_enc TEXT NOT NULL,
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL
+);
+"""
+
 
 def _up_0001(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_0001_SQL)
@@ -281,6 +321,14 @@ def _up_0007(conn: sqlite3.Connection) -> None:
     conn.executescript(MIGRATION_0007_SQL)
 
 
+def _up_0008(conn: sqlite3.Connection) -> None:
+    conn.executescript(MIGRATION_0008_SQL)
+
+
+def _up_0009(conn: sqlite3.Connection) -> None:
+    conn.executescript(MIGRATION_0009_SQL)
+
+
 ALL_MIGRATIONS: list[Migration] = [
     Migration(version=1, name="v1_baseline", up_sql=MIGRATION_0001_SQL, up_fn=_up_0001),
     Migration(version=2, name="v11_session_records", up_sql=MIGRATION_0002_SQL, up_fn=_up_0002),
@@ -289,6 +337,8 @@ ALL_MIGRATIONS: list[Migration] = [
     Migration(version=5, name="v11_session_column_renames", up_sql=MIGRATION_0005_SQL, up_fn=_up_0005),
     Migration(version=6, name="v11_approval_consumed_at", up_sql=MIGRATION_0006_SQL, up_fn=_up_0006),
     Migration(version=7, name="v11_session_budgets", up_sql=MIGRATION_0007_SQL, up_fn=_up_0007),
+    Migration(version=8, name="v11_context_pantry_refs", up_sql=MIGRATION_0008_SQL, up_fn=_up_0008),
+    Migration(version=9, name="v11_collaboration_depth", up_sql=MIGRATION_0009_SQL, up_fn=_up_0009),
 ]
 
 
