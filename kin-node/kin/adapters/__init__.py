@@ -15,6 +15,7 @@ from kin.adapters.base import (
     validate_adapter_output,
 )
 from kin.adapters.factory import get_adapter
+from kin.adapters.sdk import SdkAdapter
 
 __all__ = [
     "AdapterRequest",
@@ -30,4 +31,5 @@ __all__ = [
     "ValidationOutcome",
     "validate_adapter_output",
     "get_adapter",
+    "SdkAdapter",
 ]

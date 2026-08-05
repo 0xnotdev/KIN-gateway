@@ -1,3 +1,5 @@
 """KIN V1.1 TUI Package."""
 
-__version__ = "0.1.0"
+from kin.version import KIN_VERSION
+
+__version__ = KIN_VERSION

@@ -237,7 +237,8 @@ async def acknowledge_inbox(
     placeholders = ",".join("?" for _ in body.message_ids)
     cursor = conn.cursor()
     cursor.execute(
-        f"DELETE FROM mailbox WHERE username = ? AND message_id IN ({placeholders})",
+        # Only the placeholder count is formatted; all message IDs remain bound values.
+        f"DELETE FROM mailbox WHERE username = ? AND message_id IN ({placeholders})",  # nosec B608
         (x_username, *body.message_ids),
     )
     conn.commit()

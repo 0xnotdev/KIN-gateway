@@ -1,6 +1,6 @@
 # KIN Relay
 
-The KIN relay provides two deliberately small services for V1:
+The KIN relay provides two deliberately small services for V1.1:
 
 - a permanent username directory containing only public keys and current endpoints;
 - a seven-day store-and-forward mailbox for opaque, end-to-end-encrypted blobs.
@@ -28,4 +28,6 @@ For a pilot deployment, run the same command behind an HTTPS reverse proxy or a 
 - Relay inbox reads require a fresh signature from the recipient. Acknowledgements additionally sign the exact list of message IDs being removed.
 - Expired mail is cleaned on inbox access. Valid mail is not deleted merely because it was fetched.
 
-Run `pytest -q` before deploying changes.
+Install only the exact V1.1 release artifact from the matching signed source tag.
+Operational deployment, retention, backup, TLS, and incident guidance lives in
+`../docs/v1.1/RELAY-OPERATOR.md`. Run `pytest -q` before deploying changes.

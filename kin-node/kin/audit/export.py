@@ -6,17 +6,7 @@ import json
 import sqlite3
 from typing import Any, Literal
 
-from kin.storage.vault import decrypt_field
-
-
-def _decrypt_or_legacy_plaintext(vault_key: bytes, value: str | None) -> str | None:
-    """Read encrypted fields while retaining compatibility with dispatched plaintext metadata."""
-    if value is None:
-        return None
-    try:
-        return decrypt_field(vault_key, value)
-    except Exception:
-        return value
+from kin.storage.vault import decrypt_field, decrypt_field_or_plaintext
 
 
 def export_session(
@@ -47,9 +37,9 @@ def export_session(
         turn_limit, created_at, updated_at, enc_term_res
     ) = session_row
 
-    dec_obj = _decrypt_or_legacy_plaintext(vault_key, enc_obj)
-    dec_part_snap = _decrypt_or_legacy_plaintext(vault_key, enc_part_snap)
-    dec_term_res = _decrypt_or_legacy_plaintext(vault_key, enc_term_res)
+    dec_obj = decrypt_field_or_plaintext(vault_key, enc_obj)
+    dec_part_snap = decrypt_field_or_plaintext(vault_key, enc_part_snap)
+    dec_term_res = decrypt_field_or_plaintext(vault_key, enc_term_res)
 
     try:
         parsed_part_snap = json.loads(dec_part_snap) if dec_part_snap else None

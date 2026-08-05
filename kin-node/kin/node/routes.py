@@ -20,10 +20,11 @@ from kin.storage.db import get_connection, get_setting
 from kin.identity.keys import encrypt_for_recipient, sign_message, verify_signature
 from kin.identity.storage import SecretNotFoundError, load_private_key, load_x25519_private_key
 from kin.agent_backend.base import AgentBackendRequest
+from kin.version import V11_PROTOCOL_VERSION
 
 router = APIRouter()
 
-PROTOCOL_VERSION = "0.1.0"
+PROTOCOL_VERSION = V11_PROTOCOL_VERSION
 
 # FR11: hard round limit on negotiation exchanges
 MAX_TASK_MESSAGES = 10
@@ -701,4 +702,3 @@ async def process_v11_session_envelope(
         return JSONResponse(status_code=status_code, content=ack.model_dump(mode="json"))
 
     return JSONResponse(status_code=200, content=ack.model_dump(mode="json"))
-

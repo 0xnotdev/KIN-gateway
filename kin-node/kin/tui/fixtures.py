@@ -114,7 +114,7 @@ def make_agent_card_view_fixture(
             boundaries=AgentBoundaries(
                 network_access="deny",
                 filesystem="none",
-                shell="deny",
+                shell="deny",  # nosec B604
                 max_runtime_seconds=900,
                 max_artifact_bytes=10_000_000,
             ),

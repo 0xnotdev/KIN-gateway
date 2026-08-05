@@ -6,8 +6,20 @@ import json
 from pathlib import Path
 
 from kin.storage.db import get_connection, create_schema
-from kin.storage.vault import encrypt_field, encrypt_bytes
+import pytest
+
+from kin.storage.vault import decrypt_field_or_plaintext, encrypt_field, encrypt_bytes
 from kin.identity.storage import get_or_create_vault_key
+
+
+def test_legacy_plaintext_reader_never_masks_ciphertext_authentication_failure() -> None:
+    key = b"a" * 32
+    token = encrypt_field(key, "sensitive")
+
+    assert decrypt_field_or_plaintext(key, token) == "sensitive"
+    assert decrypt_field_or_plaintext(key, "legacy plaintext") == "legacy plaintext"
+    with pytest.raises(Exception):
+        decrypt_field_or_plaintext(b"b" * 32, token)
 
 
 def test_at_rest_inspection(tmp_path: Path, monkeypatch) -> None:

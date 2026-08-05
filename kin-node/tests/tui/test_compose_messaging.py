@@ -196,8 +196,8 @@ def test_compose_human_message_redaction_on_recipient_side(dual_profile_setup, m
     assert "REDACTED" in rendered
 
 
-def test_compose_human_message_unreachable_peer_failure_path(dual_profile_setup, monkeypatch):
-    """Assert failure path returns clear RecoverableError when peer endpoint is unreachable and relay fails (§14.8 Line 227)."""
+def test_compose_human_message_unreachable_peer_is_durably_queued(dual_profile_setup, monkeypatch):
+    """A direct/relay outage retains the signed message for production retry."""
     import httpx
 
     alice_dir = dual_profile_setup["alice_dir"]
@@ -215,9 +215,9 @@ def test_compose_human_message_unreachable_peer_failure_path(dual_profile_setup,
         http_client=client,
     )
 
-    assert ok is False
-    assert err is not None
-    assert "Failed to deliver message to peer" in err.what_happened
+    assert ok is True
+    assert res is not None and res["status"] == "sent" and res["queued_locally"] is True
+    assert err is None
 
 
 @pytest.mark.asyncio

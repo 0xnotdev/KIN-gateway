@@ -53,6 +53,7 @@ from kin.session.reducer import (
     reconstruct_session_state,
 )
 from kin.session.transition_matrix import TERMINAL_STATES
+from kin.storage.vault import encrypt_field
 
 DEFAULT_EXPIRY_TTL_SECONDS = 604800  # 7 days
 
@@ -488,7 +489,7 @@ def ingest_envelope(
                 st.value,
                 initiator_username,
                 receiver_username,
-                payload.get("goal", ""),
+                encrypt_field(vault_key, payload.get("goal", "")),
                 actor_agent_id,  # Lock sender_agent_id immediately
                 requested_agent_id if requested_agent_id else None,
                 turn_limit,
@@ -1201,12 +1202,33 @@ def send_session_message(
         except httpx.RequestError:
             pass
 
+    locally_queued = False
+    if not delivered and not queued_at_relay:
+        from kin.storage.vault import encrypt_field
+
+        queue_id = str(uuid.uuid4())
+        enc_envelope = encrypt_field(vault_key, json.dumps(env_dict, sort_keys=True))
+        conn.execute(
+            """\
+            INSERT INTO outbound_envelope_queue (
+                queue_id, session_id, sequence, recipient_username,
+                envelope_kind, envelope_json_enc, delivery_state, attempt_count,
+                next_retry_at, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)
+            ON CONFLICT(session_id, sequence, recipient_username) DO NOTHING
+            """,
+            (queue_id, session_id, seq, peer_username, kind.value if isinstance(kind, MessageKind) else str(kind), enc_envelope, now_str, now_str, now_str),
+        )
+        conn.commit()
+        locally_queued = True
+
     return {
         "session_id": session_id,
-        "status": "delivered" if delivered else ("queued" if queued_at_relay else "failed"),
+        "status": "delivered" if delivered else ("queued" if queued_at_relay else ("sent" if locally_queued else "failed")),
         "kind": kind.value if isinstance(kind, MessageKind) else str(kind),
         "delivered": delivered,
         "queued_at_relay": queued_at_relay,
+        "queued_locally": locally_queued,
     }
 
 
@@ -1476,6 +1498,9 @@ def retry_outbound_queue(
     vault_key: bytes,
     now: datetime.datetime | None = None,
     http_client: httpx.Client | None = None,
+    owner_username: str | None = None,
+    owner_x25519_privkey: bytes | None = None,
+    relay_url: str | None = None,
 ) -> dict[str, int]:
     """Sweep and retry pending outbound queue items using exponential backoff aligned with session expires_at."""
     now_str = _iso_now(now)
@@ -1538,6 +1563,34 @@ def retry_outbound_queue(
                     continue
             except httpx.RequestError as e:
                 conn.execute("UPDATE outbound_envelope_queue SET last_error = ?, updated_at = ? WHERE queue_id = ?", (str(e), now_str, queue_id))
+
+        if not delivered and relay_url and owner_username and owner_x25519_privkey and recip_x255:
+            try:
+                relay_payload = encrypt_for_recipient(
+                    owner_x25519_privkey,
+                    recip_x255,
+                    json.dumps(env_dict, sort_keys=True).encode("utf-8"),
+                )
+                relay_response = _queue_relay_envelope(
+                    client,
+                    relay_url,
+                    recipient_un,
+                    owner_username,
+                    relay_payload,
+                )
+                if relay_response.status_code == 200:
+                    delivered = True
+                    conn.execute(
+                        "UPDATE outbound_envelope_queue SET delivery_state = 'relayed', updated_at = ? WHERE queue_id = ?",
+                        (now_str, queue_id),
+                    )
+                    conn.commit()
+                    delivered_count += 1
+            except httpx.RequestError as exc:
+                conn.execute(
+                    "UPDATE outbound_envelope_queue SET last_error = ?, updated_at = ? WHERE queue_id = ?",
+                    (str(exc), now_str, queue_id),
+                )
 
         if not delivered:
             new_attempts = attempts + 1

@@ -110,7 +110,7 @@ def test_dispatch_wizard_dirty_state_tracking(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_dispatch_wizard_non_blocking_worker_execution(tmp_path: Path):
+async def test_dispatch_wizard_non_blocking_worker_execution(tmp_path: Path, monkeypatch, build_tui_app):
     """4. Assert confirm_dispatch triggers off-main-thread non-blocking worker (§C5)."""
     prof_dir = tmp_path / "profiles" / "worker_user"
     widget = DispatchWizardWidget(
@@ -123,10 +123,33 @@ async def test_dispatch_wizard_non_blocking_worker_execution(tmp_path: Path):
     widget.controller.select_sender_agent("my-agent")
     widget.controller.select_receiver_agent("alice-agent")
 
-    # Confirm dispatch initiates worker execution
-    widget.confirm_dispatch()
-    assert widget.is_submitted is True
-    assert "Dispatch draft prepared" in widget.status_message or "✔" in widget.status_message or "failed" in widget.status_message
+    from threading import Event
+    from textual.app import App, ComposeResult
+
+    started = Event()
+    release = Event()
+
+    def controlled_worker():
+        started.set()
+        release.wait(timeout=2)
+        widget.is_sending = False
+
+    monkeypatch.setattr(widget, "_run_dispatch_worker_logic", controlled_worker)
+
+    class WorkerApp(App):
+        def compose(self) -> ComposeResult:
+            yield widget
+
+    app = build_tui_app(WorkerApp)
+    async with app.run_test() as pilot:
+        widget.confirm_dispatch()
+        await pilot.pause()
+        assert started.is_set()
+        assert widget.is_submitted is True
+        assert widget.is_sending is True
+        assert "Packaging payload" in widget.status_message
+        release.set()
+        await pilot.pause()
 
 
 # -----------------------------------------------------------------------------
@@ -152,6 +175,10 @@ async def test_dispatch_wizard_keyboard_only_end_to_end_pilot_flow(mock_profile_
 
     monkeypatch.setattr("kin.tui.widgets.dispatch_wizard.get_local_agents_summaries", lambda d=None: [local1, local2])
     monkeypatch.setattr("kin.tui.widgets.dispatch_wizard.get_all_agent_summaries", lambda d=None: ([local1, local2], [alice_agent, bob_agent1, bob_agent2]))
+    monkeypatch.setattr(
+        "kin.tui.widgets.dispatch_wizard.dispatch_new_session",
+        lambda **kwargs: (True, {"status": "queued", "session_id": "keyboard-flow-session"}, None),
+    )
 
     app = build_tui_app()
     async with app.run_test(size=(160, 44)) as pilot:
@@ -166,7 +193,7 @@ async def test_dispatch_wizard_keyboard_only_end_to_end_pilot_flow(mock_profile_
 
         # Step 0 (Peer Selection): Press Enter to open ContactPickerModal, press down/j to select 'bob', Enter
         await pilot.press("enter")
-        await pilot.pause()
+        await pilot.pause(0.15)
         assert isinstance(pilot.app.screen, ContactPickerModal)
         await pilot.press("j")  # select bob
         await pilot.press("enter")
@@ -229,7 +256,7 @@ async def test_dispatch_wizard_keyboard_only_end_to_end_pilot_flow(mock_profile_
         await pilot.press("right")
         assert wizard.step_index == 6
         await pilot.press("enter")
-        await pilot.pause()
+        await pilot.pause(0.15)
 
         # Assert final submitted state reflects ALL chosen non-default values
         assert wizard.is_submitted is True

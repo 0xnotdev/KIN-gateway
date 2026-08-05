@@ -22,6 +22,7 @@ from kin.schemas import (
     sign_envelope,
 )
 from kin.storage.migrations import run_migrations
+from kin.storage.vault import decrypt_field
 from kin.policy import (
     ApprovalAlreadyDecidedError,
     ApprovalExpiredError,
@@ -107,6 +108,12 @@ def test_approve_once_flow_and_initial_unconsumed_state(profile_db):
         expires_at="2026-07-30T12:00:00Z",
     )
     create_pending_approval(profile_db, vault_key, req, agent_id="ag_test_card", action_class=ActionClass.WORKSPACE_WRITE, expires_at="2026-07-30T12:00:00Z")
+
+    stored_request = profile_db.execute(
+        "SELECT request_json FROM approvals WHERE approval_id = ?", ("req_ao_1",)
+    ).fetchone()[0]
+    assert stored_request != req.model_dump_json()
+    assert decrypt_field(vault_key, stored_request) == req.model_dump_json()
 
     decision = decide_approval(
         profile_db,

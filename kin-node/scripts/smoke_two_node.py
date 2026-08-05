@@ -46,6 +46,7 @@ def _print_phase_b_evidence(evidence: dict) -> None:
         f"session_id={relay['session_id']}, dispatch={relay['dispatch']['status']}, "
         f"queued_messages={relay['queued_mailbox']['message_count']}, "
         f"first_poll={relay['first_poll']['processed_count']}, "
+        f"consumer={relay['relay_consumer']}, "
         f"mailbox_after_ack={relay['empty_mailbox']['message_count']}, "
         f"second_poll={relay['second_poll']['processed_count']}, "
         f"bob_event_count={relay['bob_after_second_poll']['event_count']}"

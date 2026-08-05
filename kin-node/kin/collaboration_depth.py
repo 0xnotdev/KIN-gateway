@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from kin.agent_registry.availability import AVAILABILITY_EXPLANATIONS
 from kin.schemas import AgentAvailability, PublishedAgentCard
-from kin.storage.vault import decrypt_field, encrypt_field
+from kin.storage.vault import decrypt_field, decrypt_field_or_plaintext, encrypt_field
 
 
 def _utc(value: datetime | str | None = None) -> datetime:
@@ -32,12 +32,7 @@ def _iso(value: datetime | None = None) -> str:
 
 
 def _plain_or_decrypted(vault_key: bytes, value: str | None) -> str:
-    if not value:
-        return ""
-    try:
-        return decrypt_field(vault_key, value) or ""
-    except Exception:
-        return value
+    return decrypt_field_or_plaintext(vault_key, value) or ""
 
 
 class ReadinessRecommendation(BaseModel):

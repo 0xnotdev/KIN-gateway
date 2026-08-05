@@ -420,8 +420,18 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
             else:
                 self.status_message = "✔ Queued locally (relay unreachable)"
         else:
-            self.is_submitted = True
-            self.status_message = "Dispatch draft prepared (UI preview only)"
+            self.is_submitted = False
+            self.last_dispatch_error = err or RecoverableError(
+                what_happened="Dispatch did not complete.",
+                impact="No peer-visible session request was sent.",
+                preserved="Your reviewed dispatch draft remains available for retry.",
+                next_action="Check node, relay, identity, and contact status, then retry dispatch.",
+            )
+            self._lifecycle_state = WidgetLifecycleState.RECOVERABLE_ERROR
+            self.status_message = (
+                f"Dispatch failed: {self.last_dispatch_error.what_happened} "
+                "Draft preserved for retry."
+            )
 
         self.refresh()
         if self.is_mounted and hasattr(self.app, "stop_activity"):
@@ -529,8 +539,14 @@ class DispatchWizardWidget(LifecycleWidgetMixin, Static):
 
         if state == WidgetLifecycleState.RECOVERABLE_ERROR:
             glyph = get_glyph("!")
-            detail = self.last_dispatch_error.technical_detail if self.last_dispatch_error else "Workflow state invalid."
-            return f"[bold {err}]{glyph} Dispatch Error: {detail}[/bold {err}]"
+            detail = (
+                self.last_dispatch_error.technical_detail
+                or self.last_dispatch_error.what_happened
+                if self.last_dispatch_error
+                else "Workflow state invalid."
+            )
+            preserved = self.last_dispatch_error.preserved if self.last_dispatch_error else "Draft state is unchanged."
+            return f"[bold {err}]{glyph} Dispatch Error: {detail}[/bold {err}]\nPRESERVED: {preserved}"
 
         step_title = self.STEPS[self.step_index]
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""

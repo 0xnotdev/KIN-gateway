@@ -517,10 +517,12 @@ class TwoNodeSmokeHarness:
         empty_mailbox = self.run_worker("bob", "relay-inbox")
         second_poll = self.run_worker("bob", "poll-relay")
         bob_after_second_poll = self.run_worker("bob", "inspect", "--session", relay_session_id)
-        if first_poll.get("processed_count") != 1:
-            raise RuntimeError(f"Bob's first real relay poll did not process one envelope: {first_poll}")
         if not bob_relay_received.get("found") or bob_relay_received.get("event_count") != 1:
             raise RuntimeError(f"Bob did not persist relay-delivered session: {bob_relay_received}")
+        first_poll_count = first_poll.get("processed_count")
+        if first_poll_count not in (0, 1):
+            raise RuntimeError(f"Bob's relay synchronization returned an invalid count: {first_poll}")
+        relay_consumer = "production-background-loop" if first_poll_count == 0 else "explicit-worker-poll"
         if empty_mailbox.get("message_count") != 0 or second_poll.get("processed_count") != 0:
             raise RuntimeError(
                 f"Relay ACK/idempotency failed: mailbox={empty_mailbox}, second_poll={second_poll}"
@@ -634,6 +636,7 @@ class TwoNodeSmokeHarness:
                 "dispatch": relay_dispatch,
                 "queued_mailbox": queued_mailbox,
                 "first_poll": first_poll,
+                "relay_consumer": relay_consumer,
                 "empty_mailbox": empty_mailbox,
                 "second_poll": second_poll,
                 "bob_after_second_poll": bob_after_second_poll,

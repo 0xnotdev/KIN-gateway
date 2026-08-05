@@ -15,7 +15,7 @@ from textual import work
 from textual.events import Key, Resize
 from textual.widgets import Static
 
-from kin.schemas import DecisionKind
+from kin.schemas import AgentAvailability, DecisionKind
 from kin.tui.layout import Breakpoint, classify_breakpoint
 from kin.tui.redaction import redact_ui_text
 from kin.tui.local_state import (
@@ -27,11 +27,13 @@ from kin.tui.local_state import (
     decide_pending_approval,
     get_approvals_for_session,
     get_artifacts_for_session,
+    get_local_agents_summaries,
     get_local_contacts_summaries,
     get_local_identity_info,
     get_private_notes,
     get_session_detail,
     get_session_events,
+    get_session_events_page,
     get_session_history_events,
     get_session_budget_gauges,
     get_session_list,
@@ -41,10 +43,12 @@ from kin.tui.local_state import (
     promote_private_note_to_peer_visible,
     resume_session,
     send_human_message_to_session_action,
+    tag_in_session_agent,
 )
 from kin.tui.state import ApprovalView, ArtifactView, PrivateNoteView, RecoverableError, SessionSummary, UiEvent
 from kin.tui.tokens import get_glyph
 from kin.tui.widgets.activity_feed import ActivityFeedWidget
+from kin.tui.widgets.agent_picker import AgentPickerWidget
 from kin.tui.widgets.approval_card import ApprovalCardWidget
 from kin.tui.widgets.approval_modals import ApproveConfirmModal, DenyReasonModal, EditConstraintsModal, PatchApplyConfirmModal
 from kin.tui.widgets.artifact_list import ArtifactListWidget
@@ -128,6 +132,8 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self.selected_note_index: int = 0
         self.is_replay_mode: bool = False
         self.replay_index: Optional[int] = None
+        self.event_page_size: int = 500
+        self.has_older_events: bool = False
 
         # Sub-widgets
         self.trust_strip_widget = TrustStripWidget()
@@ -190,7 +196,12 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         if self._events_override is not None:
             self.events = self._events_override
         else:
-            self.events = get_session_events(self.profile_dir, self.session_id, self.profile_name)
+            self.events, self.has_older_events = get_session_events_page(
+                self.profile_dir,
+                self.session_id,
+                self.profile_name,
+                page_size=self.event_page_size,
+            )
             history_events = get_session_history_events(
                 self.profile_dir,
                 self.session_id or "",
@@ -264,6 +275,31 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self.inspector_widget = InspectorWidget(
             selected_event=self.selected_event,
         )
+
+    def load_older_events(self) -> int:
+        """Prepend one durable event page while preserving event IDs and selection."""
+        orders = [event.event_order for event in self.events if event.event_order is not None]
+        if not self.has_older_events or not orders:
+            return 0
+        selected_id = self.selected_event.event_id if self.selected_event else None
+        older, self.has_older_events = get_session_events_page(
+            self.profile_dir,
+            self.session_id or "",
+            self.profile_name,
+            page_size=self.event_page_size,
+            before_event_order=min(orders),
+        )
+        existing = {event.event_id for event in self.events}
+        older = [event for event in older if event.event_id not in existing]
+        self.events = [*older, *self.events]
+        self.exchange_timeline_widget.events = list(self.events)
+        if selected_id:
+            for index, event in enumerate(self.events):
+                if event.event_id == selected_id:
+                    self.exchange_timeline_widget.selected_index = index
+                    break
+        self.refresh()
+        return len(older)
 
     def _on_event_selected(self, event: UiEvent) -> None:
         self.selected_event = event
@@ -414,8 +450,58 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
                     f"Cancel session {self.session_id[:12]} permanently?",
                     on_confirm=lambda: self._execute_session_state_change("cancel")
                 )
+            elif action == "tag_in":
+                self._open_tag_in_picker()
 
         self.app.push_screen(modal, handle_action)
+
+    def _open_tag_in_picker(self) -> None:
+        agents = [
+            agent for agent in get_local_agents_summaries(self.profile_dir, self.profile_name)
+            if agent.availability not in (AgentAvailability.OFFLINE, AgentAvailability.POLICY_BLOCKED)
+        ]
+        if not agents:
+            self.app.status_bar.status_message = "No enabled local specialist is available to tag in."
+            self.app.status_bar.refresh()
+            return
+
+        def review_agent(agent) -> None:
+            boundary = escape(agent.boundary_summary or "Owner-controlled local boundaries")
+            self.app.gate_consequential_action(
+                "Tag In Specialist",
+                f"Replace your participating agent with {escape(agent.name)} ({escape(agent.agent_id)})?\n"
+                f"Boundary: {boundary}\n"
+                "A signed participant_changed event and bounded handoff package will be sent to the peer.",
+                on_confirm=lambda: self._execute_tag_in(agent.agent_id),
+            )
+
+        self.app.push_screen(
+            AgentPickerWidget(
+                agents=agents,
+                prompt="Choose your replacement specialist (Tab reviews boundaries)",
+                on_select=review_agent,
+            )
+        )
+
+    def _execute_tag_in(self, replacement_agent_id: str) -> None:
+        ok, result, error = tag_in_session_agent(
+            self.profile_dir,
+            self.profile_name,
+            session_id=self.session_id or "",
+            replacement_agent_id=replacement_agent_id,
+        )
+        if ok:
+            self.load_arena_data()
+            delivery = (result or {}).get("status", "recorded")
+            self.app.status_bar.status_message = f"Specialist tagged in; signed change {delivery}."
+            self.app.status_bar.refresh()
+            self.refresh()
+        elif error:
+            self.last_arena_error = error
+            self.set_lifecycle_state(WidgetLifecycleState.RECOVERABLE_ERROR)
+            self.app.status_bar.status_message = error.what_happened
+            self.app.status_bar.refresh()
+            self.refresh()
 
     def _execute_session_state_change(self, action: str) -> None:
         if action == "pause":
@@ -770,6 +856,16 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             elif self.active_lane == "notes" and self.private_notes:
                 self.selected_note_index = min(self.selected_note_index + 1, len(self.private_notes) - 1)
             self.refresh()
+            event.stop()
+        elif k == "pageup" and self.active_lane in ("transcript", "decisions"):
+            loaded = self.load_older_events()
+            if self.is_mounted and getattr(self.app, "status_bar", None):
+                self.app.status_bar.status_message = (
+                    f"Loaded {loaded} older verified events."
+                    if loaded
+                    else "No older verified events remain."
+                )
+                self.app.status_bar.refresh()
             event.stop()
         elif k in ("up", "k"):
             if self.active_lane in ("transcript", "decisions"):

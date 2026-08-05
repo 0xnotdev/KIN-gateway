@@ -7,6 +7,7 @@ from typing import Any
 
 from kin.schemas import ActionClass, AgentCard, ApprovalDecision, ApprovalRequest, DecisionKind
 from kin.policy.evaluator import PolicyResult, evaluate_action
+from kin.storage.vault import encrypt_field
 
 
 class ApprovalNotFoundError(Exception):
@@ -150,7 +151,7 @@ def record_approval_decision(
             (
                 decision_str,
                 approval_decision.decided_at,
-                request_json,
+                encrypt_field(vault_key, request_json) if request_json is not None else None,
                 approval_decision.approval_id,
             ),
         )
@@ -167,7 +168,7 @@ def record_approval_decision(
                 approval_decision.session_id,
                 agent_id,
                 action_class.value,
-                request_json,
+                encrypt_field(vault_key, request_json) if request_json is not None else None,
                 decision_str,
                 approval_decision.decided_at,
                 expires_at,
@@ -219,7 +220,7 @@ def create_pending_approval(
             approval_request.session_id,
             agent_id,
             action_class.value,
-            req_json,
+            encrypt_field(vault_key, req_json),
             expires_at,
         ),
     )

@@ -28,6 +28,7 @@ from kin.identity.storage import (
 from kin.policy.persistence import create_pending_approval
 from kin.schemas import ActionClass, ApprovalRequest, CapabilityAdvertisement, MessageKind, RiskLabel
 from kin.session.reducer import reconstruct_session_state
+from kin.storage.vault import decrypt_field_or_plaintext
 from kin.tui.local_state import decide_pending_approval, ensure_profile_db
 from kin.transport.v11 import (
     _apply_node_command_transition,
@@ -84,7 +85,7 @@ def _contact_public_key(conn: Any, peer_username: str) -> ed25519.Ed25519PublicK
     return ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(str(row[0])))
 
 
-def _inspect(conn: Any, session_id: str) -> dict[str, Any]:
+def _inspect(conn: Any, vault_key: bytes, session_id: str) -> dict[str, Any]:
     row = conn.execute(
         """
         SELECT session_id, type, initiator_username, receiver_username, status,
@@ -111,7 +112,7 @@ def _inspect(conn: Any, session_id: str) -> dict[str, Any]:
         "initiator_username": row[2],
         "receiver_username": row[3],
         "status": row[4],
-        "goal": row[5],
+        "goal": decrypt_field_or_plaintext(vault_key, row[5]),
         "sender_agent_id": row[6],
         "receiver_agent_id": row[7],
         "event_count": len(event_rows),
@@ -234,7 +235,11 @@ def main() -> None:
             )
             output = {"operation": "dispatch", "profile": args.profile, **result}
         elif args.operation == "inspect":
-            output = {"operation": "inspect", "profile": args.profile, **_inspect(conn, args.session)}
+            output = {
+                "operation": "inspect",
+                "profile": args.profile,
+                **_inspect(conn, vault_key, args.session),
+            }
         elif args.operation == "respond":
             result = respond_to_session(
                 conn=conn,
@@ -309,7 +314,7 @@ def main() -> None:
                 "session_id": args.session,
                 "found": state is not None,
                 "status": state.status if state else None,
-                "event_count": _inspect(conn, args.session)["event_count"],
+                "event_count": _inspect(conn, vault_key, args.session)["event_count"],
                 "actor_sequences": state.actor_sequences if state else {},
             }
         elif args.operation == "create-expiring-approval":
