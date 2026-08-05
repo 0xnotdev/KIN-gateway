@@ -74,6 +74,21 @@ The 80×24 closure matrix uses mounted `KinApp` instances at exactly 80 columns 
 
 The motion matrix verifies live event-loop sampling, three-sample pressure hysteresis, independent blur/focus behavior, instant manual preference changes, propagation to mounted Arena/spinner/toast widgets, label retention, and animation recovery.
 
+### Permanent MRO guard correction
+
+The original closeout report named a permanent `_c()` MRO guard before the
+package-wide non-shadowing test actually existed. That enforcement now lives
+in `tests/tui/test_c_method_mro_compliance.py`. It imports every module under
+`kin.tui`, discovers every class defined there that inherits
+`LifecycleWidgetMixin`, and rejects any class whose own `__dict__` contains
+`_c`.
+
+The negative control restored the exact historical `AgentCardWidget._c`
+override from the parent of `489187c` and produced the expected failure naming
+`kin.tui.widgets.agent_card.AgentCardWidget`. Removing the temporary override
+returned the guard to `1 passed`; the combined MRO/theme compliance run reports
+`78 passed`.
+
 Exactly two snapshot references changed, both intentional 80×24 shell snapshots:
 
 - `tests/tui/__snapshots__/test_app_shell/test_blank_shell_snapshot_80x24.svg`
