@@ -12,11 +12,13 @@ from rich.console import RenderableType
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from textual import work
 from textual.widgets import Static
 
 from kin.tui.local_state import (
     get_local_agents_summaries,
     get_local_contacts_summaries,
+    get_session_list,
     query_health_snapshot,
 )
 from kin.tui.state import (
@@ -38,7 +40,7 @@ from kin.tui.widgets.status_line import StatusLineWidget
 class HomeScreenWidget(LifecycleWidgetMixin, Static):
     """Home Screen & Live Dashboard Widget (§14.6 Phase B).
 
-    Combines real local data (agents, contacts, health) with fixture data (sessions, approvals).
+    Combines real local data (agents, contacts, sessions, health) with approval state.
     Implements bounded rendering for 100-sessions / 20-agents scale performance.
     """
 
@@ -75,10 +77,20 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
         # Injectable / overridden state
         self._agents_override = agents
         self._contacts_override = contacts
-        self.sessions = sessions or []
+        self.sessions = (
+            list(sessions)
+            if sessions is not None
+            else get_session_list(self.profile_dir, self.profile_name)
+        )
         self.approvals = approvals or []
-        self._health_override = health
         self.client = client
+        self._background_health_probe = health is None and client is None
+        self._health_cache = health or query_health_snapshot(
+            self.profile_name,
+            self.profile_dir,
+            client=self.client,
+            probe_relay=not self._background_health_probe,
+        )
         self.max_visible_sessions = max_visible_sessions
         self.max_visible_agents = max_visible_agents
 
@@ -95,9 +107,29 @@ class HomeScreenWidget(LifecycleWidgetMixin, Static):
         return get_local_contacts_summaries(self.profile_dir, self.profile_name)
 
     def get_health(self) -> HealthSnapshot:
-        if self._health_override is not None:
-            return self._health_override
-        return query_health_snapshot(self.profile_name, self.profile_dir, client=self.client)
+        return self._health_cache
+
+    def on_mount(self) -> None:
+        """Probe relay health off the UI thread after local state is interactive."""
+        if self._background_health_probe:
+            self._refresh_health_in_background()
+
+    @work(thread=True, exclusive=True, name="home_health_probe")
+    def _refresh_health_in_background(self) -> None:
+        snapshot = query_health_snapshot(
+            self.profile_name,
+            self.profile_dir,
+            client=self.client,
+        )
+        try:
+            self.app.call_from_thread(self._apply_health_snapshot, snapshot)
+        except RuntimeError:
+            # The app may close while a bounded relay timeout is still pending.
+            return
+
+    def _apply_health_snapshot(self, snapshot: HealthSnapshot) -> None:
+        self._health_cache = snapshot
+        self.refresh()
 
     def render(self) -> RenderableType:
         accent = self._c("accent.primary", "#bb9af7")

@@ -78,6 +78,7 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         border: double $accent;
     }
     """
+    DEFAULT_VISIBLE_GROUP_WINDOW = 100
 
     def __init__(
         self,
@@ -86,6 +87,7 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         allowed_presentation_classes: Optional[Set[str]] = None,
         on_event_selected: Optional[Callable[[UiEvent], None]] = None,
         reduced_motion: bool = False,
+        visible_group_window: int = DEFAULT_VISIBLE_GROUP_WINDOW,
         now: Optional[Union[datetime, str, float]] = None,
         **kwargs,
     ) -> None:
@@ -100,6 +102,7 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         self.selected_index: int = 0
         self.on_event_selected = on_event_selected
         self.reduced_motion: bool = reduced_motion
+        self.visible_group_window = max(1, int(visible_group_window))
 
         # Streaming state & pulse tracking (§7.2, §14.8 Phase C1/C2, §14.9 step 3)
         self.new_events_off_tail_count: int = 0
@@ -220,6 +223,18 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
         if 0 <= self.selected_index < len(groups):
             return groups[self.selected_index].last_event
         return None
+
+    def get_visible_group_bounds(self) -> tuple[int, int]:
+        """Return the bounded render window around the current selection."""
+        groups = self.get_coalesced_groups()
+        total = len(groups)
+        if total <= self.visible_group_window:
+            return 0, total
+        half_window = self.visible_group_window // 2
+        start = max(0, self.selected_index - half_window)
+        end = min(total, start + self.visible_group_window)
+        start = max(0, end - self.visible_group_window)
+        return start, end
 
     def append_events(self, new_events: List[UiEvent], now: Optional[Union[datetime, str, float]] = None) -> None:
         """Append new live events into stream: 100% data retention immediately, throttled visual commits (§14.8 Phase C2)."""
@@ -500,8 +515,20 @@ class ExchangeTimelineWidget(LifecycleWidgetMixin, Static):
 
         focus_mark = " [focus]" if (state == WidgetLifecycleState.FOCUSED or self.has_focus) else ""
 
-        for idx, group in enumerate(groups):
+        visible_start, visible_end = self.get_visible_group_bounds()
+        if visible_start > 0:
+            lines.append(
+                f"[dim]↑ {visible_start} earlier cards retained (use Up/g to navigate)[/dim]"
+            )
+
+        for idx in range(visible_start, visible_end):
+            group = groups[idx]
             is_selected = (idx == self.selected_index)
             lines.append(self._render_group_card(group, is_selected, now_dt))
+
+        if visible_end < len(groups):
+            lines.append(
+                f"[dim]↓ {len(groups) - visible_end} later cards retained (use Down/G to navigate)[/dim]"
+            )
 
         return "\n\n".join(lines) + focus_mark
