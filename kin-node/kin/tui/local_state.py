@@ -1035,13 +1035,18 @@ def query_health_snapshot(
     profile_dir: Optional[Path] = None,
     relay_url: Optional[str] = None,
     client: Optional[httpx.Client] = None,
+    probe_relay: bool = True,
 ) -> HealthSnapshot:
-    """Build a real HealthSnapshot based on local identity, keychain, and real pending inbox counts (§14.6 Phase D)."""
+    """Build local health plus an optional real relay reachability result."""
+    # ``probe_relay=False`` lets interactive callers defer the only network I/O
+    # while preserving all local identity, keychain, and inbox evidence.
     p_dir = profile_dir or (Path.home() / ".kin" / "profiles" / profile_name)
     r_url = relay_url or os.environ.get("KIN_RELAY_URL", DEFAULT_RELAY_URL)
 
     has_identity, username, _ = get_local_identity_info(profile_name, p_dir)
-    relay_ok, _ = check_relay_reachability_status(r_url, client=client)
+    relay_ok = False
+    if probe_relay:
+        relay_ok, _ = check_relay_reachability_status(r_url, client=client)
 
     # Real pending inbox count (§5 Integration Requirement)
     needs_you_count = len(get_needs_you_items(p_dir, profile_name))
