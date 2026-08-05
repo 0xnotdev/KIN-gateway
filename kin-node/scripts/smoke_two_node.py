@@ -37,6 +37,10 @@ def _print_phase_b_evidence(evidence: dict) -> None:
     restart = evidence["restart"]
     expiry = evidence["expiry"]
     artifact = evidence["artifact"]
+    assert artifact["after_restart"]["sha256"] == artifact["after_restart"]["computed_sha256"], (
+        f"Artifact hash mismatch after restart: stored={artifact['after_restart']['sha256']} "
+        f"computed={artifact['after_restart']['computed_sha256']}"
+    )
     print(
         "SMOKE V1.1 PHASE B RELAY: "
         f"session_id={relay['session_id']}, dispatch={relay['dispatch']['status']}, "

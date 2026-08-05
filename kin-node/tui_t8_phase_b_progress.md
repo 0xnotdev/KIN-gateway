@@ -179,3 +179,33 @@ Output tail:
 ## Review boundary
 
 Phase B is ready for independent review on `codex/t8-phase-b-resilience`. No Phase C implementation is included.
+
+## Required review amendment
+
+The Phase B entry point now asserts that the stored and recomputed post-restart artifact hashes are equal before printing any success evidence. The smoke pytest wrapper independently parses both emitted 64-character hashes, requires both values to be present, and asserts their equality.
+
+The same comparison-pattern audit covered all other Phase B evidence:
+
+- Relay/ACK: dispatch must be `queued`; the first mailbox count and poll count must both be one; the mailbox and second poll must both be zero; Bob's event count must remain one. Every invariant is enforced in `run_v11_phase_b()` before evidence is returned.
+- Restart/reconstruct: pre-crash and reconstructed states must each be `active` with four events; the terminal state must be `completed` with five events. Every printed value is enforced before evidence is returned.
+- Expiry: the decision must return `success=False`, the error must specifically contain `has expired`, and the persisted decision must remain null. All three printed values are enforced before evidence is returned.
+
+No other instance was found where comparison values were merely printed without an enforced invariant.
+
+Re-run command:
+
+```text
+python -m pytest tests/test_smoke_two_node.py::test_two_node_v11_phase_b_real_relay_restart_expiry_and_artifact -m smoke -q -s
+```
+
+Re-run output:
+
+```text
+SMOKE V1.1 PHASE B RELAY: session_id=sess_72c555e1d6f346a5, dispatch=queued, queued_messages=1, first_poll=1, mailbox_after_ack=0, second_poll=0, bob_event_count=1
+SMOKE V1.1 PHASE B RESTART: session_id=sess_aaf4d48f73fe4627, sigterm_returncode=1, before_status=active, reconstructed_status=active, reconstructed_events=4, final_status=completed, final_events=5
+SMOKE V1.1 PHASE B EXPIRY: session_id=sess_4b9a464e31b04c4b, approval_id=app_smoke_f6065cfbe1c2, expires_at=2026-08-05T06:32:04.647199Z, success=False, error="Approval 'app_smoke_f6065cfbe1c2' has expired.", decision=None
+SMOKE V1.1 PHASE B ARTIFACT: session_id=sess_6a8cb23cb99d4cc2, artifact_id=art_0e6dbb48d137, delivery=direct, sha256=11c64c5f4fa9ca111e9b7c8a94cb8483298288495b37e92feb4e37b326461d6c, computed_sha256=11c64c5f4fa9ca111e9b7c8a94cb8483298288495b37e92feb4e37b326461d6c, offered_by=alice, source=peer_received
+PASS: V1.1 Phase B relay, restart, expiry, and artifact gates succeeded!
+.
+1 passed in 52.64s
+```

@@ -1,8 +1,10 @@
 """Pytest wrapper for the two-process local smoke test harness."""
 
+import re
 import subprocess
 import sys
 from pathlib import Path
+
 import pytest
 
 
@@ -62,4 +64,13 @@ def test_two_node_v11_phase_b_real_relay_restart_expiry_and_artifact():
     assert "final_status=completed, final_events=5" in res.stdout
     assert "success=False" in res.stdout and "has expired" in res.stdout and "decision=None" in res.stdout
     assert "delivery=direct" in res.stdout and "offered_by=alice, source=peer_received" in res.stdout
+    hash_evidence = re.search(
+        r"sha256=([0-9a-f]{64}), computed_sha256=([0-9a-f]{64})",
+        res.stdout,
+    )
+    assert hash_evidence is not None, "Phase B output omitted stored/computed artifact hash evidence"
+    assert hash_evidence.group(1) == hash_evidence.group(2), (
+        f"Artifact hash mismatch in smoke evidence: stored={hash_evidence.group(1)} "
+        f"computed={hash_evidence.group(2)}"
+    )
     assert "PASS: V1.1 Phase B" in res.stdout
