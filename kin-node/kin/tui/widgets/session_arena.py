@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional, Union
 
 from rich.console import Group
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from textual import work
@@ -19,19 +20,23 @@ from kin.tui.layout import Breakpoint, classify_breakpoint
 from kin.tui.redaction import redact_ui_text
 from kin.tui.local_state import (
     cancel_session_command,
+    create_private_note,
     decide_pending_approval,
     get_approvals_for_session,
     get_artifacts_for_session,
     get_local_contacts_summaries,
+    get_local_identity_info,
+    get_private_notes,
     get_session_detail,
     get_session_events,
     get_session_list,
     get_stale_peer_card_count,
     pause_session,
+    promote_private_note_to_peer_visible,
     resume_session,
     send_human_message_to_session_action,
 )
-from kin.tui.state import ApprovalView, ArtifactView, RecoverableError, SessionSummary, UiEvent
+from kin.tui.state import ApprovalView, ArtifactView, PrivateNoteView, RecoverableError, SessionSummary, UiEvent
 from kin.tui.tokens import get_glyph
 from kin.tui.widgets.activity_feed import ActivityFeedWidget
 from kin.tui.widgets.approval_card import ApprovalCardWidget
@@ -42,6 +47,7 @@ from kin.tui.keymap import build_arena_bindings
 from kin.tui.widgets.exchange_timeline import ExchangeTimelineWidget
 from kin.tui.widgets.inspector import InspectorWidget
 from kin.tui.widgets.lifecycle import LifecycleWidgetMixin, WidgetLifecycleState
+from kin.tui.widgets.private_note_modal import PrivateNoteAuthoringModal
 from kin.tui.widgets.session_map import SessionMapWidget
 from kin.tui.widgets.session_state_modal import SessionStateMenuModal
 from kin.tui.widgets.trust_strip import TrustStripWidget
@@ -97,6 +103,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self.events: List[UiEvent] = events or []
         self.artifacts: List[ArtifactView] = artifacts or []
         self.approvals: List[ApprovalView] = approvals or []
+        self.private_notes: List[PrivateNoteView] = []
         self.last_arena_error: Optional[RecoverableError] = None
         self.last_trust_error: Optional[str] = None
         self.breakpoint: Breakpoint = "wide"
@@ -108,6 +115,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         self.active_lane: str = "transcript"
         self.inspector_visible: bool = True
         self.selected_approval_index: int = 0
+        self.selected_note_index: int = 0
         self.is_replay_mode: bool = False
         self.replay_index: Optional[int] = None
 
@@ -186,7 +194,19 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
         else:
             self.approvals = get_approvals_for_session(self.profile_dir, self.session_id, self.profile_name)
 
-        # 6. Session map resolution
+        # 6. Owner-only notes use a separate projection so they never enter
+        # Timeline, Activity, Decisions, Inspector, replay, or live polling.
+        self.private_notes = get_private_notes(
+            self.profile_dir,
+            self.session_id or "",
+            self.profile_name,
+        )
+        if self.private_notes:
+            self.selected_note_index = min(self.selected_note_index, len(self.private_notes) - 1)
+        else:
+            self.selected_note_index = 0
+
+        # 7. Session map resolution
         all_sessions = get_session_list(self.profile_dir, self.profile_name)
         self.session_map_widget = SessionMapWidget(
             sessions=all_sessions,
@@ -239,6 +259,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             "outputs": "Outputs Lane (o)",
             "decisions": "Decisions Lane (c)",
             "needs_you": "Needs-You Queue (u)",
+            "notes": "Private Notes — Local Only (l)",
         }
         if self.is_mounted and hasattr(self, "app") and self.app and getattr(self.app, "status_bar", None):
             self.app.status_bar.status_message = f"Switched to {lane_labels.get(lane, lane)}."
@@ -257,6 +278,79 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
     def open_needs_you_lane(self) -> None:
         """Open Needs-you Queue lane (u key) (§5.3, §14.8 Phase D)."""
         self.switch_lane("needs_you")
+
+    def open_private_note_authoring(self) -> None:
+        """Open the owner-only note editor; creation itself is non-consequential."""
+        if not (self.is_mounted and hasattr(self, "app") and self.app):
+            return
+
+        def handle_note(note_text: Optional[str]) -> None:
+            if not note_text:
+                return
+            _, identity_username, _ = get_local_identity_info(
+                self.profile_name,
+                self.profile_dir,
+            )
+            actor_username = identity_username or self.profile_name
+            ok, error = create_private_note(
+                self.profile_dir,
+                self.profile_name,
+                self.session_id or "",
+                actor_username,
+                note_text,
+            )
+            if ok:
+                self.load_arena_data()
+                self.switch_lane("notes")
+                self.app.status_bar.status_message = "Private note saved locally."
+            elif error:
+                self.last_arena_error = error
+                self.app.status_bar.status_message = f"Private note failed: {error.what_happened}"
+            self.app.status_bar.refresh()
+            self.refresh()
+
+        self.app.push_screen(
+            PrivateNoteAuthoringModal(self.session_id or "sess-unknown"),
+            handle_note,
+        )
+
+    def get_selected_private_note(self) -> Optional[PrivateNoteView]:
+        if not self.private_notes:
+            return None
+        self.selected_note_index = max(
+            0,
+            min(self.selected_note_index, len(self.private_notes) - 1),
+        )
+        return self.private_notes[self.selected_note_index]
+
+    def promote_selected_private_note(self) -> None:
+        """Gate promotion while showing the exact text that will cross the boundary."""
+        note = self.get_selected_private_note()
+        if note is None or not (self.is_mounted and hasattr(self, "app") and self.app):
+            return
+
+        exact_text = escape(note.note_text)
+        self.app.gate_consequential_action(
+            "Promote Private Note to Peer-Visible Signed Message",
+            f'EXACT TEXT TO SEND: "{exact_text}"',
+            on_confirm=lambda: self._execute_private_note_promotion(note.event_id),
+        )
+
+    def _execute_private_note_promotion(self, note_event_id: str) -> None:
+        ok, error = promote_private_note_to_peer_visible(
+            self.profile_dir,
+            self.profile_name,
+            self.session_id or "",
+            note_event_id,
+        )
+        if ok:
+            self.load_arena_data()
+            self.app.status_bar.status_message = "Private note promoted as a signed peer-visible message."
+        elif error:
+            self.last_arena_error = error
+            self.app.status_bar.status_message = f"Private note promotion failed: {error.what_happened}"
+        self.app.status_bar.refresh()
+        self.refresh()
 
     def open_session_state_menu(self) -> None:
         """Open Session State Menu modal (s key) (§5.3, §14.8 Phase D)."""
@@ -491,6 +585,13 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
     def action_lane_needs_you(self) -> None:
         self.open_needs_you_lane()
 
+    def action_lane_notes(self) -> None:
+        self.switch_lane("notes")
+
+    def action_promote_private_note(self) -> None:
+        if self.active_lane == "notes":
+            self.promote_selected_private_note()
+
     def action_toggle_inspector_arena(self) -> None:
         self.toggle_inspector()
 
@@ -555,6 +656,8 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
                 self.inspector_widget.selected_event = self.selected_event
             elif self.active_lane == "needs_you" and self.approvals:
                 self.selected_approval_index = min(self.selected_approval_index + 1, len(self.approvals) - 1)
+            elif self.active_lane == "notes" and self.private_notes:
+                self.selected_note_index = min(self.selected_note_index + 1, len(self.private_notes) - 1)
             self.refresh()
             event.stop()
         elif k in ("up", "k"):
@@ -564,6 +667,8 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
                 self.inspector_widget.selected_event = self.selected_event
             elif self.active_lane == "needs_you" and self.approvals:
                 self.selected_approval_index = max(self.selected_approval_index - 1, 0)
+            elif self.active_lane == "notes" and self.private_notes:
+                self.selected_note_index = max(self.selected_note_index - 1, 0)
             self.refresh()
             event.stop()
         elif k == "g":
@@ -573,6 +678,8 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
                 self.inspector_widget.selected_event = self.selected_event
             elif self.active_lane == "needs_you":
                 self.selected_approval_index = 0
+            elif self.active_lane == "notes":
+                self.selected_note_index = 0
             self.refresh()
             event.stop()
         elif k in ("G", "end"):
@@ -584,6 +691,8 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
                 self.inspector_widget.selected_event = self.selected_event
             elif self.active_lane == "needs_you" and self.approvals:
                 self.selected_approval_index = len(self.approvals) - 1
+            elif self.active_lane == "notes" and self.private_notes:
+                self.selected_note_index = len(self.private_notes) - 1
             self.refresh()
             event.stop()
 
@@ -760,6 +869,29 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
 
         return "\n\n".join(lines)
 
+    def _render_private_notes(self) -> str:
+        """Render the dedicated owner-only lane without sharing timeline state."""
+        accent = self._c("accent.primary", "#bb9af7")
+        warn = self._c("state.waiting", "#e0af68")
+        lines = [
+            f"[bold {accent}]PRIVATE NOTES — LOCAL ONLY[/bold {accent}]",
+            "[dim]These encrypted scratch notes are unsigned and never transported.[/dim]",
+        ]
+        if not self.private_notes:
+            lines.append("[dim]No private notes. Press Ctrl+S to create one.[/dim]")
+            return "\n\n".join(lines)
+
+        for index, note in enumerate(self.private_notes):
+            prefix = "▶" if index == self.selected_note_index else " "
+            lines.append(
+                f"{prefix} [bold]Note {index + 1}[/bold] — {note.created_at} — @{note.actor_username}\n"
+                f"   {escape(note.note_text)}"
+            )
+        lines.append(
+            f"[bold {warn}]Press p to review the exact selected text and promote it as a signed peer-visible message.[/bold {warn}]"
+        )
+        return "\n\n".join(lines)
+
     def render(self) -> Union[str, Group]:
         ok = self._c("state.live", "#73daca")
         err = self._c("state.error", "#f7768e")
@@ -830,6 +962,13 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
                         f"- {meta.artifact_id}; type={meta.mime_type}; size={artifact.display_size}; "
                         f"source={meta.source}"
                     )
+            elif self.active_lane == "notes":
+                lines.append(f"PRIVATE NOTES — LOCAL ONLY: {len(self.private_notes)}")
+                for index, note in enumerate(self.private_notes, start=1):
+                    lines.append(
+                        f"{index}. {note.created_at} | actor=@{note.actor_username} | "
+                        f"{escape(note.note_text)}"
+                    )
             else:
                 visible_events = self.exchange_timeline_widget.get_filtered_events()
                 if self.is_replay_mode and self.replay_index is not None:
@@ -843,7 +982,8 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
                     )
             lines.append(
                 "ACTIONS: t Transcript | e Activity | o Outputs | c Decisions | "
-                "u Needs You | r Replay | Ctrl+E Export | Esc Back"
+                "u Needs You | l Local Notes | p Promote Note | r Replay | "
+                "Ctrl+S New Note | Ctrl+E Export | Esc Back"
             )
             return "\n".join(lines)
 
@@ -879,6 +1019,8 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             center_renderable = self.artifact_list_widget.render()
         elif self.active_lane == "needs_you":
             center_renderable = self._render_needs_you_queue()
+        elif self.active_lane == "notes":
+            center_renderable = self._render_private_notes()
         else:
             center_renderable = self.exchange_timeline_widget.render()
 
@@ -888,6 +1030,7 @@ class SessionArenaWidget(LifecycleWidgetMixin, Static):
             "outputs": f"[bold {ok}]OUTPUTS / ARTIFACTS[/bold {ok}]",
             "decisions": f"[bold {ok}]DECISIONS / CHECKPOINTS[/bold {ok}]",
             "needs_you": f"[bold {warn}]NEEDS-YOU QUEUE[/bold {warn}]",
+            "notes": f"[bold {accent}]PRIVATE NOTES — LOCAL ONLY[/bold {accent}]",
         }
         lane_title = lane_title_map.get(self.active_lane, f"[bold {ok}]LANE: {self.active_lane.upper()}[/bold {ok}]")
 
