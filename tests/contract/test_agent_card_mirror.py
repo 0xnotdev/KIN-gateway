@@ -266,8 +266,14 @@ async def test_public_card_is_allowlisted_without_private_details() -> None:
             "url": "https://gateway.example/a2a/jsonrpc",
             "protocolBinding": "JSONRPC",
             "protocolVersion": "1.0",
-        }
+        },
+        {
+            "url": "https://gateway.example/a2a/rest",
+            "protocolBinding": "HTTP+JSON",
+            "protocolVersion": "1.0",
+        },
     ]
+    assert document["capabilities"] == {"streaming": True}
     assert "private-agent.internal" not in response.text
     assert "securitySchemes" not in document
     assert "securityRequirements" not in document

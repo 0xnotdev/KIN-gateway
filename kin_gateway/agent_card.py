@@ -29,6 +29,11 @@ from kin_gateway.upstream.credentials import (
 
 AGENT_CARD_PATH = "/.well-known/agent-card.json"
 JSONRPC_PATH = "/a2a/jsonrpc"
+REST_PATH = "/a2a/rest"
+_PUBLIC_INTERFACE_PATHS = {
+    "JSONRPC": JSONRPC_PATH,
+    "HTTP+JSON": REST_PATH,
+}
 
 
 class AgentCardMirrorError(Exception):
@@ -133,22 +138,23 @@ class AgentCardMirror:
             default_input_modes=card.default_input_modes,
             default_output_modes=card.default_output_modes,
         )
-        public.capabilities.CopyFrom(card.capabilities)
+        public.capabilities.SetInParent()
+        public.capabilities.streaming = card.capabilities.streaming
 
         for interface in card.supported_interfaces:
-            if (
-                interface.protocol_binding == "JSONRPC"
-                and interface.protocol_version == "1.0"
-            ):
+            public_path = _PUBLIC_INTERFACE_PATHS.get(
+                interface.protocol_binding
+            )
+            if public_path and interface.protocol_version == "1.0":
                 public_interface = public.supported_interfaces.add()
                 public_interface.CopyFrom(interface)
                 public_interface.url = (
-                    f"{self._settings.public_base_url}{JSONRPC_PATH}"
+                    f"{self._settings.public_base_url}{public_path}"
                 )
 
         if not public.supported_interfaces:
             raise AgentCardMirrorError(
-                "Upstream does not expose the A2A 1.0 JSON-RPC profile"
+                "Upstream does not expose an implemented A2A 1.0 profile"
             )
 
         approved_skills = self._settings.agent_card.approved_skill_ids

@@ -102,11 +102,16 @@ class AdminPlaneSettings(BaseModel):
 class GatewaySettings(BaseModel):
     """Minimal CP0 settings for one public endpoint and one A2A upstream."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     public_base_url: str = Field(min_length=1)
     bind_host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
+    stream_read_timeout_seconds: float = Field(
+        default=30.0,
+        ge=0.001,
+        le=3600,
+    )
     upstream_base_url: str = Field(min_length=1)
     upstream_credential: UpstreamCredentialSettings = Field(
         default_factory=UpstreamCredentialSettings

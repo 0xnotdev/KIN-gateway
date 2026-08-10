@@ -91,6 +91,13 @@ The protected upstream must implement the same A2A 1.0 operation/binding being e
 | `CRED-002` | No/static/secret-backed providers share one async request-time interface; missing secrets stop before upstream and secret canaries cannot enter discovery output. | `tests/contract/test_upstream_credentials.py` |
 | `ADMIN-001` | `/admin/*` is absent from the public app and token/mTLS authentication fails closed on the private app. | `tests/contract/test_admin_plane.py` |
 | `ADMIN-002` | A data bearer is not admin authority, and admin credentials reach neither upstream nor logs. | `test_admin_credential_is_never_forwarded_or_logged` |
+| `REST-001` | An official HTTP+JSON client sends through KIN to the unmodified official reference server. | `test_official_rest_client_sends_task_through_gateway` |
+| `REST-002` | Official task get, list/query, and cancellation semantics survive the gateway. | `test_official_rest_client_gets_lists_and_cancels_through_gateway` |
+| `REST-003` | Unsupported versions stop before upstream with the SDK-native REST error; raw query, body, status, protocol headers, and credential stripping are preserved. | Remaining cases in `tests/contract/test_rest_gateway.py` |
+| `SSE-001` | Official streaming clients receive submitted, artifact, and terminal events in order through both JSON-RPC and HTTP+JSON. | `test_official_streaming_client_preserves_event_sequence_through_gateway` |
+| `SSE-002` | Response start precedes upstream consumption; 100 events, IDs, malformed framing, and a 64 KiB event remain byte-identical with no duplicates under a slow consumer. | `test_sse_bytes_ids_order_and_backpressure_are_preserved` |
+| `SSE-003` | Client disconnect closes upstream; origin disconnect and inter-event timeout terminate without a synthetic completion event. | Disconnect/failure/timeout cases in `tests/contract/test_sse_gateway.py` |
+| `SSE-004` | REST and JSON-RPC task subscription operations remain on the streaming path. | `test_task_subscription_routes_remain_streaming` |
 
 ## Upgrade rule
 

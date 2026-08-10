@@ -1,16 +1,24 @@
 """FastAPI data-plane application for the first transparent A2A slice."""
 
+import asyncio
+import json
+import re
+
 from collections.abc import Mapping
 
 import httpx
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from packaging.version import InvalidVersion, Version
+
+from a2a.utils.error_handlers import build_rest_error_payload
+from a2a.utils.errors import VersionNotSupportedError
 
 from kin_gateway.agent_card import (
     AGENT_CARD_PATH,
     JSONRPC_PATH,
+    REST_PATH,
     AgentCardMirror,
     AgentCardMirrorError,
     TargetResolver,
@@ -25,8 +33,22 @@ from kin_gateway.upstream.credentials import (
 )
 
 
-_FORWARDED_REQUEST_HEADERS = ("content-type", "a2a-version", "a2a-extensions")
-_FORWARDED_RESPONSE_HEADERS = ("content-type", "cache-control")
+_FORWARDED_REQUEST_HEADERS = (
+    "content-type",
+    "accept",
+    "a2a-version",
+    "a2a-extensions",
+    "last-event-id",
+)
+_FORWARDED_RESPONSE_HEADERS = (
+    "content-type",
+    "cache-control",
+    "a2a-version",
+    "etag",
+    "content-location",
+    "retry-after",
+    "content-encoding",
+)
 _SUPPORTED_A2A_VERSION = Version("1.0")
 
 
@@ -62,6 +84,38 @@ def _version_error(request_id: object) -> JSONResponse:
                 "message": "Version not supported",
             },
         }
+    )
+
+
+def _rest_version_error() -> JSONResponse:
+    """Return the SDK's native HTTP+JSON version error representation."""
+
+    return JSONResponse(
+        build_rest_error_payload(VersionNotSupportedError()),
+        status_code=400,
+    )
+
+
+def _is_nonstreaming_rest_operation(method: str, path: str) -> bool:
+    """Expose only the CP0 REST operations implemented by this slice."""
+
+    if (method, path) in {("POST", "message:send"), ("GET", "tasks")}:
+        return True
+    if method == "GET" and re.fullmatch(r"tasks/[^/]+", path):
+        return True
+    return bool(
+        method == "POST" and re.fullmatch(r"tasks/[^/]+:cancel", path)
+    )
+
+
+def _is_streaming_rest_operation(method: str, path: str) -> bool:
+    """Recognize only A2A 1.0 stream and task-subscription resources."""
+
+    if method == "POST" and path == "message:stream":
+        return True
+    return bool(
+        method in {"GET", "POST"}
+        and re.fullmatch(r"tasks/[^/]+:subscribe", path)
     )
 
 
@@ -104,6 +158,64 @@ def create_gateway_app(
             headers=headers,
         )
 
+    async def streaming_upstream_response(
+        *,
+        method: str,
+        url: str | httpx.URL,
+        body: bytes,
+        headers: Mapping[str, str],
+    ) -> Response:
+        """Keep the upstream client open exactly as long as the downstream stream."""
+
+        client: httpx.AsyncClient | None = None
+        try:
+            credential_headers = await credential_provider.headers_for(
+                RequestContext(method=method, url=str(url))
+            )
+            client = upstream_client(credential_headers)
+            upstream_request = client.build_request(
+                method,
+                url,
+                content=body,
+                headers=headers,
+            )
+            upstream_response = await client.send(
+                upstream_request,
+                stream=True,
+            )
+        except (httpx.HTTPError, UpstreamCredentialError) as exc:
+            if client is not None:
+                await client.aclose()
+            raise HTTPException(
+                status_code=502,
+                detail="Protected A2A upstream is unavailable",
+            ) from exc
+
+        async def forward_body():
+            try:
+                iterator = upstream_response.aiter_raw().__aiter__()
+                while True:
+                    try:
+                        async with asyncio.timeout(
+                            settings.stream_read_timeout_seconds
+                        ):
+                            chunk = await anext(iterator)
+                    except StopAsyncIteration:
+                        break
+                    yield chunk
+            finally:
+                await upstream_response.aclose()
+                await client.aclose()
+
+        return StreamingResponse(
+            forward_body(),
+            status_code=upstream_response.status_code,
+            headers=_selected_headers(
+                upstream_response.headers,
+                _FORWARDED_RESPONSE_HEADERS,
+            ),
+        )
+
     @app.get(AGENT_CARD_PATH)
     async def mirrored_agent_card(response: Response) -> dict[str, object]:
         try:
@@ -125,14 +237,29 @@ def create_gateway_app(
     @app.post(JSONRPC_PATH)
     async def proxy_jsonrpc(request: Request) -> Response:
         body = await request.body()
+        try:
+            jsonrpc_request = json.loads(body)
+        except (ValueError, TypeError):
+            jsonrpc_request = {}
         if not _supports_a2a_version(request.headers.get("a2a-version")):
-            try:
-                request_id = (await request.json()).get("id")
-            except (ValueError, AttributeError):
-                request_id = None
+            request_id = (
+                jsonrpc_request.get("id")
+                if isinstance(jsonrpc_request, dict)
+                else None
+            )
             return _version_error(request_id)
 
         headers = _selected_headers(request.headers, _FORWARDED_REQUEST_HEADERS)
+        if isinstance(jsonrpc_request, dict) and jsonrpc_request.get("method") in {
+            "SendStreamingMessage",
+            "SubscribeToTask",
+        }:
+            return await streaming_upstream_response(
+                method="POST",
+                url=f"{settings.upstream_base_url}{JSONRPC_PATH}",
+                body=body,
+                headers=headers,
+            )
 
         try:
             credential_headers = await credential_provider.headers_for(
@@ -144,6 +271,63 @@ def create_gateway_app(
             async with upstream_client(credential_headers) as client:
                 upstream_response = await client.post(
                     JSONRPC_PATH,
+                    content=body,
+                    headers=headers,
+                )
+        except (httpx.HTTPError, UpstreamCredentialError) as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="Protected A2A upstream is unavailable",
+            ) from exc
+
+        return Response(
+            content=upstream_response.content,
+            status_code=upstream_response.status_code,
+            headers=_selected_headers(
+                upstream_response.headers,
+                _FORWARDED_RESPONSE_HEADERS,
+            ),
+        )
+
+    @app.api_route(
+        f"{REST_PATH}/{{rest_path:path}}",
+        methods=["GET", "POST"],
+    )
+    async def proxy_rest(rest_path: str, request: Request) -> Response:
+        is_streaming = _is_streaming_rest_operation(request.method, rest_path)
+        if not (
+            is_streaming
+            or _is_nonstreaming_rest_operation(request.method, rest_path)
+        ):
+            raise HTTPException(status_code=404, detail="A2A operation is unsupported")
+        if not _supports_a2a_version(request.headers.get("a2a-version")):
+            return _rest_version_error()
+
+        raw_path = request.scope.get("raw_path", request.url.path.encode("ascii"))
+        query_string = request.scope.get("query_string", b"")
+        upstream_url = httpx.URL(settings.upstream_base_url).join(
+            raw_path.decode("ascii")
+        )
+        upstream_url = upstream_url.copy_with(query=query_string)
+        body = await request.body()
+        headers = _selected_headers(request.headers, _FORWARDED_REQUEST_HEADERS)
+
+        if is_streaming:
+            return await streaming_upstream_response(
+                method=request.method,
+                url=upstream_url,
+                body=body,
+                headers=headers,
+            )
+
+        try:
+            credential_headers = await credential_provider.headers_for(
+                RequestContext(method=request.method, url=str(upstream_url))
+            )
+            async with upstream_client(credential_headers) as client:
+                upstream_response = await client.request(
+                    request.method,
+                    upstream_url,
                     content=body,
                     headers=headers,
                 )
