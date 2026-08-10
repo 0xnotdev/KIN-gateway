@@ -183,7 +183,7 @@ deploy/         # docker, helm, kubernetes, terraform
 | GATE-004 | A2A SDK/TCK harness and profile | In progress | Official SDK 1.1.2 direct client/server fixture passes and compatibility pins are documented; pinned TCK execution/manifest remains. |
 | GATE-005 | `AgentCardMirror` | In progress | Fetch/SDK validation and JSON-RPC public URL rewrite work; cache/hash persistence, SSRF controls, approved-skill/security filtering remain. |
 | GATE-006 | JSON-RPC proxy | Complete | Unmodified official client -> KIN -> unmodified official A2A 1.0 reference server returns the same task on Python 3.11/3.12; unsupported versions stop before upstream. |
-| GATE-006A | Upstream credential broker v0.1 | In progress | Private unauthenticated upstream mode works and request forwarding uses an explicit header allowlist; static/secret-backed modes and a no-passthrough test remain. |
+| GATE-006A | Upstream credential broker v0.1 | In progress | Private mode and injected secret-provider header/bearer mode work; contract test proves external bearer replacement/no passthrough; a production secret-store adapter remains. |
 | GATE-006B | Admin-plane security boundary | Planned | Admin listener is loopback/private by default; bootstrap operator token or mTLS protects every administrative endpoint. |
 | GATE-007 | REST and SSE proxy | Planned | REST works; SSE order/content/cancellation/disconnect behavior is preserved. |
 | GATE-008 | Task-session bridge | Planned | Each request creates `ExternalTaskSession` and deterministic request hash without mutating A2A output. |
@@ -469,6 +469,7 @@ For every future work item, update the exact row rather than adding only a narra
 
 | Date | Change | Evidence |
 |---|---|---|
+| 2026-08-10 | Added upstream credential separation: external bearer is removed and a customer-local secret-referenced header is applied at the protected-upstream boundary. | `kin_gateway/upstream/credentials.py`; `tests/contract/test_upstream_credentials.py` |
 | 2026-08-10 | Established green Python 3.11/3.12 baselines, recorded the missing project-license blocker, accepted ADR 0001, pinned A2A 1.0/SDK 1.1.2, and completed the first JSON-RPC gateway red/green slice. | `docs/baseline/`; `docs/adr/0001-gateway-architecture-invariants.md`; `A2A_COMPATIBILITY.md`; `tests/contract/` |
 | 2026-08-10 | Completed GATE-001: cloned both supplied repositories, imported exact KIN source history into the gateway repository, tagged `kin-v1.1-import`, and recorded commit/tree/archive provenance. CP0 is now in progress. | `UPSTREAM_KIN_V1_1_SNAPSHOT.md`; Git tag and repository remotes |
 | 2026-08-10 | Final consistency pass: added scope governance; renamed planned capability heading; aligned CP1 customer gate; specified binding-correct authorization denials; separated CP2 emergency routing/rollback from CP3 productized break-glass. Scope is frozen for v0.1 implementation. | Scope final review |

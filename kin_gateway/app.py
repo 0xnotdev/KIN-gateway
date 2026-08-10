@@ -13,6 +13,7 @@ from a2a.types import AgentCard
 from a2a.utils.proto_utils import validate_proto_required_fields
 
 from kin_gateway.config import GatewaySettings
+from kin_gateway.upstream.credentials import SecretProvider, resolve_upstream_headers
 
 
 AGENT_CARD_PATH = "/.well-known/agent-card.json"
@@ -61,6 +62,7 @@ def create_gateway_app(
     settings: GatewaySettings,
     *,
     upstream_transport: httpx.AsyncBaseTransport | None = None,
+    secret_provider: SecretProvider | None = None,
 ) -> FastAPI:
     """Create a gateway data plane with an injectable upstream HTTP boundary."""
 
@@ -70,6 +72,10 @@ def create_gateway_app(
         return httpx.AsyncClient(
             base_url=settings.upstream_base_url,
             transport=upstream_transport,
+            headers=resolve_upstream_headers(
+                settings.upstream_credential,
+                secret_provider,
+            ),
         )
 
     @app.get(AGENT_CARD_PATH)

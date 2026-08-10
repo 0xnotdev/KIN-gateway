@@ -1,0 +1,2 @@
+"""Protected-upstream connection boundary."""
+
