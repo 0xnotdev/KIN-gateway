@@ -1,6 +1,6 @@
 # KIN Gateway — Scope and Checkpoint Tracker
 
-> **Status:** Pre-build / planning
+> **Status:** CP0 implementation in progress
 >
 > **Last reviewed:** 2026-08-10
 >
@@ -10,13 +10,14 @@
 
 | Item | Status | Evidence |
 |---|---|---|
-| Research and design plan | Complete | `deep-research-report (1).md`, 2,231 lines. |
+| Research and design plan | Complete | `docs/planning/deep-research-report.md`, 2,231 lines. |
 | `kin-gateway` source repository | Present / GATE-001 complete | `D:\KIN Gateway\new\kin-gateway`; origin `https://github.com/0xnotdev/KIN-gateway.git`; imported source commit `58258fb037ea49f23d8e572ad7cd9df59ef5e388`. |
 | Immutable KIN V1.1 source snapshot | Complete | Reference clone `D:\KIN Gateway\original\kinto-main`; source commit/tag/tree/checksum recorded in `UPSTREAM_KIN_V1_1_SNAPSHOT.md`. |
-| Gateway package, tests, CI, deployment assets | Not started | No implementation files exist. |
+| Gateway package and contract tests | In progress | Root `pyproject.toml`, `kin_gateway/`, and `tests/contract/`; official A2A direct and proxied JSON-RPC tests pass on Python 3.11/3.12. |
+| Gateway CI and deployment assets | Not started | Imported CI still covers KIN V1.1; gateway-specific jobs and deployment assets remain. |
 | Customer interviews, design partners, pilots | Not recorded | Targets exist, but no execution evidence exists here. |
 
-Research, design, and GATE-001 source preservation are complete. Gateway implementation remains at zero until baseline, tests, artifacts, and customer evidence are recorded.
+Research, design, GATE-001 source preservation, and the original regression baseline are complete. CP0 gateway implementation is in progress.
 
 ## Scope governance
 
@@ -177,12 +178,12 @@ deploy/         # docker, helm, kubernetes, terraform
 | ID | Deliverable | Status | Completion evidence |
 |---|---|---|---|
 | GATE-001 | Immutable gateway clone | Complete | Original reference clone untouched; source commit/tree/archive hash recorded; import tag `kin-v1.1-import`; provenance document committed in gateway repository. |
-| GATE-002 | Reproducible baseline and license audit | Planned | Fresh Python 3.11/3.12 environments install pins and run original tests; pre-existing failures documented; imported-code and dependency licenses are inventoried before reuse/redistribution. |
-| GATE-003 | Architectural invariants ADR | Planned | A2A, no proprietary protocol, local authority, credential separation, and shadow-first rollout stated. |
-| GATE-004 | A2A SDK/TCK harness and profile | Planned | Reference client calls reference agent directly; supported versions/commands documented; `A2A_COMPATIBILITY.md` declares every guaranteed and unsupported v0.1 capability. |
-| GATE-005 | `AgentCardMirror` | Planned | Fetch, validate, cache, and hash upstream card; block SSRF; rewrite public endpoint/security; leak no private upstream URL/secret. |
-| GATE-006 | JSON-RPC proxy | Planned | Vanilla client -> KIN -> untouched server returns same task result. |
-| GATE-006A | Upstream credential broker v0.1 | Planned | Private-local, static-service-credential, and secret-backed bearer/header modes work; external credential passthrough is disabled and tested. |
+| GATE-002 | Reproducible baseline and license audit | Blocked | Python 3.11/3.12 baselines are green and dependency inventory exists; imported KIN packages/repository have no declared license, so redistribution awaits owner-approved licensing. |
+| GATE-003 | Architectural invariants ADR | Complete | `docs/adr/0001-gateway-architecture-invariants.md` locks A2A, local authority, credential separation, admin boundary, and scope governance. |
+| GATE-004 | A2A SDK/TCK harness and profile | In progress | Official SDK 1.1.2 direct client/server fixture passes and compatibility pins are documented; pinned TCK execution/manifest remains. |
+| GATE-005 | `AgentCardMirror` | In progress | Fetch/SDK validation and JSON-RPC public URL rewrite work; cache/hash persistence, SSRF controls, approved-skill/security filtering remain. |
+| GATE-006 | JSON-RPC proxy | Complete | Unmodified official client -> KIN -> unmodified official A2A 1.0 reference server returns the same task on Python 3.11/3.12; unsupported versions stop before upstream. |
+| GATE-006A | Upstream credential broker v0.1 | In progress | Private unauthenticated upstream mode works and request forwarding uses an explicit header allowlist; static/secret-backed modes and a no-passthrough test remain. |
 | GATE-006B | Admin-plane security boundary | Planned | Admin listener is loopback/private by default; bootstrap operator token or mTLS protects every administrative endpoint. |
 | GATE-007 | REST and SSE proxy | Planned | REST works; SSE order/content/cancellation/disconnect behavior is preserved. |
 | GATE-008 | Task-session bridge | Planned | Each request creates `ExternalTaskSession` and deterministic request hash without mutating A2A output. |
@@ -468,6 +469,7 @@ For every future work item, update the exact row rather than adding only a narra
 
 | Date | Change | Evidence |
 |---|---|---|
+| 2026-08-10 | Established green Python 3.11/3.12 baselines, recorded the missing project-license blocker, accepted ADR 0001, pinned A2A 1.0/SDK 1.1.2, and completed the first JSON-RPC gateway red/green slice. | `docs/baseline/`; `docs/adr/0001-gateway-architecture-invariants.md`; `A2A_COMPATIBILITY.md`; `tests/contract/` |
 | 2026-08-10 | Completed GATE-001: cloned both supplied repositories, imported exact KIN source history into the gateway repository, tagged `kin-v1.1-import`, and recorded commit/tree/archive provenance. CP0 is now in progress. | `UPSTREAM_KIN_V1_1_SNAPSHOT.md`; Git tag and repository remotes |
 | 2026-08-10 | Final consistency pass: added scope governance; renamed planned capability heading; aligned CP1 customer gate; specified binding-correct authorization denials; separated CP2 emergency routing/rollback from CP3 productized break-glass. Scope is frozen for v0.1 implementation. | Scope final review |
 | 2026-08-10 | Applied architecture-control review: locked PartnerGrant semantics; made CP0 technical-only; added upstream credential and admin-plane contracts; added pinned A2A compatibility profile; made invitations optional; added v0.1 definition of done, license audit, and customer-controlled break-glass bypass. | Scope review update |

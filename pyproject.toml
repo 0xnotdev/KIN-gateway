@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools==83.0.0", "wheel==0.47.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kin-gateway"
+version = "0.1.0.dev0"
+description = "Customer-local policy and evidence gateway for external A2A agents"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "a2a-sdk[http-server]==1.1.2",
+    "fastapi==0.133.1",
+    "httpx==0.28.1",
+    "packaging==26.3",
+    "pydantic==2.13.4",
+    "uvicorn==0.41.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.4.2",
+    "pytest-asyncio==1.4.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["kin_gateway*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
