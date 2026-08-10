@@ -13,7 +13,11 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from packaging.version import InvalidVersion, Version
 
 from a2a.utils.error_handlers import build_rest_error_payload
-from a2a.utils.errors import VersionNotSupportedError
+from a2a.utils.errors import (
+    PushNotificationNotSupportedError,
+    UnsupportedOperationError,
+    VersionNotSupportedError,
+)
 
 from kin_gateway.agent_card import (
     AGENT_CARD_PATH,
@@ -121,6 +125,19 @@ def _is_streaming_rest_operation(method: str, path: str) -> bool:
         method in {"GET", "POST"}
         and re.fullmatch(r"tasks/[^/]+:subscribe", path)
     )
+
+
+def _known_unsupported_rest_error(path: str) -> Exception | None:
+    """Return the native error for scoped A2A features excluded from CP0."""
+
+    if re.fullmatch(
+        r"tasks/[^/]+/pushNotificationConfigs(?:/[^/]+)?",
+        path,
+    ):
+        return PushNotificationNotSupportedError()
+    if path == "extendedAgentCard":
+        return UnsupportedOperationError()
+    return None
 
 
 def create_gateway_app(
@@ -334,7 +351,7 @@ def create_gateway_app(
 
     @app.api_route(
         f"{REST_PATH}/{{rest_path:path}}",
-        methods=["GET", "POST"],
+        methods=["GET", "POST", "DELETE"],
     )
     async def proxy_rest(rest_path: str, request: Request) -> Response:
         raw_path = request.scope.get("raw_path", request.url.path.encode("ascii"))
@@ -357,6 +374,13 @@ def create_gateway_app(
             body=body,
         )
         is_streaming = _is_streaming_rest_operation(request.method, rest_path)
+        unsupported_error = _known_unsupported_rest_error(rest_path)
+        if unsupported_error is not None:
+            await session.complete("unsupported_operation")
+            return JSONResponse(
+                build_rest_error_payload(unsupported_error),
+                status_code=400,
+            )
         if not (
             is_streaming
             or _is_nonstreaming_rest_operation(request.method, rest_path)

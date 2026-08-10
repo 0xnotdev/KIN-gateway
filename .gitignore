@@ -29,6 +29,7 @@ wheels/
 htmlcov/
 .nox/
 .tox/
+.artifacts/
 
 # Virtual Environments
 .venv/

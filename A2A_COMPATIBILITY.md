@@ -74,7 +74,7 @@ The protected upstream must implement the same A2A 1.0 operation/binding being e
 
 ## TCK accounting
 
-`tests/contract/tck-manifest.yaml` will map every pinned TCK case to `pass`, `expected-unsupported`, or a tracked defect. Every `expected-unsupported` entry must cite the unsupported feature in this document. The manifest and test report are required CP0 acceptance artifacts.
+`tests/contract/tck-manifest.yaml` maps the immutable 265-case pinned collection to 68 selected passes, 108 expected-unsupported cases, and 89 tracked TCK/SDK defects. Its verifier checks the pinned Git commit, collection count/hash, every selected node ID, every exclusion-rule count, and rejects unaccounted cases. The selected live-network profile is 68/68 green; the complete diagnostic remains preserved rather than silently skipped. See `docs/baseline/GATE-004-A2A-TCK.md`.
 
 ## Implemented CP0 contract index
 
@@ -101,6 +101,9 @@ The protected upstream must implement the same A2A 1.0 operation/binding being e
 | `SESSION-001` | Every handled A2A proxy attempt creates the exact nine-field CP0 `ExternalTaskSession`; no CP1 authority or policy field is introduced. | `test_jsonrpc_session_has_only_cp0_fields_and_preserves_response` |
 | `SESSION-002` | The same protocol request has a deterministic credential-independent hash and a distinct session UUID; buffered JSON task IDs are observed without changing response bytes. | `test_same_rest_request_has_stable_hash_and_unique_session_id`; JSON-RPC schema case |
 | `SESSION-003` | Observer failure cannot change buffered A2A output, and transport/stream completion, origin failure, timeout, and cancellation receive explicit outcomes. | Remaining `test_external_task_sessions.py` cases; lifecycle assertions in `test_sse_gateway.py` |
+| `TCK-001` | The pinned 265-case collection has an immutable hash and exhaustive pass/unsupported/defect accounting. | `tests/contract/tck-manifest.yaml`; `scripts/verify_tck_manifest.py`; full-diagnostic accounting artifact |
+| `TCK-002` | The selected live-network profile passes 68/68 through KIN: Agent Card 9/9, JSON-RPC 7/7, HTTP+JSON 52/52. | `docs/baseline/evidence/gate-004/supported-profile/` |
+| `DEMO-001` | Official clients obtain equivalent completed inventory results directly and through KIN over both supported bindings. | `scripts/run_cp0_demo.py`; `docs/baseline/evidence/gate-014/inventory-lookup-demo.json` |
 
 ## Upgrade rule
 

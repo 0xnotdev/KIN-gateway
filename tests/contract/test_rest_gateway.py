@@ -199,3 +199,66 @@ async def test_rest_query_status_body_and_protocol_headers_are_preserved() -> No
     assert response.headers["a2a-version"] == "1.0"
     assert upstream_requests[0].url.query == b"pageSize=7&pageToken=a%2Bb"
     assert upstream_requests[0].headers.get("authorization") is None
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "expected_reason"),
+    [
+        (
+            "POST",
+            "/a2a/rest/tasks/task-1/pushNotificationConfigs",
+            "PUSH_NOTIFICATION_NOT_SUPPORTED",
+        ),
+        (
+            "GET",
+            "/a2a/rest/tasks/task-1/pushNotificationConfigs/config-1",
+            "PUSH_NOTIFICATION_NOT_SUPPORTED",
+        ),
+        (
+            "DELETE",
+            "/a2a/rest/tasks/task-1/pushNotificationConfigs/config-1",
+            "PUSH_NOTIFICATION_NOT_SUPPORTED",
+        ),
+        (
+            "GET",
+            "/a2a/rest/extendedAgentCard",
+            "UNSUPPORTED_OPERATION",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_known_unsupported_rest_features_use_native_a2a_error(
+    method: str,
+    path: str,
+    expected_reason: str,
+) -> None:
+    """Known excluded features fail binding-correctly before upstream."""
+
+    upstream_calls: list[str] = []
+    gateway = create_gateway_app(
+        GatewaySettings(
+            public_base_url="http://gateway",
+            upstream_base_url="http://upstream",
+        ),
+        upstream_transport=httpx.MockTransport(
+            lambda request: (
+                upstream_calls.append(str(request.url))
+                or httpx.Response(200, json={})
+            )
+        ),
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=gateway),
+        base_url="http://gateway",
+    ) as client:
+        response = await client.request(
+            method,
+            path,
+            headers={"A2A-Version": "1.0"},
+            json={} if method == "POST" else None,
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["details"][0]["reason"] == expected_reason
+    assert upstream_calls == []

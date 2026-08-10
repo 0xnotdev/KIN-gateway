@@ -1,0 +1,137 @@
+{
+  "fixture": "inventory.lookup",
+  "item": "widget-cp0",
+  "upstream_url": "http://127.0.0.1:18081",
+  "gateway_url": "http://127.0.0.1:18080",
+  "direct_agent_card": {
+    "document": {
+      "name": "KIN Gateway Inventory Reference Agent",
+      "description": "Deterministic agent used to prove A2A interoperability.",
+      "supportedInterfaces": [
+        {
+          "url": "http://127.0.0.1:18081/a2a/jsonrpc",
+          "protocolBinding": "JSONRPC",
+          "protocolVersion": "1.0"
+        },
+        {
+          "url": "http://127.0.0.1:18081/a2a/rest",
+          "protocolBinding": "HTTP+JSON",
+          "protocolVersion": "1.0"
+        }
+      ],
+      "version": "1.0.0",
+      "capabilities": {
+        "streaming": true
+      },
+      "defaultInputModes": [
+        "text/plain"
+      ],
+      "defaultOutputModes": [
+        "text/plain"
+      ],
+      "skills": [
+        {
+          "id": "inventory.lookup",
+          "name": "Inventory lookup",
+          "description": "Return deterministic availability for an item.",
+          "tags": [
+            "inventory"
+          ],
+          "inputModes": [
+            "text/plain"
+          ],
+          "outputModes": [
+            "text/plain"
+          ]
+        }
+      ]
+    },
+    "etag": null,
+    "upstream_sha256": null
+  },
+  "gateway_agent_card": {
+    "document": {
+      "name": "KIN Gateway Inventory Reference Agent",
+      "description": "Deterministic agent used to prove A2A interoperability.",
+      "supportedInterfaces": [
+        {
+          "url": "http://127.0.0.1:18080/a2a/jsonrpc",
+          "protocolBinding": "JSONRPC",
+          "protocolVersion": "1.0"
+        },
+        {
+          "url": "http://127.0.0.1:18080/a2a/rest",
+          "protocolBinding": "HTTP+JSON",
+          "protocolVersion": "1.0"
+        }
+      ],
+      "version": "1.0.0",
+      "capabilities": {
+        "streaming": true
+      },
+      "defaultInputModes": [
+        "text/plain"
+      ],
+      "defaultOutputModes": [
+        "text/plain"
+      ],
+      "skills": [
+        {
+          "id": "inventory.lookup",
+          "name": "Inventory lookup",
+          "description": "Return deterministic availability for an item.",
+          "tags": [
+            "inventory"
+          ],
+          "inputModes": [
+            "text/plain"
+          ],
+          "outputModes": [
+            "text/plain"
+          ]
+        }
+      ]
+    },
+    "etag": "\"sha256-cabac068997172f5c8172cb9dfca05d3ad4e6ea5d41bf51b92cef4f063bb8831\"",
+    "upstream_sha256": "1aa461139b2c993a50b9f3f532cb7b62acd4d36df7b83a0b40df98c3e1c3d080"
+  },
+  "bindings": [
+    {
+      "binding": "JSONRPC",
+      "direct": {
+        "task_id": "b3586c67-98fe-4c67-b1e0-a6393985a75b",
+        "state": "TASK_STATE_COMPLETED",
+        "artifacts": [
+          "inventory:widget-cp0:available"
+        ]
+      },
+      "through_kin": {
+        "task_id": "09902f7d-f74f-4ce3-8b22-dd317e96c1d8",
+        "state": "TASK_STATE_COMPLETED",
+        "artifacts": [
+          "inventory:widget-cp0:available"
+        ]
+      },
+      "equivalent": true
+    },
+    {
+      "binding": "HTTP+JSON",
+      "direct": {
+        "task_id": "8f08871e-9c10-4132-b780-47bbf584d03b",
+        "state": "TASK_STATE_COMPLETED",
+        "artifacts": [
+          "inventory:widget-cp0:available"
+        ]
+      },
+      "through_kin": {
+        "task_id": "cd82d4cd-7a9d-4c89-83ce-a2a6e014f9aa",
+        "state": "TASK_STATE_COMPLETED",
+        "artifacts": [
+          "inventory:widget-cp0:available"
+        ]
+      },
+      "equivalent": true
+    }
+  ],
+  "all_equivalent": true
+}

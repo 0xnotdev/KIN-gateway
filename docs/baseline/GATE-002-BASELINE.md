@@ -30,6 +30,24 @@ Workspace-local environments were created outside the Git repository under `D:\K
 
 All four processes exited with status zero.
 
+## Final CP0 regression
+
+The same imported suites were rerun after the complete CP0 gateway
+implementation, TCK harness, and canonical demo were in place. They retained
+the exact baseline counts on both supported interpreters:
+
+| Python | Package | Final CP0 result |
+|---|---|---:|
+| 3.11.9 | `kin-node` | 1,617 passed; 9 deselected; 101 snapshots passed |
+| 3.11.9 | `kin-relay` | 12 passed |
+| 3.12.13 | `kin-node` | 1,617 passed; 9 deselected; 101 snapshots passed |
+| 3.12.13 | `kin-relay` | 12 passed |
+
+All four final-regression processes exited with status zero. The immutable
+reference clone was separately checked afterward and remained clean at source
+commit `58258fb037ea49f23d8e572ad7cd9df59ef5e388` and tree
+`808d495e70f7d03ac75f2ecaff50b29280fed494`.
+
 ## Commands
 
 ```powershell

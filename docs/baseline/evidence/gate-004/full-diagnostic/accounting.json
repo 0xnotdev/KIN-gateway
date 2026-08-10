@@ -1,0 +1,1861 @@
+{
+  "tck_commit": "5996b79f9cefa6fc390980e383e358a66fb9e49e",
+  "collection_sha256": "63fa842e4fa0b35e9570e79fe313d0aed07118964ed863b8d03583fa0e3cd18c",
+  "cases": [
+    {
+      "nodeid": "tests/compatibility/agent_card/test_agent_card.py::TestAgentCardDiscovery::test_agent_card_retrievable",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/agent_card/test_agent_card.py::TestAgentCardStructure::test_agent_card_validates_against_schema",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/agent_card/test_agent_card.py::TestAgentCardStructure::test_required_fields_present",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/agent_card/test_agent_card.py::TestAgentCardProtocol::test_supported_interfaces_non_empty",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/agent_card/test_agent_card.py::TestAgentCardProtocol::test_each_interface_validates_against_schema",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/agent_card/test_agent_card.py::TestBindingFieldDeclaration::test_all_protocols_declared",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/agent_card/test_agent_card_caching.py::TestAgentCardCacheControl::test_cache_control_present",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/agent_card/test_agent_card_caching.py::TestAgentCardCacheControl::test_cache_control_has_max_age",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/agent_card/test_agent_card_caching.py::TestAgentCardETag::test_etag_present",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/agent_card/test_agent_card_caching.py::TestAgentCardLastModified::test_last_modified_present",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-OPTIONAL-LAST-MODIFIED",
+      "reason": "The optional Last-Modified SHOULD is not selected; deterministic ETag and Cache-Control are selected and pass.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestTextArtifact::test_task_has_text_artifact[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestTextArtifact::test_task_has_text_artifact[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestTextArtifact::test_task_has_text_artifact[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestFileArtifact::test_task_has_file_artifact[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestFileArtifact::test_task_has_file_artifact[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestFileArtifact::test_task_has_file_artifact[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestFileUrlArtifact::test_task_has_file_url_artifact[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestFileUrlArtifact::test_task_has_file_url_artifact[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestFileUrlArtifact::test_task_has_file_url_artifact[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestDataArtifact::test_task_has_data_artifact[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestDataArtifact::test_task_has_data_artifact[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestDataArtifact::test_task_has_data_artifact[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestMessageResponse::test_returns_message_with_text_part[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestMessageResponse::test_returns_message_with_text_part[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_artifacts.py::TestMessageResponse::test_returns_message_with_text_part[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_data_model.py::TestSendMessageResponseSchema::test_response_validates_against_schema",
+      "disposition": "tracked-defect",
+      "rule": "SDK-UNKNOWN-FIELD-STRICTNESS",
+      "reason": "Four cases inherit the TCK JSON-RPC path defect; the released SDK strictly rejects the two SHOULD-level unknown-field probes.",
+      "observed_status": "error"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_data_model.py::TestCamelCaseFieldNames::test_no_snake_case_keys",
+      "disposition": "tracked-defect",
+      "rule": "SDK-UNKNOWN-FIELD-STRICTNESS",
+      "reason": "Four cases inherit the TCK JSON-RPC path defect; the released SDK strictly rejects the two SHOULD-level unknown-field probes.",
+      "observed_status": "error"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_data_model.py::TestEnumSerialization::test_enum_values_are_strings",
+      "disposition": "tracked-defect",
+      "rule": "SDK-UNKNOWN-FIELD-STRICTNESS",
+      "reason": "Four cases inherit the TCK JSON-RPC path defect; the released SDK strictly rejects the two SHOULD-level unknown-field probes.",
+      "observed_status": "error"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_data_model.py::TestTimestampFormat::test_timestamps_are_iso8601_utc",
+      "disposition": "tracked-defect",
+      "rule": "SDK-UNKNOWN-FIELD-STRICTNESS",
+      "reason": "Four cases inherit the TCK JSON-RPC path defect; the released SDK strictly rejects the two SHOULD-level unknown-field probes.",
+      "observed_status": "error"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_data_model.py::TestIgnoreUnrecognizedFields::test_extra_fields_ignored_jsonrpc",
+      "disposition": "tracked-defect",
+      "rule": "SDK-UNKNOWN-FIELD-STRICTNESS",
+      "reason": "Four cases inherit the TCK JSON-RPC path defect; the released SDK strictly rejects the two SHOULD-level unknown-field probes.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_data_model.py::TestIgnoreUnrecognizedFields::test_extra_fields_ignored_rest",
+      "disposition": "tracked-defect",
+      "rule": "SDK-UNKNOWN-FIELD-STRICTNESS",
+      "reason": "Four cases inherit the TCK JSON-RPC path defect; the released SDK strictly rejects the two SHOULD-level unknown-field probes.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestCoreErrorStructure::test_error_has_code_and_message_jsonrpc",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestCoreErrorStructure::test_error_has_code_and_message_rest",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestCoreInputValidation::test_malformed_request_rejected_jsonrpc",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestCoreInputValidation::test_malformed_request_rejected_rest",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestCapabilityPushNotifications::test_push_not_supported_jsonrpc",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestCapabilityPushNotifications::test_push_not_supported_rest",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestCapabilityStreaming::test_streaming_not_supported_jsonrpc",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-CAPABILITY-NOT-APPLICABLE",
+      "reason": "The negative capability trigger is inapplicable because streaming is enabled or the tested extension is not declared.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestCapabilityExtensionRequired::test_missing_required_extension_returns_error_jsonrpc",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-CAPABILITY-NOT-APPLICABLE",
+      "reason": "The negative capability trigger is inapplicable because streaming is enabled or the tested extension is not declared.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestCapabilityExtensionRequired::test_missing_required_extension_returns_error_http_json",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-CAPABILITY-NOT-APPLICABLE",
+      "reason": "The negative capability trigger is inapplicable because streaming is enabled or the tested extension is not declared.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestCapabilityExtendedCard::test_extended_card_not_supported_jsonrpc",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-EXTENDED-AGENT-CARD",
+      "reason": "Authenticated extended Agent Cards are explicitly unsupported in CP0.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestExtendedCardNotConfigured::test_extended_card_not_configured_jsonrpc",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-EXTENDED-AGENT-CARD",
+      "reason": "Authenticated extended Agent Cards are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestExtendedCardNotConfigured::test_extended_card_not_configured_http_json",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-EXTENDED-AGENT-CARD",
+      "reason": "Authenticated extended Agent Cards are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestExtendedCardNotConfigured::test_extended_card_not_configured_grpc",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestVersionErrors::test_unsupported_version_returns_error_jsonrpc",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestVersionErrors::test_unsupported_version_returns_error_rest",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestVersionErrors::test_empty_version_treated_as_default_jsonrpc",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-NO-A2A-0.3-DOWNGRADE",
+      "reason": "KIN pins A2A 1.0 and explicitly rejects implicit 0.3 downgrade; the TCK assertion only checks for any JSON result/error.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestJsonRpcErrorStructure::test_error_object_structure",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestJsonRpcErrorStructure::test_a2a_error_codes_in_range",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestJsonRpcErrorStructure::test_a2a_error_type_mappings",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestJsonRpcErrorStructure::test_error_data_contains_error_info",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestRestErrorStructure::test_error_uses_aip193_format",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestRestErrorStructure::test_a2a_error_info_in_details",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_error_handling.py::TestGrpcErrorStructure::test_grpc_error_for_nonexistent_task",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_multi_stream.py::TestMultiStreamOrdering::test_events_broadcast_to_all_streams[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_multi_stream.py::TestMultiStreamOrdering::test_events_broadcast_to_all_streams[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_multi_stream.py::TestMultiStreamOrdering::test_events_broadcast_to_all_streams[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_multi_stream.py::TestMultiStreamOrdering::test_streams_receive_same_events_in_order[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_multi_stream.py::TestMultiStreamOrdering::test_streams_receive_same_events_in_order[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_multi_stream.py::TestMultiStreamOrdering::test_streams_receive_same_events_in_order[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_multi_stream.py::TestMultiStreamOrdering::test_closing_one_stream_does_not_affect_others[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_multi_stream.py::TestMultiStreamOrdering::test_closing_one_stream_does_not_affect_others[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_multi_stream.py::TestMultiStreamOrdering::test_closing_one_stream_does_not_affect_others[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_create_push_config[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_create_push_config[jsonrpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_create_push_config[http_json]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_config_persists[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_config_persists[jsonrpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_config_persists[http_json]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_get_push_config[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_get_push_config[jsonrpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_get_push_config[http_json]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_get_nonexistent_config_returns_error[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_get_nonexistent_config_returns_error[jsonrpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_get_nonexistent_config_returns_error[http_json]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_list_push_configs[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_list_push_configs[jsonrpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_list_push_configs[http_json]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_delete_push_config[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_delete_push_config[jsonrpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_delete_push_config[http_json]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_delete_is_idempotent[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_delete_is_idempotent[jsonrpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationCrud::test_delete_is_idempotent[http_json]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationDelivery::test_delivery_includes_auth[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationDelivery::test_delivery_includes_auth[jsonrpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationDelivery::test_delivery_includes_auth[http_json]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationDelivery::test_delivery_at_least_once[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationDelivery::test_delivery_at_least_once[jsonrpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationDelivery::test_delivery_at_least_once[http_json]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationDelivery::test_delivery_payload_format[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationDelivery::test_delivery_payload_format[jsonrpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_push_notifications.py::TestPushNotificationDelivery::test_delivery_payload_format[http_json]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-SEND-001-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-SEND-001-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-SEND-001-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-SEND-003-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-SEND-003-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-SEND-003-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-STREAM-001-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-STREAM-001-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-STREAM-001-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-STREAM-002-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-STREAM-002-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-STREAM-002-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-STREAM-003-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-STREAM-003-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-STREAM-003-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-GET-002-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-GET-002-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-GET-002-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-001-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-001-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-001-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-002-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-002-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-002-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-003-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-003-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-003-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-004-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-004-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-004-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-005-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-005-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-LIST-005-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-CANCEL-003-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-CANCEL-003-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-CANCEL-003-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-EXECUTION-MODE-001-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-EXECUTION-MODE-001-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-EXECUTION-MODE-001-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-EXECUTION-MODE-002-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-EXECUTION-MODE-002-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-EXECUTION-MODE-002-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-001a-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-001a-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-001a-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-002a-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-002a-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-002a-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-003-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-003-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-003-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-004-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-004-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CORE-MULTI-004-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[STREAM-SUB-004-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[STREAM-SUB-004-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[STREAM-SUB-004-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CARD-EXT-001-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CARD-EXT-001-jsonrpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-EXTENDED-AGENT-CARD",
+      "reason": "Authenticated extended Agent Cards are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_must_requirement[CARD-EXT-001-http_json]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-EXTENDED-AGENT-CARD",
+      "reason": "Authenticated extended Agent Cards are explicitly unsupported in CP0.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_should_requirement[no-requirements-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_should_requirement[no-requirements-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_should_requirement[no-requirements-http_json]",
+      "disposition": "expected-unsupported",
+      "rule": "TCK-NO-REQUIREMENT-AT-LEVEL",
+      "reason": "The pinned TCK emits a placeholder skip because no HTTP+JSON requirement exists at that selected level.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_may_requirement[CORE-MULTI-001-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_may_requirement[CORE-MULTI-001-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_may_requirement[CORE-MULTI-001-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_may_requirement[CORE-MULTI-002-grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_may_requirement[CORE-MULTI-002-jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_requirements.py::test_may_requirement[CORE-MULTI-002-http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_stream_ordering.py::TestStreamEventOrdering::test_streaming_event_ordering[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_stream_ordering.py::TestStreamEventOrdering::test_streaming_event_ordering[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_stream_ordering.py::TestStreamEventOrdering::test_streaming_event_ordering[http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryLengthZeroGetTask::test_get_task_history_length_zero[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryLengthZeroGetTask::test_get_task_history_length_zero[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryLengthZeroGetTask::test_get_task_history_length_zero[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryLengthLimit::test_get_task_history_does_not_exceed_limit[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryLengthLimit::test_get_task_history_does_not_exceed_limit[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryLengthLimit::test_get_task_history_does_not_exceed_limit[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryLengthZeroSendMessage::test_send_message_history_length_zero[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryLengthZeroSendMessage::test_send_message_history_length_zero[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryLengthZeroSendMessage::test_send_message_history_length_zero[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryPersistence::test_get_task_returns_history[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryPersistence::test_get_task_returns_history[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryPersistence::test_get_task_returns_history[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryOrdering::test_history_messages_in_chronological_order[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryOrdering::test_history_messages_in_chronological_order[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryOrdering::test_history_messages_in_chronological_order[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryContent::test_history_content_matches_sent_messages[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryContent::test_history_content_matches_sent_messages[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_history.py::TestHistoryContent::test_history_content_matches_sent_messages[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestGetTask::test_get_task_returns_current_state[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestGetTask::test_get_task_returns_current_state[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestGetTask::test_get_task_returns_current_state[http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestCancelTask::test_cancel_task_returns_updated_state[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestCancelTask::test_cancel_task_returns_updated_state[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestCancelTask::test_cancel_task_returns_updated_state[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestCancelTask::test_cancel_terminal_task_returns_error[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestCancelTask::test_cancel_terminal_task_returns_error[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestCancelTask::test_cancel_terminal_task_returns_error[http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestMultiTurn::test_send_message_to_terminal_task[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestMultiTurn::test_send_message_to_terminal_task[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestMultiTurn::test_send_message_to_terminal_task[http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestMultiTurn::test_infer_context_from_task[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestMultiTurn::test_infer_context_from_task[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestMultiTurn::test_infer_context_from_task[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestMultiTurn::test_reject_mismatching_context[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestMultiTurn::test_reject_mismatching_context[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestMultiTurn::test_reject_mismatching_context[http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestSubscribeLifecycle::test_subscribe_terminates_at_terminal_state[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestSubscribeLifecycle::test_subscribe_terminates_at_terminal_state[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestSubscribeLifecycle::test_subscribe_terminates_at_terminal_state[http_json]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-GENERATED-SUT-NOT-PINNED",
+      "reason": "These remaining HTTP+JSON cases require TCK-specific scenario behavior; the generated SUT has an unresolved sibling SDK source and imports no released compatible SDK.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestSubscribeLifecycle::test_subscribe_rejects_terminal_task[grpc]",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestSubscribeLifecycle::test_subscribe_rejects_terminal_task[jsonrpc]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_task_lifecycle.py::TestSubscribeLifecycle::test_subscribe_rejects_terminal_task[http_json]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestJsonRpcFormat::test_response_validates_jsonrpc_envelope",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "error"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestJsonRpcFormat::test_content_type_is_application_json",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "error"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestJsonRpcMethodNames::test_bindings_use_spec_method_names",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestJsonRpcServiceParams::test_extensions_header_accepted",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestJsonRpcStreaming::test_streaming_content_type",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestRestFormat::test_response_content_type",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestRestFormat::test_response_validates_against_schema",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestRestServiceParams::test_extensions_header_accepted",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestRestUrlPatterns::test_url_patterns_defined",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestRestUrlPatterns::test_http_methods_correct",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestRestQueryParams::test_query_params_are_camel_case",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestRestStreaming::test_streaming_content_type",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestGrpcService::test_grpc_response_validates_against_proto",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestGrpcProto3::test_response_uses_proto3",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestGrpcServiceParams::test_extensions_metadata_accepted",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/core_operations/test_transport_behavior.py::TestGrpcStreaming::test_grpc_streaming_works",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/grpc/test_status_codes.py::TestGrpcStatusCodes::test_task_not_found_returns_not_found",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/grpc/test_status_codes.py::TestGrpcStatusCodes::test_task_not_cancelable_returns_failed_precondition",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/grpc/test_status_codes.py::TestGrpcStatusCodes::test_unsupported_operation_returns_unimplemented",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/grpc/test_status_codes.py::TestGrpcStatusCodes::test_push_not_supported_returns_unimplemented",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/grpc/test_status_codes.py::TestGrpcStatusCodes::test_version_not_supported_returns_unimplemented",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/grpc/test_status_codes.py::TestGrpcErrorInfo::test_error_info_in_status_details",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/grpc/test_streaming.py::TestGrpcStreaming::test_streaming_response_type",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/grpc/test_streaming.py::TestGrpcStreaming::test_streaming_message_structure",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/grpc/test_streaming.py::TestGrpcStreaming::test_streaming_cancellation",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/grpc/test_streaming.py::TestGrpcStreaming::test_streaming_error_propagation",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/grpc/test_streaming.py::TestGrpcStreaming::test_subscribe_first_event_is_task",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-GRPC",
+      "reason": "gRPC is outside the frozen CP0 A2A compatibility profile.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/http_json/test_http_status.py::TestHttpJsonStatusCodes::test_task_not_found_returns_404",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/http_json/test_http_status.py::TestHttpJsonStatusCodes::test_task_not_cancelable_returns_409",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/http_json/test_http_status.py::TestHttpJsonStatusCodes::test_unsupported_operation_returns_400",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-CAPABILITY-NOT-APPLICABLE",
+      "reason": "The negative capability trigger is inapplicable because streaming is enabled or the tested extension is not declared.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/http_json/test_http_status.py::TestHttpJsonStatusCodes::test_content_type_not_supported_returns_415",
+      "disposition": "tracked-defect",
+      "rule": "SDK-CONTENT-TYPE-STRICTNESS",
+      "reason": "The released SDK accepts the TCK's wrong Content-Type probe instead of emitting ContentTypeNotSupportedError.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/http_json/test_http_status.py::TestHttpJsonStatusCodes::test_push_not_supported_returns_400",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/http_json/test_http_status.py::TestHttpJsonStatusCodes::test_version_not_supported_returns_400",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/http_json/test_http_status.py::TestHttpJsonStatusCodes::test_success_returns_2xx",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/http_json/test_problem_details.py::TestAIP193ErrorFormat::test_error_content_type",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/http_json/test_problem_details.py::TestAIP193ErrorFormat::test_error_object_present",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/http_json/test_problem_details.py::TestAIP193ErrorFormat::test_code_field_matches_http_status",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/http_json/test_problem_details.py::TestAIP193ErrorFormat::test_message_field_is_string",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/http_json/test_problem_details.py::TestAIP193ErrorInfo::test_details_contains_error_info",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/http_json/test_problem_details.py::TestAIP193ErrorInfo::test_error_info_valid",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/http_json/test_problem_details.py::TestAIP193ErrorInfo::test_error_info_reason_matches_condition",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_task_not_found_error",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_task_not_cancelable_error",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_push_notification_not_supported_error",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-PUSH-NOTIFICATIONS",
+      "reason": "Push notification configuration and delivery are explicitly unsupported in CP0.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_unsupported_operation_error",
+      "disposition": "expected-unsupported",
+      "rule": "PROFILE-CAPABILITY-NOT-APPLICABLE",
+      "reason": "The negative capability trigger is inapplicable because streaming is enabled or the tested extension is not declared.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_content_type_not_supported_error",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeMappings::test_version_not_supported_error",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[GetTask-nonexistent]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[CancelTask-nonexistent]",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_error_codes.py::TestJsonRpcErrorCodeRange::test_error_code_in_valid_range[SendMessage-bad-version]",
+      "disposition": "pass",
+      "rule": "SUPPORTED",
+      "reason": "Selected CP0 compatibility case.",
+      "observed_status": "passed"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_error_data_is_array",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_data_contains_error_info",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_error_info_valid",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_error_info.py::TestJsonRpcErrorInfo::test_error_info_reason_matches_condition",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseStreamingFormat::test_streaming_events_have_jsonrpc_envelope",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseStreamingFormat::test_streaming_events_contain_stream_response",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "skipped"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseSubscribeToTask::test_subscribe_nonexistent_task_returns_error",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    },
+    {
+      "nodeid": "tests/compatibility/jsonrpc/test_sse_streaming.py::TestSseSubscribeToTask::test_subscribe_first_event_is_task",
+      "disposition": "tracked-defect",
+      "rule": "TCK-JSONRPC-ENDPOINT-PATH",
+      "reason": "The pinned TCK JsonRpcClient posts to '/' and discards the non-root interface URL path; KIN and the released SDK correctly advertise/use /a2a/jsonrpc.",
+      "observed_status": "failure"
+    }
+  ]
+}
