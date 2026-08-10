@@ -48,6 +48,25 @@ reference clone was separately checked afterward and remained clean at source
 commit `58258fb037ea49f23d8e572ad7cd9df59ef5e388` and tree
 `808d495e70f7d03ac75f2ecaff50b29280fed494`.
 
+## Licensed-tree freeze regression
+
+After Apache-2.0 metadata was applied to all three project distributions, new
+environments at `D:\KIN Gateway\.venvs\cp0-license-311` and
+`D:\KIN Gateway\.venvs\cp0-license-312` reproduced the final matrix:
+
+| Python | Suite | Freeze result | Duration |
+|---|---|---:|---:|
+| 3.11.9 | Gateway contract | 51 passed | 3.06 s |
+| 3.12.13 | Gateway contract | 51 passed | 3.08 s |
+| 3.11.9 | `kin-node` | 1,617 passed; 9 deselected; 101 snapshots passed | 158.12 s |
+| 3.12.13 | `kin-node` | 1,617 passed; 9 deselected; 101 snapshots passed | 150.32 s |
+| 3.11.9 | `kin-relay` | 12 passed | 0.98 s |
+| 3.12.13 | `kin-relay` | 12 passed | 1.00 s |
+| 3.11.9 | Selected live A2A TCK | 68 passed | 19.01 s |
+| 3.11.9 | Canonical direct/proxy demo | Both bindings equivalent | Pass |
+
+All processes exited zero. The known dependency warnings remained unchanged.
+
 ## Commands
 
 ```powershell
@@ -64,9 +83,12 @@ Both packages emit one `StarletteDeprecationWarning` from `fastapi.testclient`: 
 
 ## License audit status
 
-- Full installed-environment inventory: `docs/baseline/GATE-002-DEPENDENCY-LICENSES.md`.
-- No root `LICENSE`, `COPYING`, or `NOTICE` file exists in the imported repository.
-- Neither `kin-node/pyproject.toml` nor `kin-relay/pyproject.toml` declares a project license.
-- Installed metadata therefore reports `kin-cli` and `kin-relay` licenses as `UNKNOWN`.
+The original import had no declared project license; that historical baseline is
+why GATE-002 initially blocked release. The repository owner subsequently
+confirmed authority over all imported contributions and approved Apache-2.0 in
+ADR 0002. The freeze tree now contains root `LICENSE`/`NOTICE`, and installed
+metadata for `kin-cli`, `kin-gateway`, and `kin-relay` reports `Apache-2.0` on
+both supported interpreters.
 
-This is a release/redistribution blocker, not a test blocker. Local implementation may continue, but no public binary, package, container, or copied-source distribution should be released until the repository owner selects and records the project license and any required notices. This document does not choose a license on the owner's behalf.
+The final exhaustive inventories and reproduction command are in
+`docs/baseline/GATE-002-DEPENDENCY-LICENSES.md`. GATE-002 is complete.

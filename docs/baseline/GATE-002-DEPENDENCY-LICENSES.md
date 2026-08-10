@@ -1,125 +1,79 @@
-| Name                      | Version    | License                                                                        | URL                                                                                           |
-|---------------------------|------------|--------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
-| Jinja2                    | 3.1.6      | BSD License                                                                    | https://github.com/pallets/jinja/                                                             |
-| MarkupSafe                | 3.0.3      | BSD-3-Clause                                                                   | https://github.com/pallets/markupsafe/                                                        |
-| PyYAML                    | 6.0.3      | MIT License                                                                    | https://pyyaml.org/                                                                           |
-| Pygments                  | 2.20.0     | BSD-2-Clause                                                                   | https://pygments.org                                                                          |
-| a2a-sdk                   | 1.1.2      | Apache-2.0                                                                     | https://a2a-protocol.org/                                                                     |
-| aiohappyeyeballs          | 2.7.1      | Python Software Foundation License                                             | https://github.com/aio-libs/aiohappyeyeballs                                                  |
-| aiohttp                   | 3.14.3     | Apache-2.0 AND MIT                                                             | https://github.com/aio-libs/aiohttp                                                           |
-| aiologic                  | 0.17.1     | ISC License (ISCL)                                                             | https://github.com/x42005e1f/aiologic                                                         |
-| aiosignal                 | 1.4.0      | Apache Software License                                                        | https://github.com/aio-libs/aiosignal                                                         |
-| annotated-doc             | 0.0.5      | MIT                                                                            | https://github.com/fastapi/annotated-doc                                                      |
-| annotated-types           | 0.8.0      | MIT                                                                            | https://github.com/annotated-types/annotated-types                                            |
-| anyio                     | 4.14.2     | MIT                                                                            | https://anyio.readthedocs.io/en/stable/versionhistory.html                                    |
-| attrs                     | 26.1.0     | MIT                                                                            | https://www.attrs.org/en/stable/changelog.html                                                |
-| backports.tarfile         | 1.2.0      | MIT License                                                                    | https://github.com/jaraco/backports.tarfile                                                   |
-| build                     | 1.5.0      | MIT                                                                            | https://build.pypa.io                                                                         |
-| certifi                   | 2026.7.22  | Mozilla Public License 2.0 (MPL 2.0)                                           | https://github.com/certifi/python-certifi                                                     |
-| cffi                      | 2.1.1      | MIT-0                                                                          | https://cffi.readthedocs.io/en/latest/whatsnew.html                                           |
-| charset-normalizer        | 3.4.9      | MIT                                                                            | https://github.com/jawah/charset_normalizer/blob/master/CHANGELOG.md                          |
-| click                     | 8.4.2      | BSD-3-Clause                                                                   | https://github.com/pallets/click/                                                             |
-| colorama                  | 0.4.6      | BSD License                                                                    | https://github.com/tartley/colorama                                                           |
-| cryptography              | 50.0.0     | Apache-2.0 OR BSD-3-Clause                                                     | https://github.com/pyca/cryptography                                                          |
-| culsans                   | 0.11.0     | ISC License (ISCL)                                                             | https://github.com/x42005e1f/culsans                                                          |
-| distro                    | 1.9.0      | Apache Software License                                                        | https://github.com/python-distro/distro                                                       |
-| fastapi                   | 0.133.1    | MIT                                                                            | https://github.com/fastapi/fastapi                                                            |
-| fastuuid                  | 0.14.0     | BSD License                                                                    | https://github.com/thedrow/fastuuid/                                                          |
-| filelock                  | 3.32.2     | MIT                                                                            | https://github.com/tox-dev/py-filelock                                                        |
-| frozenlist                | 1.8.0      | Apache-2.0                                                                     | https://github.com/aio-libs/frozenlist                                                        |
-| fsspec                    | 2026.7.0   | BSD-3-Clause                                                                   | https://github.com/fsspec/filesystem_spec                                                     |
-| google-api-core           | 2.34.0     | Apache Software License                                                        | https://github.com/googleapis/google-cloud-python/tree/main/packages/google-api-core          |
-| google-auth               | 2.56.3     | Apache Software License                                                        | https://github.com/googleapis/google-cloud-python/tree/main/packages/google-auth              |
-| googleapis-common-protos  | 1.75.1     | Apache Software License                                                        | https://github.com/googleapis/google-cloud-python/tree/main/packages/googleapis-common-protos |
-| h11                       | 0.16.0     | MIT License                                                                    | https://github.com/python-hyper/h11                                                           |
-| hf-xet                    | 1.6.0      | Apache-2.0                                                                     | https://github.com/huggingface/xet-core                                                       |
-| httpcore                  | 1.0.9      | BSD-3-Clause                                                                   | https://www.encode.io/httpcore/                                                               |
-| httpx                     | 0.28.1     | BSD License                                                                    | https://github.com/encode/httpx                                                               |
-| huggingface_hub           | 1.27.0     | Apache Software License                                                        | https://github.com/huggingface/huggingface_hub                                                |
-| idna                      | 3.18       | BSD-3-Clause                                                                   | https://github.com/kjd/idna                                                                   |
-| importlib_metadata        | 8.9.0      | Apache-2.0                                                                     | https://github.com/python/importlib_metadata                                                  |
-| iniconfig                 | 2.3.0      | MIT                                                                            | https://github.com/pytest-dev/iniconfig                                                       |
-| jaraco.classes            | 3.4.0      | MIT License                                                                    | https://github.com/jaraco/jaraco.classes                                                      |
-| jaraco.context            | 6.1.2      | MIT                                                                            | https://github.com/jaraco/jaraco.context                                                      |
-| jaraco.functools          | 4.6.0      | MIT                                                                            | https://github.com/jaraco/jaraco.functools                                                    |
-| jiter                     | 0.16.0     | MIT                                                                            | https://github.com/pydantic/jiter/                                                            |
-| json-rpc                  | 1.15.0     | MIT License                                                                    | https://github.com/pavlov99/json-rpc                                                          |
-| jsonschema                | 4.26.0     | MIT                                                                            | https://github.com/python-jsonschema/jsonschema                                               |
-| jsonschema-specifications | 2025.9.1   | MIT                                                                            | https://github.com/python-jsonschema/jsonschema-specifications                                |
-| keyring                   | 25.7.0     | MIT                                                                            | https://github.com/jaraco/keyring                                                             |
-| kin-cli                   | 1.1.0      | UNKNOWN                                                                        | UNKNOWN                                                                                       |
-| kin-gateway               | 0.1.0.dev0 | UNKNOWN                                                                        | UNKNOWN                                                                                       |
-| kin-gateway               | 0.1.0.dev0 | UNKNOWN                                                                        | UNKNOWN                                                                                       |
-| kin-relay                 | 1.1.0      | UNKNOWN                                                                        | UNKNOWN                                                                                       |
-| linkify-it-py             | 2.1.0      | MIT License                                                                    | https://github.com/tsutsu3/linkify-it-py                                                      |
-| litellm                   | 1.89.1     | MIT                                                                            | https://litellm.ai                                                                            |
-| markdown-it-py            | 4.2.0      | MIT License                                                                    | https://github.com/executablebooks/markdown-it-py                                             |
-| mdit-py-plugins           | 0.6.1      | MIT License                                                                    | https://github.com/executablebooks/mdit-py-plugins                                            |
-| mdurl                     | 0.1.2      | MIT License                                                                    | https://github.com/executablebooks/mdurl                                                      |
-| mnemonic                  | 0.21       | MIT License                                                                    | UNKNOWN                                                                                       |
-| more-itertools            | 11.1.0     | MIT                                                                            | https://github.com/more-itertools/more-itertools                                              |
-| multidict                 | 6.7.1      | Apache License 2.0                                                             | https://github.com/aio-libs/multidict                                                         |
-| openai                    | 2.24.0     | Apache Software License                                                        | https://github.com/openai/openai-python                                                       |
-| packaging                 | 26.3       | Apache-2.0 OR BSD-2-Clause                                                     | https://github.com/pypa/packaging                                                             |
-| platformdirs              | 4.11.1     | MIT                                                                            | https://github.com/tox-dev/platformdirs                                                       |
-| pluggy                    | 1.6.0      | MIT License                                                                    | UNKNOWN                                                                                       |
-| prompt_toolkit            | 3.0.52     | BSD License                                                                    | https://github.com/prompt-toolkit/python-prompt-toolkit                                       |
-| propcache                 | 0.5.2      | Apache Software License                                                        | https://github.com/aio-libs/propcache                                                         |
-| proto-plus                | 1.28.3     | Apache Software License                                                        | https://github.com/googleapis/google-cloud-python/tree/main/packages/proto-plus               |
-| protobuf                  | 6.33.6     | 3-Clause BSD License                                                           | https://developers.google.com/protocol-buffers/                                               |
-| pyasn1                    | 0.6.4      | BSD-2-Clause                                                                   | https://github.com/pyasn1/pyasn1                                                              |
-| pyasn1_modules            | 0.4.2      | BSD License                                                                    | https://github.com/pyasn1/pyasn1-modules                                                      |
-| pycparser                 | 3.0        | BSD-3-Clause                                                                   | https://github.com/eliben/pycparser                                                           |
-| pydantic                  | 2.13.4     | MIT                                                                            | https://github.com/pydantic/pydantic                                                          |
-| pydantic_core             | 2.46.4     | MIT                                                                            | https://github.com/pydantic/pydantic                                                          |
-| pyproject_hooks           | 1.2.0      | MIT License                                                                    | https://github.com/pypa/pyproject-hooks                                                       |
-| pytest                    | 8.4.2      | MIT License                                                                    | https://docs.pytest.org/en/latest/                                                            |
-| pytest-asyncio            | 1.4.0      | Apache-2.0                                                                     | https://github.com/pytest-dev/pytest-asyncio                                                  |
-| pytest-textual-snapshot   | 1.1.0      | MIT License                                                                    | https://github.com/darrenburns/pytest-textual-snapshot                                        |
-| python-dotenv             | 1.2.2      | BSD-3-Clause                                                                   | https://github.com/theskumar/python-dotenv                                                    |
-| pywin32-ctypes            | 0.2.3      | BSD-3-Clause                                                                   | https://github.com/enthought/pywin32-ctypes                                                   |
-| referencing               | 0.37.0     | MIT                                                                            | https://github.com/python-jsonschema/referencing                                              |
-| regex                     | 2026.7.19  | Apache-2.0 AND CNRI-Python                                                     | https://github.com/mrabarnett/mrab-regex                                                      |
-| requests                  | 2.34.2     | Apache Software License                                                        | https://github.com/psf/requests                                                               |
-| rfc8785                   | 0.1.4      | Apache Software License                                                        | https://pypi.org/project/rfc8785                                                              |
-| rich                      | 14.3.3     | MIT License                                                                    | https://github.com/Textualize/rich                                                            |
-| rpds-py                   | 2026.6.3   | MIT                                                                            | https://github.com/crate-py/rpds                                                              |
-| shellingham               | 1.5.4      | ISC License (ISCL)                                                             | https://github.com/sarugaku/shellingham                                                       |
-| sniffio                   | 1.3.1      | Apache Software License; MIT License                                           | https://github.com/python-trio/sniffio                                                        |
-| sse-starlette             | 3.4.8      | BSD-3-Clause                                                                   | https://github.com/sysid/sse-starlette                                                        |
-| starlette                 | 1.6.0      | BSD-3-Clause                                                                   | https://github.com/Kludex/starlette                                                           |
-| syrupy                    | 4.8.0      | Apache Software License                                                        | https://github.com/syrupy-project/syrupy                                                      |
-| textual                   | 8.2.8      | MIT License                                                                    | https://github.com/Textualize/textual                                                         |
-| tiktoken                  | 0.13.0     | MIT License                                                                    | https://github.com/openai/tiktoken                                                            |
-|                           |            |                                                                                |                                                                                               |
-|                           |            | Copyright (c) 2022 OpenAI, Shantanu Jain                                       |                                                                                               |
-|                           |            |                                                                                |                                                                                               |
-|                           |            | Permission is hereby granted, free of charge, to any person obtaining a copy   |                                                                                               |
-|                           |            | of this software and associated documentation files (the "Software"), to deal  |                                                                                               |
-|                           |            | in the Software without restriction, including without limitation the rights   |                                                                                               |
-|                           |            | to use, copy, modify, merge, publish, distribute, sublicense, and/or sell      |                                                                                               |
-|                           |            | copies of the Software, and to permit persons to whom the Software is          |                                                                                               |
-|                           |            | furnished to do so, subject to the following conditions:                       |                                                                                               |
-|                           |            |                                                                                |                                                                                               |
-|                           |            | The above copyright notice and this permission notice shall be included in all |                                                                                               |
-|                           |            | copies or substantial portions of the Software.                                |                                                                                               |
-|                           |            |                                                                                |                                                                                               |
-|                           |            | THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR     |                                                                                               |
-|                           |            | IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,       |                                                                                               |
-|                           |            | FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE    |                                                                                               |
-|                           |            | AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER         |                                                                                               |
-|                           |            | LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,  |                                                                                               |
-|                           |            | OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE  |                                                                                               |
-|                           |            | SOFTWARE.                                                                      |                                                                                               |
-|                           |            |                                                                                |                                                                                               |
-| tokenizers                | 0.23.1     | Apache Software License                                                        | https://github.com/huggingface/tokenizers                                                     |
-| tqdm                      | 4.70.0     | MPL-2.0 AND MIT                                                                | https://tqdm.github.io                                                                        |
-| typer                     | 0.27.0     | MIT                                                                            | https://github.com/fastapi/typer                                                              |
-| typing-inspection         | 0.4.3      | MIT                                                                            | https://github.com/pydantic/typing-inspection                                                 |
-| typing_extensions         | 4.16.0     | PSF-2.0                                                                        | https://github.com/python/typing_extensions                                                   |
-| uc-micro-py               | 2.0.0      | MIT License                                                                    | https://github.com/tsutsu3/uc.micro-py                                                        |
-| urllib3                   | 2.7.0      | MIT                                                                            | https://github.com/urllib3/urllib3/blob/main/CHANGES.rst                                      |
-| uvicorn                   | 0.41.0     | BSD-3-Clause                                                                   | https://uvicorn.dev/                                                                          |
-| wrapt                     | 2.3.0      | BSD-2-Clause                                                                   | https://github.com/GrahamDumpleton/wrapt                                                      |
-| yarl                      | 1.24.5     | Apache-2.0                                                                     | https://github.com/aio-libs/yarl                                                              |
-| zipp                      | 4.1.0      | MIT                                                                            | https://github.com/jaraco/zipp                                                                |
+# GATE-002 Dependency and Project License Audit
+
+Audit date: 2026-08-10
+
+Release target: `v0.0.1-cp0`
+
+## Result
+
+**PASS.** The licensed release-candidate tree was installed into newly created
+Python 3.11.9 and 3.12.13 environments. Every installed distribution exposed at
+least one license-expression, legacy-license, or license-classifier signal, and
+all project-owned packages exposed the required SPDX expression.
+
+| Project package | Version | Python 3.11 | Python 3.12 | License files in installed metadata |
+|---|---:|---|---|---|
+| `kin-cli` | 1.1.0 | `Apache-2.0` | `Apache-2.0` | `LICENSE`, `NOTICE` |
+| `kin-gateway` | 0.1.0.dev0 | `Apache-2.0` | `Apache-2.0` | `LICENSE`, `NOTICE` |
+| `kin-relay` | 1.1.0 | `Apache-2.0` | `Apache-2.0` | `LICENSE`, `NOTICE` |
+
+The root project and both independently installed imported subprojects declare
+`license = "Apache-2.0"` and package content-equivalent canonical `LICENSE` and
+`NOTICE` texts. This removes the pre-license `UNKNOWN` metadata for `kin-cli`,
+`kin-gateway`, and `kin-relay` while keeping standalone distributions complete.
+
+## Environments and exhaustive evidence
+
+| Interpreter | Installed distributions | Distributions with no declared license signal | Gate |
+|---|---:|---:|---|
+| CPython 3.11.9 | 105 | 0 | Pass |
+| CPython 3.12.13 | 102 | 0 | Pass |
+
+The machine-readable inventories preserve every distribution's name, version,
+SPDX expression, legacy license value, license classifiers, declared license
+files, and project URLs:
+
+- `docs/baseline/evidence/gate-002/license-audit-python311.json`
+- `docs/baseline/evidence/gate-002/license-audit-python312.json`
+
+The different inventory counts are interpreter/environment dependency details,
+not missing KIN packages. Both environments contain and pass all three required
+project-package checks.
+
+## Packaging verification
+
+All three projects were built as wheels and source distributions using their
+declared `setuptools==83.0.0` and `wheel==0.47.0` backend requirements. Direct
+inspection of each final wheel confirmed:
+
+| Distribution | SPDX expression | `License-File` headers | Embedded license files |
+|---|---|---|---|
+| `kin_gateway-0.1.0.dev0` | `Apache-2.0` | `LICENSE`, `NOTICE` | `LICENSE`, `NOTICE` |
+| `kin_cli-1.1.0` | `Apache-2.0` | `LICENSE`, `NOTICE` | `LICENSE`, `NOTICE` |
+| `kin_relay-1.1.0` | `Apache-2.0` | `LICENSE`, `NOTICE` | `LICENSE`, `NOTICE` |
+
+This proves the independently buildable package artifacts are self-contained,
+not merely labeled by editable-install metadata.
+
+## Reproduce
+
+Install the root project, `kin-node`, and `kin-relay` into a clean supported
+environment, then run:
+
+```powershell
+python scripts\audit_cp0_licenses.py `
+  --output .artifacts\license-audit.json
+```
+
+The standard-library audit exits non-zero unless all three KIN distributions
+declare `License-Expression: Apache-2.0` and each installed distribution's
+metadata contains both `LICENSE` and `NOTICE`.
+
+## Boundary of the claim
+
+Apache-2.0 governs the project-owned source in this repository; it does not
+relicense third-party dependencies. The evidence records the license metadata
+published by each installed dependency. A metadata inventory is not a legal
+opinion about every possible downstream combination or distribution channel;
+third-party notices and terms must continue to be reviewed at release
+boundaries.

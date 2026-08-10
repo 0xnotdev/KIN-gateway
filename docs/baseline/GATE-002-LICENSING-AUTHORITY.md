@@ -23,6 +23,15 @@ The release tree must contain:
 - Python project metadata declaring SPDX expression `Apache-2.0` and including `LICENSE`/`NOTICE` as license files;
 - ADR 0002 recording the licensing decision.
 
-## Remaining GATE-002 proof
+## GATE-002 completion proof
 
-GATE-002 is not complete merely because authority was confirmed. Before marking it complete and creating `v0.0.1-cp0`, rerun the final dependency/project license audit against the licensed tree and verify that project-owned KIN packages no longer appear as `UNKNOWN` because of missing project metadata. Then rerun the required CP0 regression/contract checks, verify both worktrees are clean, and record the final evidence.
+The final dependency/project audit and full CP0 regression were rerun against
+the licensed tree in fresh Python 3.11.9 and 3.12.13 environments. Installed
+metadata for `kin-cli`, `kin-gateway`, and `kin-relay` now reports
+`Apache-2.0`; no installed distribution lacked a declared license signal. The
+gateway 51-case suite, imported 1,617-case node suite plus 101 snapshots,
+12-case relay suite, selected 68-case live TCK, and canonical demo all passed.
+
+Evidence is recorded in `docs/baseline/GATE-002-BASELINE.md`,
+`docs/baseline/GATE-002-DEPENDENCY-LICENSES.md`, and
+`docs/baseline/evidence/gate-002/`. GATE-002 is complete.

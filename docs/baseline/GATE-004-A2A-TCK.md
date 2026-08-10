@@ -74,3 +74,11 @@ From a clean TCK checkout at the pinned commit:
 ```
 
 The runner uses `uv sync --python 3.11`, validates the commit and manifest, starts both fixture listeners hidden, waits for public discovery, executes exactly the selected node IDs, writes reports under `.artifacts/cp0-tck/`, and stops both listeners in a `finally` block.
+
+## Release-freeze rerun
+
+The selected profile was rerun on the Apache-2.0 licensed tree on 2026-08-10.
+The manifest again verified all 265 collected cases with 68 supported, 108
+expected-unsupported, 89 tracked defects, and zero unaccounted cases. All 68
+selected cases passed in 19.01 seconds (Agent Card 9/9, JSON-RPC 7/7,
+HTTP+JSON 52/52).

@@ -6,7 +6,7 @@ Scope authority: `scope.md`
 
 Target: CP0 — Foundation and Transparent A2A
 
-Release status: **implementation complete; freeze/tag blocked by licensing authority**
+Release status: **complete and frozen; annotated release marker `v0.0.1-cp0`**
 
 ## Executive state
 
@@ -32,14 +32,14 @@ unmodified official A2A 1.0 upstream agent
 
 The separate private admin plane exists and is authenticated, but CP0 intentionally contains no grants, identity verification, policy engine, revocation, approval, evidence chain, shadow mode, hosted control plane, or PartnerGrant implementation.
 
-The implementation, dual-version contract suites, pinned TCK subset, full TCK accounting, imported KIN regressions, and canonical live-network demo are complete. A public/release CP0 tag is not yet authorized because the imported KIN repository has no declared license and the owner has not confirmed authority to license all imported contributions.
+The implementation, dual-version contract suites, pinned TCK subset, full TCK accounting, imported KIN regressions, canonical live-network demo, and installed-metadata license audit are complete. The repository owner confirmed licensing authority over all imported KIN contributions, ADR 0002 records the Apache-2.0 decision, and the licensed tree passed the complete release rerun before freeze.
 
 ## Checkpoint dashboard
 
 | Gate | State | What is complete | Remaining |
 |---|---|---|---|
 | GATE-001 — immutable import | Complete | Original clone is clean at source commit `58258fb037ea49f23d8e572ad7cd9df59ef5e388`, tree `808d495e70f7d03ac75f2ecaff50b29280fed494`; annotated `kin-v1.1-import` peels to the same commit/tree. | None. |
-| GATE-002 — baseline/license | Blocked | Python 3.11/3.12 node and relay baselines and final regressions are green; dependency-license inventory exists. | Founder must confirm copyright/licensing authority and approve the repository license/notices. |
+| GATE-002 — baseline/license | Complete | Authority is recorded; root `LICENSE`/`NOTICE` are present; all three project distributions declare `Apache-2.0`; exhaustive installed-metadata audits pass on Python 3.11/3.12; licensed-tree regressions are green. | None. Third-party dependencies retain their own licenses. |
 | GATE-003 — invariants ADR | Complete | A2A public protocol, local authority, credential separation, listener separation, scope governance, and no legacy-session dependency are locked. | None. |
 | GATE-004 — SDK/TCK/profile | Complete | SDK/spec/TCK pins, immutable collection hash, exhaustive 265-case accounting, live-network runner, 68/68 selected profile, and raw reports exist. | Upstream TCK/SDK limitations remain documented, not hidden. |
 | GATE-005 — AgentCardMirror | Complete | SSRF/rebinding defenses, same-origin redirects, limits, SDK validation, public allowlist, private-reference removal, hashes, ETag, and cache are proven. | None in CP0. |
@@ -75,6 +75,7 @@ The implementation, dual-version contract suites, pinned TCK subset, full TCK ac
 | Imported `kin-relay` | 12 passed | 12 passed | Green |
 | Selected live A2A TCK profile | 68 passed on Python 3.11.9 | Contract behavior separately green on gateway 3.12 | Green |
 | Canonical direct/proxy demo | JSON-RPC and HTTP+JSON equivalent | Uses pinned 1.1.2 runtime | Green |
+| Installed license metadata | 105 distributions; no missing declaration; three KIN packages `Apache-2.0` | 102 distributions; no missing declaration; three KIN packages `Apache-2.0` | Green |
 
 Known non-failing output:
 
@@ -124,6 +125,9 @@ This passed independently over JSON-RPC and HTTP+JSON. Server-generated task IDs
 - `UPSTREAM_KIN_V1_1_SNAPSHOT.md` — source provenance and immutable import.
 - `docs/baseline/GATE-002-BASELINE.md` — original dual-version baseline.
 - `docs/baseline/GATE-002-DEPENDENCY-LICENSES.md` — dependency and project license audit.
+- `docs/baseline/GATE-002-LICENSING-AUTHORITY.md` — founder authority evidence.
+- `docs/adr/0002-apache-2.0-licensing.md` — project-license decision.
+- `docs/baseline/evidence/gate-002/` — exhaustive Python 3.11/3.12 installed-metadata evidence.
 - `docs/adr/0001-gateway-architecture-invariants.md` — locked boundaries.
 - `A2A_COMPATIBILITY.md` — release compatibility contract and test index.
 - `tests/contract/tck-manifest.yaml` — selected TCK node IDs and exhaustive exclusions.
@@ -136,26 +140,13 @@ This passed independently over JSON-RPC and HTTP+JSON. Server-generated task IDs
 - `docs/protocol/CP0-TRANSPARENT-STREAMING.md` — SSE contract.
 - `docs/protocol/CP0-EXTERNAL-TASK-SESSIONS.md` — observer contract.
 
-## Remaining release blocker
+## Freeze record
 
-No `LICENSE` file has been added. GitHub default copyright therefore continues to apply.
+- The repository owner confirmed authority to license every imported KIN contribution under Apache-2.0; the evidence and decision are recorded separately.
+- The canonical Apache-2.0 `LICENSE` and project `NOTICE` are present at the repository root.
+- `kin-gateway`, `kin-cli`, and `kin-relay` installed metadata all report `License-Expression: Apache-2.0` and include `LICENSE` and `NOTICE`.
+- Fresh Python 3.11.9 and 3.12.13 environments reproduced the complete gateway, node, relay, license, live TCK, and canonical-demo gates shown above.
+- The immutable reference clone remained clean at the recorded source commit/tree, the release worktree was clean before tagging, and no fixture listeners remained.
+- Annotated tag `v0.0.1-cp0` is the immutable CP0 release marker. CP1 work is strictly after that tag.
 
-Before CP0 can be frozen and tagged, the founder must confirm one of the following:
-
-1. they are the sole copyright holder of all imported KIN code; or
-2. they otherwise have authority to license every imported contribution under the selected terms; or
-3. contributor/provenance remediation has been completed and documented.
-
-If authority is confirmed, the recommended recorded decision from the product review is Apache License 2.0 for the self-hosted gateway/data-plane code, with future hosted management/control-plane code kept commercially licensed. Applying that decision still requires adding the correct license and any notices, updating the license audit, rerunning the final checks, and only then creating the annotated CP0 tag.
-
-## Freeze procedure after license authority is resolved
-
-1. Add the founder-approved license and required notices.
-2. Update GATE-002 and this checkpoint from `Blocked` to `Complete`.
-3. Re-run gateway tests on 3.11/3.12 and the license audit.
-4. Confirm the worktree is clean and the original clone remains clean.
-5. Create annotated tag `v0.0.1-cp0`.
-6. Push the commit and annotated tag.
-7. Begin CP1 with failing policy-semantics tests; do not begin with OIDC implementation.
-
-Until steps 1–6 occur, CP0 implementation is complete but CP0 release is not frozen.
+The first CP1 commit must contain failing deterministic policy-semantic tests for unknown/known principals, relationship and grant state, expiry/revocation, target/skill scope, task ownership, and shadow non-interference. It must not begin with OIDC implementation.

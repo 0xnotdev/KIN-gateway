@@ -1,0 +1,8 @@
+KIN Gateway
+Copyright 2026 Debansh Mishra
+
+Licensed under the Apache License, Version 2.0.
+
+This distribution includes the imported KIN V1.1 source snapshot and subsequent KIN Gateway modifications. The repository owner has confirmed authority to license the imported KIN code under Apache License 2.0.
+
+Third-party dependencies remain subject to their respective licenses. Dependency-license evidence is maintained in docs/baseline/GATE-002-DEPENDENCY-LICENSES.md.

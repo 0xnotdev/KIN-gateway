@@ -162,7 +162,7 @@ deploy/         # docker, helm, kubernetes, terraform
 
 | Checkpoint | Duration | Status | Technical exit gate | Customer exit gate |
 |---|---:|---|---|---|
-| CP0 — Foundation + Transparent A2A | 2 weeks | Blocked on license authority | Unmodified A2A client -> KIN -> unmodified upstream; exact v0.1 compatibility profile and its required tests pass. | None; CP0 is purely technical. |
+| CP0 — Foundation + Transparent A2A | 2 weeks | Complete / Frozen | Unmodified A2A client -> KIN -> unmodified upstream; exact v0.1 compatibility profile and its required tests pass. | None; CP0 is purely technical. |
 | CP1 — Identity + Grants + Shadow | 2 weeks | Planned | Verified principal, deterministic decision, revoke under 5 seconds, shadow non-interference. | Five qualified practitioner demos and two design partners commit staging traffic. |
 | CP2 — Approval + Evidence + Pilot UX | 3–4 weeks | Planned | Hash-bound approval, Action Guard, evidence chain, counterparty flow. | Paid-pilot-ready build with no KIN counterparty install. |
 | CP3 — Production Hardening | 4 weeks | Planned | PostgreSQL, HA-ready data plane, security/load/chaos/deploy gates. | Real limited-production customer need. |
@@ -178,7 +178,7 @@ deploy/         # docker, helm, kubernetes, terraform
 | ID | Deliverable | Status | Completion evidence |
 |---|---|---|---|
 | GATE-001 | Immutable gateway clone | Complete | Original reference clone untouched; source commit/tree/archive hash recorded; import tag `kin-v1.1-import`; provenance document committed in gateway repository. |
-| GATE-002 | Reproducible baseline and license audit | Blocked | Python 3.11/3.12 baselines are green and dependency inventory exists; imported KIN packages/repository have no declared license, so redistribution awaits owner-approved licensing. |
+| GATE-002 | Reproducible baseline and license audit | Complete | Founder licensing authority and Apache-2.0 decision are recorded in ADR 0002; root `LICENSE`/`NOTICE` exist; fresh Python 3.11/3.12 installed-metadata audits report `Apache-2.0` for `kin-cli`, `kin-gateway`, and `kin-relay` with no undeclared-license distributions; the complete licensed-tree regression/TCK/demo matrix is green. |
 | GATE-003 | Architectural invariants ADR | Complete | `docs/adr/0001-gateway-architecture-invariants.md` locks A2A, local authority, credential separation, admin boundary, and scope governance. |
 | GATE-004 | A2A SDK/TCK harness and profile | Complete | Pinned 265-case collection is hash-locked and exhaustively classified; the selected live-network profile passes 68/68 through KIN (Agent Card 9/9, JSON-RPC 7/7, HTTP+JSON 52/52), with complete diagnostic/accounting evidence and upstream TCK/SDK defects preserved. |
 | GATE-005 | `AgentCardMirror` | Complete | Strict URL parsing, explicit private-host trust, all-answer DNS validation plus connection pinning, same-origin redirects, total-time/byte limits, SDK validation, approved-skill/public-interface projection, upstream security/signature stripping, private-reference checks, deterministic source/public hashes, ETag, and TTL cache are contract-tested. |
@@ -469,6 +469,7 @@ For every future work item, update the exact row rather than adding only a narra
 
 | Date | Change | Evidence |
 |---|---|---|
+| 2026-08-10 | Completed and froze CP0: recorded licensing authority and Apache-2.0, corrected all project-package metadata, passed clean 3.11/3.12 license audits and regressions, reran the 68-case live TCK and canonical demo, and designated annotated tag `v0.0.1-cp0` as the release marker. | `LICENSE`; `NOTICE`; ADR 0002; `docs/baseline/GATE-002-*`; `docs/baseline/evidence/gate-002/`; `CP0_CHECKPOINT.md` |
 | 2026-08-10 | Added upstream credential separation: external bearer is removed and a customer-local secret-referenced header is applied at the protected-upstream boundary. | `kin_gateway/upstream/credentials.py`; `tests/contract/test_upstream_credentials.py` |
 | 2026-08-10 | Established green Python 3.11/3.12 baselines, recorded the missing project-license blocker, accepted ADR 0001, pinned A2A 1.0/SDK 1.1.2, and completed the first JSON-RPC gateway red/green slice. | `docs/baseline/`; `docs/adr/0001-gateway-architecture-invariants.md`; `A2A_COMPATIBILITY.md`; `tests/contract/` |
 | 2026-08-10 | Completed GATE-001: cloned both supplied repositories, imported exact KIN source history into the gateway repository, tagged `kin-v1.1-import`, and recorded commit/tree/archive provenance. CP0 is now in progress. | `UPSTREAM_KIN_V1_1_SNAPSHOT.md`; Git tag and repository remotes |

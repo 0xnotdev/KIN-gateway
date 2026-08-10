@@ -6,10 +6,9 @@ external caller credentials separate from customer-local upstream authority.
 
 ## Current status
 
-The CP0 implementation and technical evidence are complete. Release freeze and
-the `v0.0.1-cp0` tag are blocked until the repository owner confirms authority
-to license every imported KIN contribution and approves the repository license
-and notices. No `LICENSE` file has been added in advance of that decision.
+CP0 is complete and frozen under the Apache License 2.0. The annotated
+`v0.0.1-cp0` tag identifies the release tree after the complete licensed-tree
+regression, live TCK profile, canonical demo, and dual-interpreter license audit.
 
 Read these documents before changing the build:
 
@@ -20,6 +19,8 @@ Read these documents before changing the build:
   contract and conformance claims.
 - [`UPSTREAM_KIN_V1_1_SNAPSHOT.md`](UPSTREAM_KIN_V1_1_SNAPSHOT.md) records the
   immutable source import.
+- [`docs/adr/0002-apache-2.0-licensing.md`](docs/adr/0002-apache-2.0-licensing.md)
+  records the licensing authority and project-license decision.
 
 CP0 includes public Agent Card mirroring, JSON-RPC and HTTP+JSON forwarding,
 opaque SSE streaming, request-time customer-local credential selection, a
@@ -36,6 +37,8 @@ KIN Gateway supports Python 3.11 and 3.12.
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".[dev]"
 .\.venv\Scripts\python -m pytest -q tests\contract
+.\.venv\Scripts\python scripts\audit_cp0_licenses.py `
+  --output .artifacts\license-audit.json
 .\scripts\run_cp0_demo.ps1 -Python ".\.venv\Scripts\python.exe"
 ```
 
@@ -55,5 +58,5 @@ listeners. The pinned TCK procedure and its separate-checkout command are in
   provenance and regression verification; the gateway does not depend on its
   legacy session engine.
 
-Do not begin CP1 implementation until CP0 licensing is resolved and the
-checkpoint freeze procedure is complete.
+CP1 begins with failing deterministic policy-semantic tests. Identity-provider
+or OIDC integration is not the first CP1 implementation step.

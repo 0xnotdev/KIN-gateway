@@ -38,3 +38,10 @@ The gateway Agent Card contains only public gateway interface URLs, an ETag deri
 ```
 
 The runner starts the upstream and gateway listeners hidden, waits for the public Agent Card, runs the official SDK client against both paths and both bindings, writes `.artifacts/cp0-demo/inventory-lookup-demo.json`, and stops both processes in a `finally` block. A mismatch exits non-zero.
+
+## Release-freeze rerun
+
+The demo was rerun on the Apache-2.0 licensed tree on 2026-08-10. JSON-RPC and
+HTTP+JSON again returned `TASK_STATE_COMPLETED` with
+`inventory:widget-cp0:available` directly and through KIN; both equivalence
+checks passed and both fixture listeners were stopped.

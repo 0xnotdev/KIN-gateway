@@ -28,4 +28,8 @@ Third-party dependencies remain governed by their own licenses. The dependency i
 
 ## CP0 release gate
 
-GATE-002 may be marked complete only after the final dependency/license audit is rerun against the licensed tree and confirms that package metadata no longer reports the project-owned KIN packages as `UNKNOWN` because of the previously missing project license.
+Satisfied on 2026-08-10. Fresh Python 3.11.9 and 3.12.13 installations report
+`License-Expression: Apache-2.0` for `kin-cli`, `kin-gateway`, and `kin-relay`;
+each distribution also includes `LICENSE` and `NOTICE`. The exhaustive inventories
+are under `docs/baseline/evidence/gate-002/`, and the complete licensed-tree
+regression matrix is recorded in `docs/baseline/GATE-002-BASELINE.md`.
