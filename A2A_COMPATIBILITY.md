@@ -76,6 +76,22 @@ The protected upstream must implement the same A2A 1.0 operation/binding being e
 
 `tests/contract/tck-manifest.yaml` will map every pinned TCK case to `pass`, `expected-unsupported`, or a tracked defect. Every `expected-unsupported` entry must cite the unsupported feature in this document. The manifest and test report are required CP0 acceptance artifacts.
 
+## Implemented CP0 contract index
+
+| Test ID | Contract | Test location |
+|---|---|---|
+| `AC-001` | SDK-valid upstream card becomes an SDK-consumable public JSON-RPC card. | `tests/contract/test_jsonrpc_gateway.py::test_official_client_calls_reference_agent_through_gateway` |
+| `AC-002` | Credentials, unsupported/malformed schemes, loopback, RFC1918, link-local, metadata, and IPv6-local discovery targets fail closed unless an exact private host is trusted. | `tests/contract/test_agent_card_mirror.py` URL/address cases |
+| `AC-003` | Every DNS answer is validated and the request connects to the selected validated IP with the original Host/SNI, closing the validation/connect rebinding gap. | `test_agent_card_fetch_is_pinned_to_the_validated_dns_answer`; `test_dns_answer_set_is_rejected_if_any_address_is_private` |
+| `AC-004` | Redirects are bounded and same-origin only; private/cross-origin redirects are never contacted. | `test_same_origin_agent_card_redirect_is_revalidated_and_followed`; `test_agent_card_redirect_cannot_reach_metadata_service` |
+| `AC-005` | Decompressed bytes and total fetch time are bounded before parsing. | `test_oversized_agent_card_is_rejected`; `test_agent_card_fetch_has_a_total_timeout` |
+| `AC-006` | Only approved skills and implemented public interfaces survive; upstream URL, provider, auth declarations, and signatures do not. | `test_public_card_is_allowlisted_without_private_details`; `test_private_url_inside_descriptive_text_fails_closed` |
+| `AC-007` | Normalized source/public hashes, ETag, and TTL cache are deterministic. | `test_agent_card_source_hash_and_cache_are_deterministic` |
+| `CRED-001` | External caller bearer is replaced by customer-local upstream authority. | `test_external_bearer_is_replaced_by_customer_upstream_credential` |
+| `CRED-002` | No/static/secret-backed providers share one async request-time interface; missing secrets stop before upstream and secret canaries cannot enter discovery output. | `tests/contract/test_upstream_credentials.py` |
+| `ADMIN-001` | `/admin/*` is absent from the public app and token/mTLS authentication fails closed on the private app. | `tests/contract/test_admin_plane.py` |
+| `ADMIN-002` | A data bearer is not admin authority, and admin credentials reach neither upstream nor logs. | `test_admin_credential_is_never_forwarded_or_logged` |
+
 ## Upgrade rule
 
 Changing the specification, SDK, TCK pin, supported operation set, error mapping, or binding requires this document and its contract tests to change in the same release. No dependency updater may advance the A2A SDK independently of this profile.

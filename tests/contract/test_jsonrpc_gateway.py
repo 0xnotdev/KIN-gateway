@@ -11,7 +11,7 @@ from a2a.helpers import get_artifact_text
 from a2a.types import Message, Part, Role, SendMessageRequest, TaskState
 
 from kin_gateway.app import create_gateway_app
-from kin_gateway.config import GatewaySettings
+from kin_gateway.config import AgentCardMirrorSettings, GatewaySettings
 from tests.contract.reference_agent import build_reference_agent
 
 
@@ -22,6 +22,10 @@ async def test_official_client_calls_reference_agent_through_gateway() -> None:
         GatewaySettings(
             public_base_url="http://gateway",
             upstream_base_url="http://upstream",
+            agent_card=AgentCardMirrorSettings(
+                approved_skill_ids=frozenset({"inventory.lookup"}),
+                trusted_private_hosts=frozenset({"upstream"}),
+            ),
         ),
         upstream_transport=httpx.ASGITransport(app=upstream_app),
     )

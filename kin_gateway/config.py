@@ -1,8 +1,10 @@
 """Configuration contracts for the customer-local gateway data plane."""
 
+import ipaddress
 import re
 
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -48,15 +50,69 @@ class UpstreamCredentialSettings(BaseModel):
         return self
 
 
+class AgentCardMirrorSettings(BaseModel):
+    """Bound the public discovery surface and its private fetch behavior."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    approved_skill_ids: frozenset[str] = frozenset()
+    trusted_private_hosts: frozenset[str] = frozenset()
+    max_response_bytes: int = Field(default=262_144, ge=1, le=4_194_304)
+    max_redirects: int = Field(default=3, ge=0, le=10)
+    fetch_timeout_seconds: float = Field(default=5.0, ge=0.001, le=60)
+    cache_ttl_seconds: float = Field(default=60.0, ge=0, le=3600)
+
+
+class AdminPlaneSettings(BaseModel):
+    """Bootstrap-only private listener and authentication configuration."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    bind_host: str = "127.0.0.1"
+    port: int = Field(default=9090, ge=1, le=65535)
+    authentication: Literal["token", "mtls"] = "token"
+    token_secret_ref: str | None = None
+
+    @field_validator("bind_host")
+    @classmethod
+    def require_private_bind_host(cls, value: str) -> str:
+        if value.lower() == "localhost":
+            return value
+        try:
+            address = ipaddress.ip_address(value)
+        except ValueError as exc:
+            raise ValueError(
+                "admin bind_host must be localhost or an explicit private IP"
+            ) from exc
+        if not (
+            address.is_private or address.is_loopback or address.is_link_local
+        ):
+            raise ValueError("admin bind_host must not be publicly routable")
+        return value
+
+    @model_validator(mode="after")
+    def require_authentication_configuration(self) -> "AdminPlaneSettings":
+        if self.authentication == "token" and not self.token_secret_ref:
+            raise ValueError("token authentication requires token_secret_ref")
+        if self.authentication == "mtls" and self.token_secret_ref is not None:
+            raise ValueError("mTLS authentication must not configure a token")
+        return self
+
+
 class GatewaySettings(BaseModel):
     """Minimal CP0 settings for one public endpoint and one A2A upstream."""
 
     model_config = ConfigDict(frozen=True)
 
     public_base_url: str = Field(min_length=1)
+    bind_host: str = "0.0.0.0"
+    port: int = Field(default=8080, ge=1, le=65535)
     upstream_base_url: str = Field(min_length=1)
     upstream_credential: UpstreamCredentialSettings = Field(
         default_factory=UpstreamCredentialSettings
+    )
+    agent_card: AgentCardMirrorSettings = Field(
+        default_factory=AgentCardMirrorSettings
     )
 
     @field_validator("public_base_url", "upstream_base_url")
@@ -64,4 +120,22 @@ class GatewaySettings(BaseModel):
     def normalize_base_url(cls, value: str) -> str:
         """Keep route composition deterministic."""
 
-        return value.rstrip("/")
+        normalized = value.rstrip("/")
+        try:
+            parsed = urlsplit(normalized)
+            parsed.port
+        except ValueError as exc:
+            raise ValueError(
+                "base URL must include a valid host and valid numeric port"
+            ) from exc
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError("base URL must use http or https")
+        if not parsed.hostname:
+            raise ValueError("base URL must include a host")
+        if any(character.isspace() for character in parsed.hostname):
+            raise ValueError("base URL host must not contain whitespace")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("base URL must not contain credentials")
+        if parsed.query or parsed.fragment:
+            raise ValueError("base URL must not contain a query or fragment")
+        return normalized

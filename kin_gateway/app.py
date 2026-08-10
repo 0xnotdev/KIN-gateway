@@ -6,18 +6,25 @@ import httpx
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
-from google.protobuf.json_format import MessageToDict, ParseDict
 from packaging.version import InvalidVersion, Version
 
-from a2a.types import AgentCard
-from a2a.utils.proto_utils import validate_proto_required_fields
-
+from kin_gateway.agent_card import (
+    AGENT_CARD_PATH,
+    JSONRPC_PATH,
+    AgentCardMirror,
+    AgentCardMirrorError,
+    TargetResolver,
+)
 from kin_gateway.config import GatewaySettings
-from kin_gateway.upstream.credentials import SecretProvider, resolve_upstream_headers
+from kin_gateway.upstream.credentials import (
+    RequestContext,
+    SecretProvider,
+    UpstreamCredentialProvider,
+    UpstreamCredentialError,
+    build_upstream_credential_provider,
+)
 
 
-AGENT_CARD_PATH = "/.well-known/agent-card.json"
-JSONRPC_PATH = "/a2a/jsonrpc"
 _FORWARDED_REQUEST_HEADERS = ("content-type", "a2a-version", "a2a-extensions")
 _FORWARDED_RESPONSE_HEADERS = ("content-type", "cache-control")
 _SUPPORTED_A2A_VERSION = Version("1.0")
@@ -63,53 +70,57 @@ def create_gateway_app(
     *,
     upstream_transport: httpx.AsyncBaseTransport | None = None,
     secret_provider: SecretProvider | None = None,
+    agent_card_resolver: TargetResolver | None = None,
+    upstream_credential_provider: UpstreamCredentialProvider | None = None,
 ) -> FastAPI:
     """Create a gateway data plane with an injectable upstream HTTP boundary."""
 
     app = FastAPI(title="KIN Gateway", version="0.1.0.dev0")
 
-    def upstream_client() -> httpx.AsyncClient:
+    if upstream_credential_provider is not None and (
+        secret_provider is not None
+        or settings.upstream_credential.mode != "private"
+    ):
+        raise ValueError(
+            "Explicit credential provider cannot be combined with credential settings"
+        )
+    credential_provider = upstream_credential_provider or (
+        build_upstream_credential_provider(
+            settings.upstream_credential,
+            secret_provider,
+        )
+    )
+    agent_card_mirror = AgentCardMirror(
+        settings,
+        transport=upstream_transport,
+        credential_provider=credential_provider,
+        resolver=agent_card_resolver,
+    )
+
+    def upstream_client(headers: Mapping[str, str]) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             base_url=settings.upstream_base_url,
             transport=upstream_transport,
-            headers=resolve_upstream_headers(
-                settings.upstream_credential,
-                secret_provider,
-            ),
+            headers=headers,
         )
 
     @app.get(AGENT_CARD_PATH)
-    async def mirrored_agent_card() -> dict[str, object]:
+    async def mirrored_agent_card(response: Response) -> dict[str, object]:
         try:
-            async with upstream_client() as client:
-                response = await client.get(AGENT_CARD_PATH)
-                response.raise_for_status()
-                card = ParseDict(response.json(), AgentCard())
-                validate_proto_required_fields(card)
-        except (httpx.HTTPError, ValueError) as exc:
+            snapshot = await agent_card_mirror.public_card()
+        except AgentCardMirrorError as exc:
             raise HTTPException(
                 status_code=502,
                 detail="Upstream Agent Card is unavailable or invalid",
             ) from exc
-
-        public_interfaces = []
-        for interface in card.supported_interfaces:
-            if (
-                interface.protocol_binding == "JSONRPC"
-                and interface.protocol_version == "1.0"
-            ):
-                interface.url = f"{settings.public_base_url}{JSONRPC_PATH}"
-                public_interfaces.append(interface)
-
-        if not public_interfaces:
-            raise HTTPException(
-                status_code=502,
-                detail="Upstream does not expose the A2A 1.0 JSON-RPC profile",
-            )
-
-        del card.supported_interfaces[:]
-        card.supported_interfaces.extend(public_interfaces)
-        return MessageToDict(card)
+        response.headers["ETag"] = f'"sha256-{snapshot.public_sha256}"'
+        response.headers[
+            "X-KIN-Upstream-Agent-Card-SHA256"
+        ] = snapshot.source_sha256
+        response.headers["Cache-Control"] = (
+            f"public, max-age={int(settings.agent_card.cache_ttl_seconds)}"
+        )
+        return snapshot.document
 
     @app.post(JSONRPC_PATH)
     async def proxy_jsonrpc(request: Request) -> Response:
@@ -124,13 +135,19 @@ def create_gateway_app(
         headers = _selected_headers(request.headers, _FORWARDED_REQUEST_HEADERS)
 
         try:
-            async with upstream_client() as client:
+            credential_headers = await credential_provider.headers_for(
+                RequestContext(
+                    method="POST",
+                    url=f"{settings.upstream_base_url}{JSONRPC_PATH}",
+                )
+            )
+            async with upstream_client(credential_headers) as client:
                 upstream_response = await client.post(
                     JSONRPC_PATH,
                     content=body,
                     headers=headers,
                 )
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, UpstreamCredentialError) as exc:
             raise HTTPException(
                 status_code=502,
                 detail="Protected A2A upstream is unavailable",

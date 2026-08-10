@@ -7,6 +7,10 @@ from typing import Protocol
 from kin_gateway.config import UpstreamCredentialSettings
 
 
+class UpstreamCredentialError(Exception):
+    """Customer-local upstream authority could not be safely supplied."""
+
+
 class SecretProvider(Protocol):
     """Resolve a configured secret reference inside the customer trust domain."""
 
@@ -27,18 +31,112 @@ class MappingSecretProvider:
             raise ValueError("Configured upstream secret is unavailable") from exc
 
 
-def resolve_upstream_headers(
+@dataclass(frozen=True)
+class RequestContext:
+    """Minimal upstream call context; external authority is deliberately absent."""
+
+    method: str
+    url: str
+
+
+class UpstreamCredentialProvider(Protocol):
+    """Supply customer-local authority independently for each upstream call."""
+
+    async def headers_for(
+        self, request_context: RequestContext
+    ) -> Mapping[str, str]:
+        """Return only the headers owned by this credential provider."""
+
+
+@dataclass(frozen=True)
+class NoCredentialProvider:
+    """Use a private upstream that requires no application credential."""
+
+    async def headers_for(
+        self, request_context: RequestContext
+    ) -> Mapping[str, str]:
+        return {}
+
+
+@dataclass(frozen=True)
+class StaticHeaderCredentialProvider:
+    """Use an explicitly injected customer-owned static header value."""
+
+    header_name: str
+    header_value: str
+
+    def __post_init__(self) -> None:
+        _validate_header(self.header_name, self.header_value)
+
+    async def headers_for(
+        self, request_context: RequestContext
+    ) -> Mapping[str, str]:
+        return {self.header_name: self.header_value}
+
+
+@dataclass(frozen=True)
+class SecretBackedCredentialProvider:
+    """Resolve a configured header value from customer-local secret storage."""
+
+    header_name: str
+    secret_ref: str
+    value_prefix: str
+    secret_provider: SecretProvider
+
+    def __post_init__(self) -> None:
+        _validate_header(self.header_name, self.value_prefix or "placeholder")
+        if not self.secret_ref:
+            raise ValueError("secret_ref must not be empty")
+
+    async def headers_for(
+        self, request_context: RequestContext
+    ) -> Mapping[str, str]:
+        try:
+            secret = self.secret_provider.get_secret(self.secret_ref)
+        except Exception as exc:
+            raise UpstreamCredentialError(
+                "Configured upstream secret is unavailable"
+            ) from exc
+        if not secret:
+            raise UpstreamCredentialError("Configured upstream secret is empty")
+        value = f"{self.value_prefix}{secret}"
+        try:
+            _validate_header(self.header_name, value)
+        except ValueError as exc:
+            raise UpstreamCredentialError(
+                "Configured upstream secret is not a valid header value"
+            ) from exc
+        return {self.header_name: value}
+
+
+def build_upstream_credential_provider(
     settings: UpstreamCredentialSettings,
     secret_provider: SecretProvider | None,
-) -> dict[str, str]:
-    """Build only customer-local upstream credential headers."""
+) -> UpstreamCredentialProvider:
+    """Build one of the three supported CP0 credential providers."""
 
     if settings.mode == "private":
-        return {}
+        return NoCredentialProvider()
     if secret_provider is None:
         raise ValueError("Header credential mode requires a secret provider")
+    return SecretBackedCredentialProvider(
+        header_name=settings.header_name or "",
+        secret_ref=settings.secret_ref or "",
+        value_prefix=settings.value_prefix,
+        secret_provider=secret_provider,
+    )
 
-    secret = secret_provider.get_secret(settings.secret_ref or "")
-    if not secret:
-        raise ValueError("Configured upstream secret is empty")
-    return {settings.header_name or "": f"{settings.value_prefix}{secret}"}
+
+def _validate_header(name: str, value: str) -> None:
+    """Reject reserved names and line-breaking values at the provider seam."""
+
+    try:
+        UpstreamCredentialSettings(
+            mode="header",
+            header_name=name,
+            secret_ref="validation-only",
+        )
+    except ValueError as exc:
+        raise ValueError("Invalid upstream credential header name") from exc
+    if not value or "\r" in value or "\n" in value:
+        raise ValueError("Invalid upstream credential header value")
