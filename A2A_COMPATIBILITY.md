@@ -98,6 +98,9 @@ The protected upstream must implement the same A2A 1.0 operation/binding being e
 | `SSE-002` | Response start precedes upstream consumption; 100 events, IDs, malformed framing, and a 64 KiB event remain byte-identical with no duplicates under a slow consumer. | `test_sse_bytes_ids_order_and_backpressure_are_preserved` |
 | `SSE-003` | Client disconnect closes upstream; origin disconnect and inter-event timeout terminate without a synthetic completion event. | Disconnect/failure/timeout cases in `tests/contract/test_sse_gateway.py` |
 | `SSE-004` | REST and JSON-RPC task subscription operations remain on the streaming path. | `test_task_subscription_routes_remain_streaming` |
+| `SESSION-001` | Every handled A2A proxy attempt creates the exact nine-field CP0 `ExternalTaskSession`; no CP1 authority or policy field is introduced. | `test_jsonrpc_session_has_only_cp0_fields_and_preserves_response` |
+| `SESSION-002` | The same protocol request has a deterministic credential-independent hash and a distinct session UUID; buffered JSON task IDs are observed without changing response bytes. | `test_same_rest_request_has_stable_hash_and_unique_session_id`; JSON-RPC schema case |
+| `SESSION-003` | Observer failure cannot change buffered A2A output, and transport/stream completion, origin failure, timeout, and cancellation receive explicit outcomes. | Remaining `test_external_task_sessions.py` cases; lifecycle assertions in `test_sse_gateway.py` |
 
 ## Upgrade rule
 

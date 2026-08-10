@@ -24,6 +24,10 @@ from kin_gateway.agent_card import (
     TargetResolver,
 )
 from kin_gateway.config import GatewaySettings
+from kin_gateway.sessions import (
+    ExternalTaskSessionObserver,
+    ExternalTaskSessionTracker,
+)
 from kin_gateway.upstream.credentials import (
     RequestContext,
     SecretProvider,
@@ -126,6 +130,7 @@ def create_gateway_app(
     secret_provider: SecretProvider | None = None,
     agent_card_resolver: TargetResolver | None = None,
     upstream_credential_provider: UpstreamCredentialProvider | None = None,
+    session_observer: ExternalTaskSessionObserver | None = None,
 ) -> FastAPI:
     """Create a gateway data plane with an injectable upstream HTTP boundary."""
 
@@ -164,6 +169,7 @@ def create_gateway_app(
         url: str | httpx.URL,
         body: bytes,
         headers: Mapping[str, str],
+        session: ExternalTaskSessionTracker,
     ) -> Response:
         """Keep the upstream client open exactly as long as the downstream stream."""
 
@@ -186,12 +192,14 @@ def create_gateway_app(
         except (httpx.HTTPError, UpstreamCredentialError) as exc:
             if client is not None:
                 await client.aclose()
+            await session.complete("upstream_unavailable")
             raise HTTPException(
                 status_code=502,
                 detail="Protected A2A upstream is unavailable",
             ) from exc
 
         async def forward_body():
+            outcome = "forwarded"
             try:
                 iterator = upstream_response.aiter_raw().__aiter__()
                 while True:
@@ -203,9 +211,21 @@ def create_gateway_app(
                     except StopAsyncIteration:
                         break
                     yield chunk
+            except TimeoutError:
+                outcome = "upstream_timeout"
+                raise
+            except asyncio.CancelledError:
+                outcome = "client_disconnected"
+                raise
+            except httpx.HTTPError:
+                outcome = "upstream_disconnected"
+                raise
             finally:
-                await upstream_response.aclose()
-                await client.aclose()
+                try:
+                    await upstream_response.aclose()
+                    await client.aclose()
+                finally:
+                    await session.complete(outcome)
 
         return StreamingResponse(
             forward_body(),
@@ -241,13 +261,30 @@ def create_gateway_app(
             jsonrpc_request = json.loads(body)
         except (ValueError, TypeError):
             jsonrpc_request = {}
+        request_method = "POST"
+        if isinstance(jsonrpc_request, dict) and isinstance(
+            jsonrpc_request.get("method"), str
+        ):
+            request_method = jsonrpc_request["method"]
+        upstream_url = f"{settings.upstream_base_url}{JSONRPC_PATH}"
+        session = ExternalTaskSessionTracker(
+            observer=session_observer,
+            transport="JSONRPC",
+            request_method=request_method,
+            target=JSONRPC_PATH,
+            upstream=settings.upstream_base_url,
+            headers=request.headers,
+            body=body,
+        )
         if not _supports_a2a_version(request.headers.get("a2a-version")):
             request_id = (
                 jsonrpc_request.get("id")
                 if isinstance(jsonrpc_request, dict)
                 else None
             )
-            return _version_error(request_id)
+            response = _version_error(request_id)
+            await session.complete("unsupported_version")
+            return response
 
         headers = _selected_headers(request.headers, _FORWARDED_REQUEST_HEADERS)
         if isinstance(jsonrpc_request, dict) and jsonrpc_request.get("method") in {
@@ -256,16 +293,17 @@ def create_gateway_app(
         }:
             return await streaming_upstream_response(
                 method="POST",
-                url=f"{settings.upstream_base_url}{JSONRPC_PATH}",
+                url=upstream_url,
                 body=body,
                 headers=headers,
+                session=session,
             )
 
         try:
             credential_headers = await credential_provider.headers_for(
                 RequestContext(
                     method="POST",
-                    url=f"{settings.upstream_base_url}{JSONRPC_PATH}",
+                    url=upstream_url,
                 )
             )
             async with upstream_client(credential_headers) as client:
@@ -275,11 +313,16 @@ def create_gateway_app(
                     headers=headers,
                 )
         except (httpx.HTTPError, UpstreamCredentialError) as exc:
+            await session.complete("upstream_unavailable")
             raise HTTPException(
                 status_code=502,
                 detail="Protected A2A upstream is unavailable",
             ) from exc
 
+        await session.complete(
+            "forwarded",
+            response_body=upstream_response.content,
+        )
         return Response(
             content=upstream_response.content,
             status_code=upstream_response.status_code,
@@ -294,22 +337,37 @@ def create_gateway_app(
         methods=["GET", "POST"],
     )
     async def proxy_rest(rest_path: str, request: Request) -> Response:
-        is_streaming = _is_streaming_rest_operation(request.method, rest_path)
-        if not (
-            is_streaming
-            or _is_nonstreaming_rest_operation(request.method, rest_path)
-        ):
-            raise HTTPException(status_code=404, detail="A2A operation is unsupported")
-        if not _supports_a2a_version(request.headers.get("a2a-version")):
-            return _rest_version_error()
-
         raw_path = request.scope.get("raw_path", request.url.path.encode("ascii"))
         query_string = request.scope.get("query_string", b"")
+        target = raw_path.decode("ascii")
+        if query_string:
+            target = f"{target}?{query_string.decode('ascii')}"
         upstream_url = httpx.URL(settings.upstream_base_url).join(
             raw_path.decode("ascii")
         )
         upstream_url = upstream_url.copy_with(query=query_string)
         body = await request.body()
+        session = ExternalTaskSessionTracker(
+            observer=session_observer,
+            transport="HTTP+JSON",
+            request_method=request.method,
+            target=target,
+            upstream=settings.upstream_base_url,
+            headers=request.headers,
+            body=body,
+        )
+        is_streaming = _is_streaming_rest_operation(request.method, rest_path)
+        if not (
+            is_streaming
+            or _is_nonstreaming_rest_operation(request.method, rest_path)
+        ):
+            await session.complete("unsupported_operation")
+            raise HTTPException(status_code=404, detail="A2A operation is unsupported")
+        if not _supports_a2a_version(request.headers.get("a2a-version")):
+            response = _rest_version_error()
+            await session.complete("unsupported_version")
+            return response
+
         headers = _selected_headers(request.headers, _FORWARDED_REQUEST_HEADERS)
 
         if is_streaming:
@@ -318,6 +376,7 @@ def create_gateway_app(
                 url=upstream_url,
                 body=body,
                 headers=headers,
+                session=session,
             )
 
         try:
@@ -332,11 +391,16 @@ def create_gateway_app(
                     headers=headers,
                 )
         except (httpx.HTTPError, UpstreamCredentialError) as exc:
+            await session.complete("upstream_unavailable")
             raise HTTPException(
                 status_code=502,
                 detail="Protected A2A upstream is unavailable",
             ) from exc
 
+        await session.complete(
+            "forwarded",
+            response_body=upstream_response.content,
+        )
         return Response(
             content=upstream_response.content,
             status_code=upstream_response.status_code,

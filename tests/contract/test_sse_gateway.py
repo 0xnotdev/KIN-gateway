@@ -12,6 +12,7 @@ from a2a.types import Message, Part, Role, SendMessageRequest, TaskState
 
 from kin_gateway.app import create_gateway_app
 from kin_gateway.config import AgentCardMirrorSettings, GatewaySettings
+from kin_gateway.sessions import ExternalTaskSession
 from tests.contract.reference_agent import build_reference_agent
 
 
@@ -30,6 +31,16 @@ class RecordingStream(httpx.AsyncByteStream):
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+class RecordingSessionObserver:
+    """Collect stream-lifecycle records without controlling proxy behavior."""
+
+    def __init__(self) -> None:
+        self.sessions: list[ExternalTaskSession] = []
+
+    async def record(self, session: ExternalTaskSession) -> None:
+        self.sessions.append(session)
 
 
 async def invoke_stream_request(
@@ -140,6 +151,7 @@ async def test_sse_bytes_ids_order_and_backpressure_are_preserved() -> None:
     chunks.insert(50, b"malformed-field-without-colon\r\n\r\n")
     chunks.append(b"id: large\r\ndata: " + (b"x" * 65_536) + b"\r\n\r\n")
     upstream_stream = RecordingStream(chunks)
+    observer = RecordingSessionObserver()
 
     def upstream(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -157,6 +169,7 @@ async def test_sse_bytes_ids_order_and_backpressure_are_preserved() -> None:
             upstream_base_url="http://upstream",
         ),
         upstream_transport=httpx.MockTransport(upstream),
+        session_observer=observer,
     )
     messages: list[dict[str, object]] = []
     never = asyncio.Event()
@@ -188,6 +201,9 @@ async def test_sse_bytes_ids_order_and_backpressure_are_preserved() -> None:
     assert body == b"".join(chunks)
     assert upstream_stream.yielded == chunks
     assert upstream_stream.closed is True
+    assert len(observer.sessions) == 1
+    assert observer.sessions[0].a2a_task_id is None
+    assert observer.sessions[0].outcome == "forwarded"
 
 
 @pytest.mark.asyncio
@@ -208,6 +224,7 @@ async def test_client_disconnect_closes_inflight_upstream_stream() -> None:
             self.closed = True
 
     upstream_stream = InflightStream()
+    observer = RecordingSessionObserver()
     gateway = create_gateway_app(
         GatewaySettings(
             public_base_url="http://gateway",
@@ -220,6 +237,7 @@ async def test_client_disconnect_closes_inflight_upstream_stream() -> None:
                 stream=upstream_stream,
             )
         ),
+        session_observer=observer,
     )
     downstream_bodies: list[bytes] = []
 
@@ -240,6 +258,8 @@ async def test_client_disconnect_closes_inflight_upstream_stream() -> None:
 
     assert downstream_bodies == [b"id: first\r\ndata: first\r\n\r\n"]
     assert upstream_stream.closed is True
+    assert len(observer.sessions) == 1
+    assert observer.sessions[0].outcome == "client_disconnected"
 
 
 @pytest.mark.asyncio
@@ -258,6 +278,7 @@ async def test_upstream_disconnect_is_propagated_without_completion_event() -> N
             self.closed = True
 
     upstream_stream = FailingStream()
+    observer = RecordingSessionObserver()
     gateway = create_gateway_app(
         GatewaySettings(
             public_base_url="http://gateway",
@@ -270,6 +291,7 @@ async def test_upstream_disconnect_is_propagated_without_completion_event() -> N
                 stream=upstream_stream,
             )
         ),
+        session_observer=observer,
     )
     downstream_bodies: list[bytes] = []
     never = asyncio.Event()
@@ -300,6 +322,8 @@ async def test_upstream_disconnect_is_propagated_without_completion_event() -> N
     assert contains_read_error(failure)
     assert downstream_bodies == [b"id: partial\r\ndata: partial\r\n\r\n"]
     assert upstream_stream.closed is True
+    assert len(observer.sessions) == 1
+    assert observer.sessions[0].outcome == "upstream_disconnected"
 
 
 @pytest.mark.asyncio
@@ -319,6 +343,7 @@ async def test_upstream_pause_times_out_without_synthetic_event() -> None:
             self.closed = True
 
     upstream_stream = PausingStream()
+    observer = RecordingSessionObserver()
     gateway = create_gateway_app(
         GatewaySettings(
             public_base_url="http://gateway",
@@ -332,6 +357,7 @@ async def test_upstream_pause_times_out_without_synthetic_event() -> None:
                 stream=upstream_stream,
             )
         ),
+        session_observer=observer,
     )
     downstream_bodies: list[bytes] = []
     never = asyncio.Event()
@@ -362,6 +388,8 @@ async def test_upstream_pause_times_out_without_synthetic_event() -> None:
     assert contains_timeout(failure)
     assert downstream_bodies == [b"id: first\r\ndata: first\r\n\r\n"]
     assert upstream_stream.closed is True
+    assert len(observer.sessions) == 1
+    assert observer.sessions[0].outcome == "upstream_timeout"
 
 
 @pytest.mark.parametrize(
